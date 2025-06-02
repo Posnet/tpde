@@ -1,9 +1,30 @@
-/// Trait describing the interface between TPDE and a user IR.
+//! IRAdaptor responsibilities.
+//!
+//! The adaptor is the glue between TPDE and the user's SSA based IR. It exposes
+//! the IR structure through a trait in Rust rather than the C++ concept described
+//! in the original docs. The framework assumes:
+//! - Each function has a single entry block.
+//! - Basic blocks contain a list of instructions ending with a terminator.
+//! - Instructions can produce multiple result values.
+//! - Control flow edges use phi nodes; direct block arguments are planned.
+//!
+//! The `IrAdaptor` trait covers the minimal set of queries for now:
+//! - Associated reference types for values, instructions, blocks and functions.
+//! - Constants representing invalid references.
+//! - Queries for function count and iteration.
+//! - Methods to fetch linkage names, switch functions and reset between runs.
+//!
+//! More features like operand access will be added as the runtime expands.
+//! Implementations may preprocess data in `switch_func` to speed up later calls.
+
+/// Bridge between an SSA IR and TPDE.
 ///
-/// Types implementing this trait provide references to functions,
-/// blocks and values and allow the compiler to query basic
-/// information about them. Only a small subset of the full C++
-/// interface is modeled here so far.
+/// The [`IrAdaptor`] trait provides the hooks the compiler needs to access an
+/// arbitrary SSA IR.  In the C++ implementation this is expressed using
+/// concepts; here we capture just the core subset as a trait.  The adaptor is
+/// responsible for enumerating functions, blocks and instructions and for
+/// allowing the compiler to obtain linkage names and switch the currently
+/// compiled function.  More background can be found in [`guide`].
 pub trait IrAdaptor {
     type ValueRef: Copy + Eq;
     type InstRef: Copy + Eq;
