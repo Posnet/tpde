@@ -8,5 +8,5 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-inkwell = { version = "0.6", features = ["llvm18-1"] }
+inkwell = { git = "https://github.com/stevefan1999-personal/inkwell.git" features = ["llvm20-1"] }
 object = { version = "0.37", features = ["all"] }
