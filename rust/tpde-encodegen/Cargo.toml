@@ -1,0 +1,11 @@
+[package]
+name = "tpde-encodegen"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+inkwell = { workspace = true }
+
+[[bin]]
+name = "tpde-encodegen"
+path = "src/main.rs"
