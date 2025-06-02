@@ -79,6 +79,10 @@ impl<'ctx> IrAdaptor for LlvmIrAdaptor<'ctx> {
         self.current = None;
     }
 
+    fn entry_block(&self) -> Self::BlockRef {
+        self.current.and_then(|f| f.get_first_basic_block())
+    }
+
     fn blocks(&self) -> Box<dyn Iterator<Item = Self::BlockRef> + '_> {
         if let Some(func) = self.current {
             Box::new(func.get_basic_blocks().into_iter().map(Some))
@@ -95,6 +99,10 @@ impl<'ctx> IrAdaptor for LlvmIrAdaptor<'ctx> {
         }
     }
 
+    fn block_succs(&self, _block: Self::BlockRef) -> Box<dyn Iterator<Item = Self::BlockRef> + '_> {
+        Box::new(std::iter::empty())
+    }
+
     fn inst_operands(&self, inst: Self::InstRef) -> Box<dyn Iterator<Item = Self::ValueRef> + '_> {
         let _ = inst;
         Box::new(std::iter::empty())
@@ -102,6 +110,14 @@ impl<'ctx> IrAdaptor for LlvmIrAdaptor<'ctx> {
 
     fn inst_results(&self, _inst: Self::InstRef) -> Box<dyn Iterator<Item = Self::ValueRef> + '_> {
         Box::new(std::iter::empty())
+    }
+
+    fn val_local_idx(&self, _val: Self::ValueRef) -> usize {
+        0
+    }
+
+    fn val_ignore_liveness(&self, _val: Self::ValueRef) -> bool {
+        false
     }
 }
 
