@@ -16,7 +16,7 @@
 //! 7. **Snippet Encoders** – optional helpers generated from high level code to
 //!    reduce manual instruction selection.
 //!
-//! ```
+//! ```text
 //! ┌───────────┐      ┌───────────────────────────┐     ┌───────────┐
 //! │           │◄─────┼                           ├────►│           │
 //! │ IRAdaptor │      │     CompilerBase          │     │ Assembler │
