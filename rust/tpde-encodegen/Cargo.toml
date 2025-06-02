@@ -6,6 +6,9 @@ edition = "2021"
 [dependencies]
 inkwell = { workspace = true }
 
+[lib]
+path = "src/lib.rs"
+
 [[bin]]
 name = "tpde-encodegen"
 path = "src/main.rs"

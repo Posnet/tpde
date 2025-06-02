@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "tpde",
+    "tpde-core",
     "tpde-encodegen",
     "tpde-llvm"
 ]

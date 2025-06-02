@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 inkwell = { workspace = true }
+tpde-core = { path = "../tpde-core" }
 
 [lib]
 path = "src/lib.rs"
