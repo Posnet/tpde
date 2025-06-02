@@ -2,6 +2,13 @@ use crate::adaptor::IrAdaptor;
 use core::marker::PhantomData;
 
 /// Computes block layout and liveness information for a function.
+///
+/// The analyzer walks the IR provided by [`IrAdaptor`] in a reverse
+/// post-order and records begin/end positions for each value.  This data drives
+/// the register allocator within [`CompilerBase`].  The algorithm closely
+/// follows the description in the C++ docs and is summarized in
+/// [`overview`].  The current implementation only provides the outer
+/// skeleton.
 #[allow(dead_code)]
 pub struct Analyzer<A: IrAdaptor> {
     _marker: PhantomData<A>,
