@@ -21,4 +21,17 @@ pub trait Assembler<A: IrAdaptor> {
 
     fn sym_predef_func(&mut self, name: &str, local: bool, weak: bool) -> Self::SymRef;
     fn sym_add_undef(&mut self, name: &str, local: bool, weak: bool);
+
+    /// Finalize sections and relocations after code generation.
+    fn finalize(&mut self);
+
+    /// Write a finished object file to a byte vector.
+    fn build_object_file(&mut self) -> Vec<u8>;
+
+    /// Map the generated code into memory for JIT execution.
+    ///
+    /// `resolve` should return the address of any unresolved symbol.
+    fn map<F>(&mut self, resolve: F) -> bool
+    where
+        F: FnMut(&str) -> *const u8;
 }
