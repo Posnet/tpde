@@ -8,6 +8,5 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-inkwell = { version = "0.2" }
-object = { version = "0.32" }
-cbindgen = { version = "0.26" }
+inkwell = { version = "0.6", features = ["llvm18-1"] }
+object = { version = "0.37" features = ["all"] }
