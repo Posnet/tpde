@@ -8,12 +8,51 @@
 //! writing every pattern by hand. See [`tpde_core::overview`] for an
 //! extended overview.
 
-use inkwell::module::Module;
+use inkwell::{
+    context::Context,
+    memory_buffer::MemoryBuffer,
+    module::Module,
+};
+
+/// Parse a text LLVM IR module into an [`inkwell::Module`].
+pub fn parse_module<'ctx>(context: &'ctx Context, ir: &str) -> Result<Module<'ctx>, String> {
+    let buffer = MemoryBuffer::create_from_memory_range_copy(ir.as_bytes(), "ir");
+    context
+        .create_module_from_ir(buffer)
+        .map_err(|e| e.to_string())
+}
+
+/// Generate Rust source snippets for functions starting with `pattern_`.
+///
+/// Every matching function name is turned into a small Rust stub.  Real
+/// machine code emission is not implemented yet.
+pub fn generate_tokens(module: &Module) -> Vec<String> {
+    module
+        .get_functions()
+        .filter_map(|f| {
+            let name = f.get_name().to_str().ok()?;
+            if let Some(rest) = name.strip_prefix("pattern_") {
+                Some(format!("pub fn {}() {{ /* machine code */ }}", rest))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Convenience helper parsing IR text and returning token strings.
+pub fn parse_and_generate<'ctx>(
+    context: &'ctx Context,
+    ir: &str,
+) -> Result<Vec<String>, String> {
+    let module = parse_module(context, ir)?;
+    Ok(generate_tokens(&module))
+}
 
 /// Generate snippet encoder source from the provided LLVM IR `Module`.
 ///
 /// The current implementation simply returns a placeholder string.  Real
 /// logic will analyse the IR and emit encoder functions.
-pub fn generate(_module: &Module) -> String {
-    "// encode generation not yet implemented\n".to_string()
+pub fn generate(_module: &Module) {
+    todo!("encode generation not yet implemented")
 }

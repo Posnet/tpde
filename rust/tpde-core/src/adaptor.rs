@@ -29,7 +29,7 @@
 pub trait IrAdaptor {
     type ValueRef: Copy + Eq;
     type InstRef: Copy + Eq;
-    type BlockRef: Copy + Eq;
+    type BlockRef: Copy + Eq + core::hash::Hash;
     type FuncRef: Copy + Eq;
 
     const INVALID_VALUE_REF: Self::ValueRef;
@@ -51,6 +51,9 @@ pub trait IrAdaptor {
     /// Reset internal state between compilation runs.
     fn reset(&mut self);
 
+    /// Entry block of the currently selected function.
+    fn entry_block(&self) -> Self::BlockRef;
+
     /// Iterator over blocks in the current function.
     ///
     /// ```no_run
@@ -68,9 +71,18 @@ pub trait IrAdaptor {
     /// Iterator over instructions of the given block.
     fn block_insts(&self, block: Self::BlockRef) -> Box<dyn Iterator<Item = Self::InstRef> + '_>;
 
+    /// Successor blocks of a given block.
+    fn block_succs(&self, block: Self::BlockRef) -> Box<dyn Iterator<Item = Self::BlockRef> + '_>;
+
     /// Iterator over the operands of an instruction.
     fn inst_operands(&self, inst: Self::InstRef) -> Box<dyn Iterator<Item = Self::ValueRef> + '_>;
 
     /// Iterator over the result values produced by an instruction.
     fn inst_results(&self, inst: Self::InstRef) -> Box<dyn Iterator<Item = Self::ValueRef> + '_>;
+
+    /// Local index of a value for liveness tracking.
+    fn val_local_idx(&self, val: Self::ValueRef) -> usize;
+
+    /// Should this value be ignored during liveness analysis?
+    fn val_ignore_liveness(&self, val: Self::ValueRef) -> bool;
 }
