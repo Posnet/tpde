@@ -14,7 +14,8 @@
 //! - Queries for function count and iteration.
 //! - Methods to fetch linkage names, switch functions and reset between runs.
 //!
-//! More features like operand access will be added as the runtime expands.
+//! Methods for operand access and block iteration are expected to grow over time
+//! as the runtime expands.
 //! Implementations may preprocess data in `switch_func` to speed up later calls.
 
 /// Bridge between an SSA IR and TPDE.
@@ -49,4 +50,27 @@ pub trait IrAdaptor {
 
     /// Reset internal state between compilation runs.
     fn reset(&mut self);
+
+    /// Iterator over blocks in the current function.
+    ///
+    /// ```no_run
+    /// # use tpde_core::guide;
+    /// # let mut adaptor = unimplemented!("see guide for an example adaptor");
+    /// adaptor.switch_func(adaptor.funcs().next().unwrap());
+    /// for block in adaptor.blocks() {
+    ///     for inst in adaptor.block_insts(block) {
+    ///         let _ = adaptor.inst_operands(inst).count();
+    ///     }
+    /// }
+    /// ```
+    fn blocks(&self) -> Box<dyn Iterator<Item = Self::BlockRef> + '_>;
+
+    /// Iterator over instructions of the given block.
+    fn block_insts(&self, block: Self::BlockRef) -> Box<dyn Iterator<Item = Self::InstRef> + '_>;
+
+    /// Iterator over the operands of an instruction.
+    fn inst_operands(&self, inst: Self::InstRef) -> Box<dyn Iterator<Item = Self::ValueRef> + '_>;
+
+    /// Iterator over the result values produced by an instruction.
+    fn inst_results(&self, inst: Self::InstRef) -> Box<dyn Iterator<Item = Self::ValueRef> + '_>;
 }
