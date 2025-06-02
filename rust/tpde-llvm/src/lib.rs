@@ -8,17 +8,19 @@
 //! design and current limitations lives in [`tpde_core::overview`].
 
 use inkwell::module::Module;
-use tpde_core::{adaptor::IrAdaptor, assembler::Assembler, compiler::CompilerBase};
+use tpde_core::{adaptor::IrAdaptor, assembler::Assembler, compiler::{CompilerBase, Backend}};
 
 /// Compile an LLVM `Module` using a TPDE compiler setup.
-pub fn compile_ir<A, ASM>(
+pub fn compile_ir<A, ASM, C>(
     _module: &Module,
     _adaptor: A,
     _assembler: ASM,
-) -> CompilerBase<A, ASM>
+    _backend: C,
+) -> CompilerBase<A, ASM, C>
 where
     A: IrAdaptor,
     ASM: Assembler<A>,
+    C: Backend<A, ASM>,
 {
     unimplemented!("LLVM compilation not yet implemented")
 }

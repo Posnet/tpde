@@ -49,4 +49,10 @@ pub trait IrAdaptor {
 
     /// Reset internal state between compilation runs.
     fn reset(&mut self);
+
+    /// Iterate over all blocks of the current function.
+    fn blocks(&self, func: Self::FuncRef) -> Box<dyn Iterator<Item = Self::BlockRef> + '_>;
+
+    /// Iterate over all instructions in a block.
+    fn block_insts(&self, block: Self::BlockRef) -> Box<dyn Iterator<Item = Self::InstRef> + '_>;
 }
