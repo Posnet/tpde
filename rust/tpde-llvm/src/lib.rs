@@ -12,7 +12,7 @@ use inkwell::{
     module::Module,
     values::{BasicValueEnum, FunctionValue, InstructionValue},
 };
-use tpde_core::{adaptor::IrAdaptor, assembler::Assembler, compiler::CompilerBase};
+use tpde_core::{adaptor::IrAdaptor, assembler::Assembler, compiler::{CompilerBase, Backend}};
 
 /// Adaptor walking an LLVM [`Module`] using `inkwell`.
 ///
@@ -78,6 +78,31 @@ impl<'ctx> IrAdaptor for LlvmIrAdaptor<'ctx> {
     fn reset(&mut self) {
         self.current = None;
     }
+
+    fn blocks(&self) -> Box<dyn Iterator<Item = Self::BlockRef> + '_> {
+        if let Some(func) = self.current {
+            Box::new(func.get_basic_blocks().into_iter().map(Some))
+        } else {
+            Box::new(std::iter::empty())
+        }
+    }
+
+    fn block_insts(&self, block: Self::BlockRef) -> Box<dyn Iterator<Item = Self::InstRef> + '_> {
+        if let Some(bb) = block {
+            Box::new(bb.get_instructions().into_iter().map(Some))
+        } else {
+            Box::new(std::iter::empty())
+        }
+    }
+
+    fn inst_operands(&self, inst: Self::InstRef) -> Box<dyn Iterator<Item = Self::ValueRef> + '_> {
+        let _ = inst;
+        Box::new(std::iter::empty())
+    }
+
+    fn inst_results(&self, _inst: Self::InstRef) -> Box<dyn Iterator<Item = Self::ValueRef> + '_> {
+        Box::new(std::iter::empty())
+    }
 }
 
 /// Minimal assembler that satisfies [`Assembler`].
@@ -110,6 +135,17 @@ impl<A: IrAdaptor> Assembler<A> for NullAssembler {
     fn sym_predef_func(&mut self, _name: &str, _local: bool, _weak: bool) -> Self::SymRef {}
 
     fn sym_add_undef(&mut self, _name: &str, _local: bool, _weak: bool) {}
+
+    fn finalize(&mut self) {}
+
+    fn build_object_file(&mut self) -> Vec<u8> { Vec::new() }
+
+    fn map<F>(&mut self, _resolve: F) -> bool
+    where
+        F: FnMut(&str) -> *const u8,
+    {
+        true
+    }
 }
 
 /// Build a [`CompilerBase`] ready to process the LLVM `Module`.
@@ -117,10 +153,13 @@ impl<A: IrAdaptor> Assembler<A> for NullAssembler {
 /// The returned compiler can immediately run [`CompilerBase::compile`].  The
 /// current implementation only gathers functions; instruction selection is
 /// still a stub.
-pub fn compile_ir<'ctx>(module: &Module<'ctx>) -> CompilerBase<LlvmIrAdaptor<'ctx>, NullAssembler> {
+pub fn compile_ir<'ctx, B>(module: &Module<'ctx>, backend: B) -> CompilerBase<LlvmIrAdaptor<'ctx>, NullAssembler, B>
+where
+    B: Backend<LlvmIrAdaptor<'ctx>, NullAssembler>,
+{
     let adaptor = LlvmIrAdaptor::new(module);
     let assembler = NullAssembler::new(false);
-    CompilerBase::new(adaptor, assembler)
+    CompilerBase::new(adaptor, assembler, backend)
 }
 
 /// Simple text marker proving the crate works.

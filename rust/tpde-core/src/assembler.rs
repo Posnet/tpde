@@ -21,6 +21,19 @@ pub trait Assembler<A: IrAdaptor> {
 
     fn sym_predef_func(&mut self, name: &str, local: bool, weak: bool) -> Self::SymRef;
     fn sym_add_undef(&mut self, name: &str, local: bool, weak: bool);
+
+    /// Finalize sections and relocations after code generation.
+    fn finalize(&mut self);
+
+    /// Write a finished object file to a byte vector.
+    fn build_object_file(&mut self) -> Vec<u8>;
+
+    /// Map the generated code into memory for JIT execution.
+    ///
+    /// `resolve` should return the address of any unresolved symbol.
+    fn map<F>(&mut self, resolve: F) -> bool
+    where
+        F: FnMut(&str) -> *const u8;
 }
 
 use object::write::{Object, SectionId, StandardSection, SymbolId, Symbol, SymbolSection, SymbolScope, SymbolKind};
@@ -161,6 +174,17 @@ impl<A: IrAdaptor> Assembler<A> for ElfAssembler {
             section: SymbolSection::Undefined,
             flags: object::write::SymbolFlags::None,
         });
+    }
+
+    fn finalize(&mut self) {}
+
+    fn build_object_file(&mut self) -> Vec<u8> { self.obj.write().expect("emit object") }
+
+    fn map<F>(&mut self, _resolve: F) -> bool
+    where
+        F: FnMut(&str) -> *const u8,
+    {
+        true
     }
 }
 

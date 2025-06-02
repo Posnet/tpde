@@ -20,6 +20,7 @@ pub mod adaptor;
 pub mod analyzer;
 pub mod assembler;
 pub mod compiler;
+pub use compiler::{Backend, CompilerBase};
 
 /// Temporary hello world to prove the crate builds.
 pub fn hello() -> &'static str {

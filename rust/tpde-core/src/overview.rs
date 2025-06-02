@@ -50,6 +50,8 @@
 //!   instructions and managing register allocation.
 //! - The assembler collects sections, relocations and unwind data and finally
 //!   writes an ELF object or maps the code into memory.
+//! - Users implement [`Backend`] to drive instruction selection and emit
+//!   prologue/epilogue code for each function.
 //!
 //! TPDE is intended for baseline code generation. It trades heavy
 //! optimization passes for very fast compile times while still delivering
