@@ -10,8 +10,10 @@
 
 use inkwell::module::Module;
 
-/// Parse the provided LLVM IR module and emit snippet encoders.
-#[allow(dead_code)]
-pub fn generate(_module: &Module) {
-    todo!("encode generation not yet implemented")
+/// Generate snippet encoder source from the provided LLVM IR `Module`.
+///
+/// The current implementation simply returns a placeholder string.  Real
+/// logic will analyse the IR and emit encoder functions.
+pub fn generate(_module: &Module) -> String {
+    "// encode generation not yet implemented\n".to_string()
 }
