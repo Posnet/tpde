@@ -11,7 +11,12 @@ use inkwell::{
     basic_block::BasicBlock,
     module::Module,
     values::{BasicValueEnum, FunctionValue, InstructionValue},
+    Either,
 };
+use inkwell::llvm_sys::prelude::LLVMValueRef;
+use inkwell::values::{AnyValue, AsValueRef};
+use std::collections::HashMap;
+use std::convert::TryFrom;
 use tpde_core::{adaptor::IrAdaptor, assembler::Assembler, compiler::{CompilerBase, Backend}};
 
 /// Adaptor walking an LLVM [`Module`] using `inkwell`.
@@ -24,6 +29,7 @@ pub struct LlvmIrAdaptor<'ctx> {
     funcs: Vec<FunctionValue<'ctx>>,
     names: Vec<String>,
     current: Option<FunctionValue<'ctx>>,
+    val_index: HashMap<LLVMValueRef, usize>,
 }
 
 impl<'ctx> LlvmIrAdaptor<'ctx> {
@@ -39,6 +45,7 @@ impl<'ctx> LlvmIrAdaptor<'ctx> {
             funcs,
             names,
             current: None,
+            val_index: HashMap::new(),
         }
     }
 }
@@ -72,11 +79,28 @@ impl<'ctx> IrAdaptor for LlvmIrAdaptor<'ctx> {
 
     fn switch_func(&mut self, func: Self::FuncRef) -> bool {
         self.current = func;
-        func.is_some()
+        self.val_index.clear();
+        if let Some(f) = func {
+            let mut idx = 0usize;
+            for param in f.get_param_iter() {
+                self.val_index.insert(param.as_value_ref(), idx);
+                idx += 1;
+            }
+            for bb in f.get_basic_blocks() {
+                for inst in bb.get_instructions() {
+                    self.val_index.insert(inst.as_value_ref(), idx);
+                    idx += 1;
+                }
+            }
+            true
+        } else {
+            false
+        }
     }
 
     fn reset(&mut self) {
         self.current = None;
+        self.val_index.clear();
     }
 
     fn entry_block(&self) -> Self::BlockRef {
@@ -104,16 +128,37 @@ impl<'ctx> IrAdaptor for LlvmIrAdaptor<'ctx> {
     }
 
     fn inst_operands(&self, inst: Self::InstRef) -> Box<dyn Iterator<Item = Self::ValueRef> + '_> {
-        let _ = inst;
-        Box::new(std::iter::empty())
+        if let Some(i) = inst {
+            Box::new(i.get_operands().map(|op| match op {
+                Some(Either::Left(v)) => Some(v),
+                _ => None,
+            }))
+        } else {
+            Box::new(std::iter::empty())
+        }
     }
 
-    fn inst_results(&self, _inst: Self::InstRef) -> Box<dyn Iterator<Item = Self::ValueRef> + '_> {
-        Box::new(std::iter::empty())
+    fn inst_results(&self, inst: Self::InstRef) -> Box<dyn Iterator<Item = Self::ValueRef> + '_> {
+        if let Some(i) = inst {
+            if i.get_type().is_void_type() {
+                Box::new(std::iter::empty())
+            } else {
+                let any = i.as_any_value_enum();
+                let val = BasicValueEnum::try_from(any).ok();
+                Box::new(val.into_iter().map(Some))
+            }
+        } else {
+            Box::new(std::iter::empty())
+        }
     }
 
     fn val_local_idx(&self, _val: Self::ValueRef) -> usize {
-        0
+        if let Some(v) = _val {
+            let key = v.as_value_ref();
+            self.val_index.get(&key).copied().unwrap_or(0)
+        } else {
+            0
+        }
     }
 
     fn val_ignore_liveness(&self, _val: Self::ValueRef) -> bool {
