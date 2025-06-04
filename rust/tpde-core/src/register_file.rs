@@ -26,7 +26,7 @@ pub struct AsmReg {
 }
 
 impl AsmReg {
-    pub fn new(bank: RegBank, id: RegId) -> Self {
+    pub const fn new(bank: RegBank, id: RegId) -> Self {
         Self { bank, id }
     }
 

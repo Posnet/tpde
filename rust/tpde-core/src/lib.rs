@@ -25,6 +25,8 @@ pub mod register_file;
 pub mod value_ref;
 pub mod x64_encoder;
 pub mod x64_backend;
+pub mod calling_convention;
+pub mod function_codegen;
 pub use compiler::{Backend, CompilerBase};
 pub use value_assignment::{ValueAssignment, ValueAssignmentManager, ValLocalIdx};
 pub use register_file::{RegisterFile, AsmReg, RegBitSet, RegAllocError};
