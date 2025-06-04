@@ -22,9 +22,11 @@ pub mod assembler;
 pub mod compiler;
 pub mod value_assignment;
 pub mod register_file;
+pub mod value_ref;
 pub use compiler::{Backend, CompilerBase};
 pub use value_assignment::{ValueAssignment, ValueAssignmentManager, ValLocalIdx};
 pub use register_file::{RegisterFile, AsmReg, RegBitSet, RegAllocError};
+pub use value_ref::{ValueRef, ValuePartRef, ValueRefBuilder, ValueRefError, CompilerContext};
 
 /// Temporary hello world to prove the crate builds.
 pub fn hello() -> &'static str {
