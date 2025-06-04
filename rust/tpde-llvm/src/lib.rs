@@ -19,6 +19,8 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use tpde_core::{adaptor::IrAdaptor, assembler::{Assembler, ElfAssembler}, compiler::{CompilerBase, Backend}};
 
+pub mod enhanced_adaptor;
+
 /// Adaptor walking an LLVM [`Module`] using `inkwell`.
 ///
 /// This very small implementation only exposes functions which is enough for
@@ -285,6 +287,12 @@ pub fn compile_ir_x64<'ctx>(module: &Module<'ctx>) -> CompilerBase<LlvmIrAdaptor
     CompilerBase::new(adaptor, assembler, backend)
 }
 
+/// Build a complete compiler using the enhanced LLVM adaptor for real-world compilation.
+pub fn compile_enhanced_ir<'ctx>(module: &Module<'ctx>) -> Result<tpde_core::complete_compiler::CompleteCompiler<crate::enhanced_adaptor::EnhancedLlvmAdaptor<'ctx>>, tpde_core::complete_compiler::CompilerError> {
+    let adaptor = crate::enhanced_adaptor::EnhancedLlvmAdaptor::new(module);
+    tpde_core::complete_compiler::CompleteCompiler::new(adaptor)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -332,5 +340,75 @@ mod tests {
 
         let mut compiler = compile_ir_x64(&module);
         assert!(compiler.compile());
+    }
+
+    #[test]
+    fn test_enhanced_compiler_simple_function() {
+        let context = Context::create();
+        let module = context.create_module("test");
+        let i32_type = context.i32_type();
+        let fn_type = i32_type.fn_type(&[i32_type.into(), i32_type.into()], false);
+        let function = module.add_function("add", fn_type, None);
+        let basic_block = context.append_basic_block(function, "entry");
+        
+        let builder = context.create_builder();
+        builder.position_at_end(basic_block);
+        let a = function.get_nth_param(0).unwrap().into_int_value();
+        let b = function.get_nth_param(1).unwrap().into_int_value();
+        let result = builder.build_int_add(a, b, "result").unwrap();
+        builder.build_return(Some(&result)).unwrap();
+
+        let mut compiler = compile_enhanced_ir(&module).unwrap();
+        assert!(compiler.compile_all().is_ok());
+    }
+
+    fn create_factorial_ir(context: &Context) -> Module {
+        let module = context.create_module("factorial");
+        let i32_type = context.i32_type();
+        let fn_type = i32_type.fn_type(&[i32_type.into()], false);
+        let function = module.add_function("factorial", fn_type, None);
+        
+        let entry_block = context.append_basic_block(function, "entry");
+        let if_block = context.append_basic_block(function, "if.then");
+        let else_block = context.append_basic_block(function, "if.else");
+        let return_block = context.append_basic_block(function, "return");
+        
+        let builder = context.create_builder();
+        
+        // Entry block: if (n <= 1)
+        builder.position_at_end(entry_block);
+        let n = function.get_nth_param(0).unwrap().into_int_value();
+        let one = i32_type.const_int(1, false);
+        let cond = builder.build_int_compare(inkwell::IntPredicate::SLE, n, one, "cond").unwrap();
+        builder.build_conditional_branch(cond, if_block, else_block).unwrap();
+        
+        // If block: return 1
+        builder.position_at_end(if_block);
+        builder.build_unconditional_branch(return_block).unwrap();
+        
+        // Else block: return n * factorial(n - 1)
+        builder.position_at_end(else_block);
+        let n_minus_1 = builder.build_int_sub(n, one, "n_minus_1").unwrap();
+        let call = builder.build_call(function, &[n_minus_1.into()], "call").unwrap();
+        let result = call.try_as_basic_value().left().unwrap().into_int_value();
+        let product = builder.build_int_mul(n, result, "product").unwrap();
+        builder.build_unconditional_branch(return_block).unwrap();
+        
+        // Return block with PHI node
+        builder.position_at_end(return_block);
+        let phi = builder.build_phi(i32_type, "result").unwrap();
+        phi.add_incoming(&[(&one, if_block), (&product, else_block)]);
+        builder.build_return(Some(&phi.as_basic_value())).unwrap();
+        
+        module
+    }
+
+    #[test]
+    fn test_enhanced_compiler_factorial() {
+        let context = Context::create();
+        let module = create_factorial_ir(&context);
+        
+        let mut compiler = compile_enhanced_ir(&module).unwrap();
+        assert!(compiler.compile_all().is_ok());
     }
 }

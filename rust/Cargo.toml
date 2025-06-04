@@ -9,4 +9,5 @@ resolver = "2"
 
 [workspace.dependencies]
 inkwell = { git = "https://github.com/stevefan1999-personal/inkwell.git", features = ["llvm19-1-prefer-dynamic"] }
+llvm-sys = { version = "191", features = ["prefer-dynamic"] }
 object = { version = "0.37", features = ["all"] }
