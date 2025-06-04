@@ -17,7 +17,7 @@ use inkwell::llvm_sys::prelude::LLVMValueRef;
 use inkwell::values::{AnyValue, AsValueRef};
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use tpde_core::{adaptor::IrAdaptor, assembler::Assembler, compiler::{CompilerBase, Backend}};
+use tpde_core::{adaptor::IrAdaptor, assembler::{Assembler, ElfAssembler}, compiler::{CompilerBase, Backend}};
 
 /// Adaptor walking an LLVM [`Module`] using `inkwell`.
 ///
@@ -207,6 +207,50 @@ impl<A: IrAdaptor> Assembler<A> for NullAssembler {
     }
 }
 
+/// Basic x86-64 backend for LLVM IR compilation.
+pub struct X64Backend {
+    reg_usage: u64,
+}
+
+impl X64Backend {
+    pub fn new() -> Self {
+        Self { reg_usage: 0 }
+    }
+
+    fn emit_mov_imm32(&mut self, asm: &mut ElfAssembler, reg: u8, imm: u32) {
+        // mov eax, imm32 -> 0xB8 + r, imm32
+        let mut bytes = vec![0xB8 + reg];
+        bytes.extend_from_slice(&imm.to_le_bytes());
+        asm.append(&bytes, 1);
+    }
+
+    fn emit_ret(&mut self, asm: &mut ElfAssembler) {
+        // ret -> 0xC3
+        asm.append(&[0xC3], 1);
+    }
+
+    fn compile_return(&mut self, asm: &mut ElfAssembler, _inst: InstructionValue) -> bool {
+        // Simple return - just emit ret instruction
+        self.emit_ret(asm);
+        true
+    }
+}
+
+impl<A: IrAdaptor> Backend<A, ElfAssembler> for X64Backend {
+    fn gen_prologue(&mut self, _base: &mut CompilerBase<A, ElfAssembler, Self>) {
+        // Prologue handled separately
+    }
+
+    fn gen_epilogue(&mut self, _base: &mut CompilerBase<A, ElfAssembler, Self>) {
+        // Epilogue handled separately  
+    }
+
+    fn compile_inst(&mut self, _base: &mut CompilerBase<A, ElfAssembler, Self>, _inst: A::InstRef) -> bool {
+        // Placeholder - actual instruction selection would go here
+        true
+    }
+}
+
 /// Simple backend that prints instruction names.
 pub struct PrintBackend;
 
@@ -225,15 +269,19 @@ impl<A: IrAdaptor, ASM: Assembler<A>> Backend<A, ASM> for PrintBackend {
     }
 }
 
-/// Build a [`CompilerBase`] ready to process the LLVM `Module`.
-///
-/// The returned compiler can immediately run [`CompilerBase::compile`].  The
-/// current implementation only gathers functions; instruction selection is
-/// still a stub.
+/// Build a [`CompilerBase`] ready to process the LLVM `Module` with null assembler.
 pub fn compile_ir<'ctx>(module: &Module<'ctx>) -> CompilerBase<LlvmIrAdaptor<'ctx>, NullAssembler, PrintBackend> {
     let adaptor = LlvmIrAdaptor::new(module);
     let assembler = NullAssembler::new(false);
     let backend = PrintBackend;
+    CompilerBase::new(adaptor, assembler, backend)
+}
+
+/// Build a [`CompilerBase`] with ELF assembler for x86-64 compilation.
+pub fn compile_ir_x64<'ctx>(module: &Module<'ctx>) -> CompilerBase<LlvmIrAdaptor<'ctx>, ElfAssembler, X64Backend> {
+    let adaptor = LlvmIrAdaptor::new(module);
+    let assembler = <ElfAssembler as Assembler<LlvmIrAdaptor>>::new(true);
+    let backend = X64Backend::new();
     CompilerBase::new(adaptor, assembler, backend)
 }
 
@@ -265,6 +313,24 @@ mod tests {
         builder.build_return(Some(&return_val)).unwrap();
 
         let mut compiler = compile_ir(&module);
+        assert!(compiler.compile());
+    }
+
+    #[test]
+    fn test_compile_x64_backend() {
+        let context = Context::create();
+        let module = context.create_module("test");
+        let i32_type = context.i32_type();
+        let fn_type = i32_type.fn_type(&[], false);
+        let function = module.add_function("main", fn_type, None);
+        let basic_block = context.append_basic_block(function, "entry");
+        
+        let builder = context.create_builder();
+        builder.position_at_end(basic_block);
+        let return_val = i32_type.const_int(42, false);
+        builder.build_return(Some(&return_val)).unwrap();
+
+        let mut compiler = compile_ir_x64(&module);
         assert!(compiler.compile());
     }
 }
