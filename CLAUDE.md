@@ -120,3 +120,185 @@ TPDE is structured around three core concepts connected through well-defined int
 - Logging controlled by `TPDE_LOGGING` (DebugOnly/ON/OFF)
 - Debug builds enable asserts via `TPDE_ASSERTS`
 - Address sanitizer enabled in debug mode for top-level builds
+
+## Rust Implementation Status
+
+### Current Status: ~15-20% Complete
+
+The Rust implementation in `rust/` provides a promising foundation with trait-based abstractions that mirror the C++ concepts, but is missing most critical functionality needed for actual compilation.
+
+### Implementation Gap Analysis
+
+#### ✅ **Completed Components**
+- **IRAdaptor trait** - Well-designed abstraction for IR traversal (`rust/tpde-core/src/adaptor.rs`)
+- **Basic CompilerBase** - Core compilation flow outlined (`rust/tpde-core/src/compiler.rs`)
+- **Liveness Analysis** - RPO ordering and basic value liveness tracking (`rust/tpde-core/src/analyzer.rs`)
+- **ELF Assembler** - Functional object file generation using `object` crate (`rust/tpde-core/src/assembler.rs`)
+- **LLVM Integration** - Basic module parsing with inkwell (`rust/tpde-llvm/src/lib.rs`)
+- **Encodegen Tool** - IR pattern analysis and stub generation (`rust/tpde-encodegen/`)
+
+#### ❌ **Critical Missing Components (~80-85% of functionality)**
+
+**Register Allocation & Value Management (~90% missing):**
+- Complete ValueAssignment system with multi-part value support
+- RegisterFile with lock counts, fixed assignments, clock-based allocation
+- AssignmentPartRef for efficient register allocation tracking
+- ScratchReg infrastructure for temporary register management
+- Stack slot allocation with free lists and spill management
+- PHI node resolution with cycle detection
+
+**Instruction Selection (~95% missing):**
+- Real machine code generation (current: placeholder stubs)
+- x86-64/ARM64 instruction encoders
+- Address calculation and memory operation encoding
+- Immediate value materialization and optimization
+- Branch and call instruction handling
+- Complex expression lowering
+
+**Calling Conventions (~100% missing):**
+- Function prologue/epilogue generation
+- Argument passing (registers vs stack placement)
+- Return value handling according to ABI
+- System V x86-64 and ARM64 AAPCS support
+- Unwind information generation (.eh_frame)
+
+**Advanced IR Support (~85% missing):**
+- ConstantExpr decomposition and handling
+- Global variable and alloca support
+- LLVM intrinsics implementation
+- Complex control flow (switches, indirect calls)
+- Exception handling infrastructure
+
+### Development Roadmap
+
+#### **Phase 1: Core Infrastructure (Months 1-3)**
+**Goal**: Enable compilation of simple arithmetic functions
+
+1. **ValueAssignment System** (`rust/tpde-core/src/value_assignment.rs`)
+   - Port C++ ValueAssignment, AssignmentPartRef infrastructure
+   - Implement multi-part value tracking
+   - Add register vs memory location management
+
+2. **RegisterFile Implementation** (`rust/tpde-core/src/register_file.rs`)
+   - Basic register allocation with lock counts
+   - Clock-based allocation algorithm
+   - Register pressure tracking and spilling
+
+3. **Stack Frame Management** (`rust/tpde-core/src/stack_frame.rs`)
+   - Stack slot allocation
+   - Spill slot management
+   - Frame layout calculation
+
+4. **Basic x86-64 Instruction Encoders** (`rust/tpde-llvm/src/x64/encoders.rs`)
+   - mov, add, sub, ret instructions
+   - Immediate value encoding
+   - Register-to-register operations
+
+**Milestone**: Compile `int add(int a, int b) { return a + b; }`
+
+#### **Phase 2: Basic Function Compilation (Months 4-6)**
+**Goal**: Handle function calls and control flow
+
+1. **Calling Convention Implementation**
+   - System V x86-64 ABI support
+   - Function prologue/epilogue generation
+   - Argument register allocation
+   - Return value handling
+
+2. **Memory Operations**
+   - Load/store instruction selection
+   - Address calculation optimization
+   - Stack access patterns
+
+3. **Control Flow**
+   - Branch instruction encoding
+   - Basic block transitions
+   - Simple conditional compilation
+
+4. **Enhanced LLVM Backend**
+   - Better constant handling
+   - Support for allocas and globals
+   - Basic intrinsics (memcpy, etc.)
+
+**Milestone**: Compile functions with local variables, calls, and branches
+
+#### **Phase 3: Advanced Features (Months 7-9)**
+**Goal**: Handle complex IR constructs
+
+1. **PHI Node Resolution**
+   - Cycle detection and breaking
+   - Register allocation across merges
+   - Optimization of PHI copies
+
+2. **Complex Instruction Selection**
+   - Pattern matching for compound operations
+   - Addressing mode optimization
+   - Instruction fusion opportunities
+
+3. **JIT Execution Support**
+   - Memory mapping for generated code
+   - Runtime symbol resolution
+   - Unwind information registration
+
+4. **ARM64 Backend**
+   - Port x86-64 work to ARM64
+   - AAPCS calling convention
+   - ARM64-specific optimizations
+
+**Milestone**: Feature parity with basic C++ functionality
+
+#### **Phase 4: Optimization & Completeness (Months 10-12)**
+**Goal**: Production-ready implementation
+
+1. **Advanced Register Allocation**
+   - Linear scan improvements
+   - Copy coalescing
+   - Register pressure heuristics
+
+2. **Performance Optimization**
+   - Compile-time performance tuning
+   - Memory allocation optimization
+   - Benchmark against C++ version
+
+3. **Comprehensive Testing**
+   - LLVM IR compatibility test suite
+   - Performance regression tests
+   - Fuzzing and stress testing
+
+4. **Documentation & Tooling**
+   - API documentation
+   - Developer guides
+   - Integration examples
+
+### Development Guidelines
+
+#### **Architecture Principles**
+- **Maintain trait-based design** - Rust's type system provides better safety than C++ concepts
+- **Preserve performance characteristics** - Must match C++ compile-time performance
+- **Use safe Rust where possible** - Only use `unsafe` for performance-critical register allocation
+- **Comprehensive testing** - Each component should have unit and integration tests
+
+#### **Implementation Notes**
+- **Value tracking**: The C++ `ValLocalIdx` system needs careful Rust translation
+- **Register allocation**: May require `unsafe` blocks for performance-critical paths
+- **Memory management**: Use `Box`/`Vec` instead of C++ custom allocators initially
+- **Error handling**: Leverage Rust's `Result` types for better error propagation
+- **LLVM integration**: inkwell provides safer interface than direct C++ API
+
+#### **Critical Success Factors**
+1. **Register allocation correctness** - Core to TPDE's value proposition
+2. **Compile-time performance** - Must maintain 10-20x speedup over LLVM -O0
+3. **ABI compliance** - Generated code must work with standard calling conventions
+4. **Test coverage** - Comprehensive validation against C++ implementation
+
+### Contribution Priorities
+
+When working on the Rust implementation, focus on these areas in order:
+
+1. **Phase 1 components** - Core infrastructure needed for any compilation
+2. **Test-driven development** - Write failing tests first, then implement
+3. **Performance validation** - Benchmark against C++ version regularly
+4. **Documentation** - Keep architecture decisions well-documented
+5. **Incremental validation** - Ensure each component works before moving on
+
+The Rust implementation has excellent architectural foundations but requires significant development effort to reach production readiness. The trait-based design provides better type safety than the C++ version, making the investment worthwhile for long-term maintainability.
