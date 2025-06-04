@@ -25,7 +25,6 @@ use tpde_core::{adaptor::IrAdaptor, assembler::Assembler, compiler::{CompilerBas
 /// [`CompilerBase::compile`].  Values, blocks and instructions are represented
 /// as `Option` types so we can define an invalid constant.
 pub struct LlvmIrAdaptor<'ctx> {
-    module: Module<'ctx>,
     funcs: Vec<FunctionValue<'ctx>>,
     names: Vec<String>,
     current: Option<FunctionValue<'ctx>>,
@@ -41,7 +40,6 @@ impl<'ctx> LlvmIrAdaptor<'ctx> {
             .map(|f| f.get_name().to_str().unwrap_or("").to_string())
             .collect();
         Self {
-            module: module.clone(),
             funcs,
             names,
             current: None,
@@ -152,8 +150,8 @@ impl<'ctx> IrAdaptor for LlvmIrAdaptor<'ctx> {
         }
     }
 
-    fn val_local_idx(&self, _val: Self::ValueRef) -> usize {
-        if let Some(v) = _val {
+    fn val_local_idx(&self, val: Self::ValueRef) -> usize {
+        if let Some(v) = val {
             let key = v.as_value_ref();
             self.val_index.get(&key).copied().unwrap_or(0)
         } else {
@@ -209,21 +207,64 @@ impl<A: IrAdaptor> Assembler<A> for NullAssembler {
     }
 }
 
+/// Simple backend that prints instruction names.
+pub struct PrintBackend;
+
+impl<A: IrAdaptor, ASM: Assembler<A>> Backend<A, ASM> for PrintBackend {
+    fn gen_prologue(&mut self, _base: &mut CompilerBase<A, ASM, Self>) {
+        // println!("prologue");
+    }
+
+    fn gen_epilogue(&mut self, _base: &mut CompilerBase<A, ASM, Self>) {
+        // println!("epilogue");
+    }
+
+    fn compile_inst(&mut self, _base: &mut CompilerBase<A, ASM, Self>, _inst: A::InstRef) -> bool {
+        // println!("compile_inst");
+        true
+    }
+}
+
 /// Build a [`CompilerBase`] ready to process the LLVM `Module`.
 ///
 /// The returned compiler can immediately run [`CompilerBase::compile`].  The
 /// current implementation only gathers functions; instruction selection is
 /// still a stub.
-pub fn compile_ir<'ctx, B>(module: &Module<'ctx>, backend: B) -> CompilerBase<LlvmIrAdaptor<'ctx>, NullAssembler, B>
-where
-    B: Backend<LlvmIrAdaptor<'ctx>, NullAssembler>,
-{
+pub fn compile_ir<'ctx>(module: &Module<'ctx>) -> CompilerBase<LlvmIrAdaptor<'ctx>, NullAssembler, PrintBackend> {
     let adaptor = LlvmIrAdaptor::new(module);
     let assembler = NullAssembler::new(false);
+    let backend = PrintBackend;
     CompilerBase::new(adaptor, assembler, backend)
 }
 
-/// Simple text marker proving the crate works.
-pub fn compiler() -> &'static str {
-    "TPDE LLVM backend"
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use inkwell::context::Context;
+
+    #[test]
+    fn test_compile_empty_module() {
+        let context = Context::create();
+        let module = context.create_module("test");
+        let mut compiler = compile_ir(&module);
+        assert!(compiler.compile());
+    }
+
+    #[test]
+    fn test_compile_simple_function() {
+        let context = Context::create();
+        let module = context.create_module("test");
+        let i32_type = context.i32_type();
+        let fn_type = i32_type.fn_type(&[], false);
+        let function = module.add_function("main", fn_type, None);
+        let basic_block = context.append_basic_block(function, "entry");
+        
+        let builder = context.create_builder();
+        builder.position_at_end(basic_block);
+        let return_val = i32_type.const_int(42, false);
+        builder.build_return(Some(&return_val)).unwrap();
+
+        let mut compiler = compile_ir(&module);
+        assert!(compiler.compile());
+    }
 }
