@@ -20,7 +20,9 @@ pub mod adaptor;
 pub mod analyzer;
 pub mod assembler;
 pub mod compiler;
+pub mod value_assignment;
 pub use compiler::{Backend, CompilerBase};
+pub use value_assignment::{ValueAssignment, ValueAssignmentManager, ValLocalIdx};
 
 /// Temporary hello world to prove the crate builds.
 pub fn hello() -> &'static str {
