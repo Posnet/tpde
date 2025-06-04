@@ -62,9 +62,9 @@ pub trait Backend<A: IrAdaptor, ASM: Assembler<A>> {
 /// liveness info.  This file only implements a thin skeleton so far.
 #[allow(dead_code)]
 pub struct CompilerBase<A: IrAdaptor, ASM: Assembler<A>, C: Backend<A, ASM>> {
-    adaptor: A,
-    analyzer: Analyzer<A>,
-    assembler: ASM,
+    pub adaptor: A,
+    pub analyzer: Analyzer<A>,
+    pub assembler: ASM,
     backend: C,
 }
 

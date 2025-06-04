@@ -8,3 +8,4 @@ path = "src/lib.rs"
 
 [dependencies]
 object = { workspace = true }
+iced-x86 = { version = "1.21", features = ["code_asm"] }
