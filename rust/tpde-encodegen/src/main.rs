@@ -24,19 +24,19 @@ fn main() {
 
     let ir = fs::read_to_string(&input).expect("failed to read input");
     let context = Context::create();
-    let tokens = match tpde_encodegen::parse_and_generate(&context, &ir) {
-        Ok(t) => t,
+    let module = match tpde_encodegen::parse_module(&context, &ir) {
+        Ok(m) => m,
         Err(e) => {
             eprintln!("parse error: {}", e);
             return;
         }
     };
 
+    let output_code = tpde_encodegen::generate(&module);
+
     if let Some(out) = output {
-        fs::write(out, tokens.join("\n")).expect("failed to write output");
+        fs::write(out, &output_code).expect("failed to write output");
     } else {
-        for t in tokens {
-            println!("{}", t);
-        }
+        print!("{}", output_code);
     }
 }
