@@ -478,6 +478,98 @@ impl X64Encoder {
         Ok(())
     }
     
+    // SETcc instructions for condition code to boolean conversion
+    
+    /// Emit SETE instruction - set byte on equal.
+    pub fn sete_reg(&mut self, dst: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp8_register(dst)?;
+        
+        self.assembler.sete(dst_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit SETNE instruction - set byte on not equal.
+    pub fn setne_reg(&mut self, dst: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp8_register(dst)?;
+        
+        self.assembler.setne(dst_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit SETG instruction - set byte on greater (signed).
+    pub fn setg_reg(&mut self, dst: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp8_register(dst)?;
+        
+        self.assembler.setg(dst_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit SETGE instruction - set byte on greater or equal (signed).
+    pub fn setge_reg(&mut self, dst: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp8_register(dst)?;
+        
+        self.assembler.setge(dst_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit SETL instruction - set byte on less (signed).
+    pub fn setl_reg(&mut self, dst: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp8_register(dst)?;
+        
+        self.assembler.setl(dst_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit SETLE instruction - set byte on less or equal (signed).
+    pub fn setle_reg(&mut self, dst: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp8_register(dst)?;
+        
+        self.assembler.setle(dst_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit SETA instruction - set byte on above (unsigned).
+    pub fn seta_reg(&mut self, dst: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp8_register(dst)?;
+        
+        self.assembler.seta(dst_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit SETAE instruction - set byte on above or equal (unsigned).
+    pub fn setae_reg(&mut self, dst: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp8_register(dst)?;
+        
+        self.assembler.setae(dst_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit SETB instruction - set byte on below (unsigned).
+    pub fn setb_reg(&mut self, dst: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp8_register(dst)?;
+        
+        self.assembler.setb(dst_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit SETBE instruction - set byte on below or equal (unsigned).
+    pub fn setbe_reg(&mut self, dst: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp8_register(dst)?;
+        
+        self.assembler.setbe(dst_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
     /// Emit SUB instruction - immediate to register (32-bit).
     pub fn sub32_reg_imm(&mut self, dst: AsmReg, imm: i32) -> Result<(), EncodingError> {
         let dst_reg = self.to_gp32_register(dst)?;
