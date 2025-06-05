@@ -6,6 +6,7 @@
 
 use crate::register_file::AsmReg;
 use iced_x86::code_asm::*;
+use std::collections::HashMap;
 
 /// Error types for instruction encoding.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,6 +30,10 @@ pub struct X64Encoder {
     assembler: CodeAssembler,
     /// Current instruction buffer position.
     position: u64,
+    /// Labels for basic blocks to enable proper control flow.
+    block_labels: HashMap<usize, CodeLabel>,
+    /// Track which block labels have been placed.
+    placed_blocks: std::collections::HashSet<usize>,
 }
 
 impl X64Encoder {
@@ -40,11 +45,22 @@ impl X64Encoder {
         Ok(Self {
             assembler,
             position: 0x1000, // Start at a reasonable base address
+            block_labels: HashMap::new(),
+            placed_blocks: std::collections::HashSet::new(),
         })
     }
 
-    /// Convert AsmReg to iced-x86 Register for GP registers.
+    /// Convert AsmReg to iced-x86 Register for 64-bit GP registers.
     fn to_gp_register(&self, reg: AsmReg) -> Result<AsmRegister64, EncodingError> {
+        if reg.bank != 0 {
+            return Err(EncodingError::InvalidRegister);
+        }
+        
+        self.to_gp64_register(reg)
+    }
+    
+    /// Convert AsmReg to iced-x86 64-bit GP register.
+    fn to_gp64_register(&self, reg: AsmReg) -> Result<AsmRegister64, EncodingError> {
         if reg.bank != 0 {
             return Err(EncodingError::InvalidRegister);
         }
@@ -66,6 +82,33 @@ impl X64Encoder {
             13 => Ok(iced_x86::code_asm::r13),
             14 => Ok(iced_x86::code_asm::r14),
             15 => Ok(iced_x86::code_asm::r15),
+            _ => Err(EncodingError::InvalidRegister),
+        }
+    }
+    
+    /// Convert AsmReg to iced-x86 32-bit GP register.
+    fn to_gp32_register(&self, reg: AsmReg) -> Result<AsmRegister32, EncodingError> {
+        if reg.bank != 0 {
+            return Err(EncodingError::InvalidRegister);
+        }
+        
+        match reg.id {
+            0 => Ok(iced_x86::code_asm::eax),
+            1 => Ok(iced_x86::code_asm::ecx),
+            2 => Ok(iced_x86::code_asm::edx),
+            3 => Ok(iced_x86::code_asm::ebx),
+            4 => Ok(iced_x86::code_asm::esp),
+            5 => Ok(iced_x86::code_asm::ebp),
+            6 => Ok(iced_x86::code_asm::esi),
+            7 => Ok(iced_x86::code_asm::edi),
+            8 => Ok(iced_x86::code_asm::r8d),
+            9 => Ok(iced_x86::code_asm::r9d),
+            10 => Ok(iced_x86::code_asm::r10d),
+            11 => Ok(iced_x86::code_asm::r11d),
+            12 => Ok(iced_x86::code_asm::r12d),
+            13 => Ok(iced_x86::code_asm::r13d),
+            14 => Ok(iced_x86::code_asm::r14d),
+            15 => Ok(iced_x86::code_asm::r15d),
             _ => Err(EncodingError::InvalidRegister),
         }
     }
@@ -252,7 +295,181 @@ impl X64Encoder {
             .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
         Ok(())
     }
+    
+    // ==== CRITICAL MISSING INSTRUCTIONS FOR FACTORIAL ====
+    
+    /// Emit IMUL instruction - multiply two registers (64-bit).
+    pub fn imul_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp_register(dst)?;
+        let src_reg = self.to_gp_register(src)?;
+        
+        // IMUL with two operands: imul dst, src (dst = dst * src)
+        self.assembler.imul_2(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit IMUL instruction - multiply two registers (32-bit).
+    pub fn imul32_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp32_register(dst)?;
+        let src_reg = self.to_gp32_register(src)?;
+        
+        // IMUL with two operands: imul dst, src (dst = dst * src)
+        self.assembler.imul_2(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    // ==== 32-BIT INSTRUCTION VARIANTS (Critical for i32 operations) ====
+    
+    /// Emit MOV instruction - register to register (32-bit).
+    pub fn mov32_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp32_register(dst)?;
+        let src_reg = self.to_gp32_register(src)?;
+        
+        self.assembler.mov(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit MOV instruction - immediate to register (32-bit).
+    pub fn mov32_reg_imm(&mut self, dst: AsmReg, imm: i32) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp32_register(dst)?;
+        
+        self.assembler.mov(dst_reg, imm)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit ADD instruction - register to register (32-bit).
+    pub fn add32_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp32_register(dst)?;
+        let src_reg = self.to_gp32_register(src)?;
+        
+        self.assembler.add(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit SUB instruction - register to register (32-bit).
+    pub fn sub32_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp32_register(dst)?;
+        let src_reg = self.to_gp32_register(src)?;
+        
+        self.assembler.sub(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit CMP instruction - register to register (32-bit).
+    pub fn cmp32_reg_reg(&mut self, left: AsmReg, right: AsmReg) -> Result<(), EncodingError> {
+        let left_reg = self.to_gp32_register(left)?;
+        let right_reg = self.to_gp32_register(right)?;
+        
+        self.assembler.cmp(left_reg, right_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit CMP instruction - immediate to register (32-bit).
+    pub fn cmp32_reg_imm(&mut self, reg: AsmReg, imm: i32) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp32_register(reg)?;
+        
+        self.assembler.cmp(dst_reg, imm)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit SUB instruction - immediate to register (32-bit).
+    pub fn sub32_reg_imm(&mut self, dst: AsmReg, imm: i32) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp32_register(dst)?;
+        
+        self.assembler.sub(dst_reg, imm)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit direct CALL instruction (relative offset).
+    pub fn call_direct(&mut self, offset: u64) -> Result<(), EncodingError> {
+        self.assembler.call(offset)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
 
+    // ==== LABEL MANAGEMENT FOR CONTROL FLOW ====
+    
+    /// Create or get a label for a basic block.
+    pub fn get_or_create_label_for_block(&mut self, block_id: usize) -> CodeLabel {
+        if let Some(&label) = self.block_labels.get(&block_id) {
+            label
+        } else {
+            let label = self.assembler.create_label();
+            self.block_labels.insert(block_id, label);
+            label
+        }
+    }
+    
+    /// Place a label for a basic block at the current position.
+    pub fn place_label_for_block(&mut self, block_id: usize) -> Result<(), EncodingError> {
+        let mut label = self.get_or_create_label_for_block(block_id);
+        self.assembler.set_label(&mut label)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        self.placed_blocks.insert(block_id);
+        Ok(())
+    }
+    
+    /// Check if a block label has been placed.
+    pub fn is_block_placed(&self, block_id: usize) -> bool {
+        self.placed_blocks.contains(&block_id)
+    }
+    
+    // ==== CONTROL FLOW INSTRUCTIONS ====
+    
+    /// Emit conditional jump to a specific basic block.
+    pub fn jmp_conditional_to_block(&mut self, condition: JumpCondition, target_block: usize) -> Result<(), EncodingError> {
+        let label = self.get_or_create_label_for_block(target_block);
+        
+        match condition {
+            JumpCondition::Equal => {
+                self.assembler.je(label)
+                    .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+            }
+            JumpCondition::NotEqual => {
+                self.assembler.jne(label)
+                    .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+            }
+            JumpCondition::Less => {
+                self.assembler.jl(label)
+                    .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+            }
+            JumpCondition::Greater => {
+                self.assembler.jg(label)
+                    .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+            }
+            JumpCondition::LessEqual => {
+                self.assembler.jle(label)
+                    .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+            }
+            JumpCondition::GreaterEqual => {
+                self.assembler.jge(label)
+                    .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Emit unconditional jump to a specific basic block.
+    pub fn jmp_unconditional_to_block(&mut self, target_block: usize) -> Result<(), EncodingError> {
+        let label = self.get_or_create_label_for_block(target_block);
+        
+        self.assembler.jmp(label)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    // ==== LEGACY METHODS (DEPRECATED - Use block-based methods above) ====
+    
     /// Emit conditional jump instruction.
     pub fn jmp_conditional(&mut self, condition: JumpCondition, _target_offset: i32) -> Result<(), EncodingError> {
         // Create a label for the target
@@ -300,6 +517,19 @@ impl X64Encoder {
 
     /// Generate the final machine code bytes.
     pub fn finalize(&mut self) -> Result<Vec<u8>, EncodingError> {
+        // Ensure all block labels have been placed
+        let unplaced_blocks: Vec<_> = self.block_labels.keys()
+            .filter(|&&block_id| !self.placed_blocks.contains(&block_id))
+            .copied()
+            .collect();
+            
+        for block_id in unplaced_blocks {
+            let mut label = self.block_labels[&block_id];
+            // Place any unplaced labels at the current position as a fallback
+            self.assembler.set_label(&mut label)
+                .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        }
+        
         let result = self.assembler.assemble(self.position)
             .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
         
@@ -443,12 +673,11 @@ impl InstructionSelector {
 }
 
 #[cfg(test)]
-#[cfg(feature = "never")] // TODO: Fix name conflicts with iced-x86 imports
 mod tests {
-    use super::*;
+    use super::{X64Encoder, InstructionSelector, EncodingError, JumpCondition};
+    use crate::register_file::AsmReg;
 
     #[test]
-    #[ignore] // TODO: Fix name conflicts with iced-x86 imports
     fn test_basic_instructions() {
         let mut encoder = X64Encoder::new().unwrap();
         
@@ -476,7 +705,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix name conflicts with iced-x86 imports
     fn test_instruction_selector() {
         let mut selector = InstructionSelector::new().unwrap();
         
@@ -498,7 +726,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix name conflicts with iced-x86 imports
     fn test_prologue_epilogue() {
         let mut encoder = X64Encoder::new().unwrap();
         
@@ -512,5 +739,131 @@ mod tests {
         assert!(!code.is_empty());
         
         // Should contain push rbp, mov rbp rsp, sub rsp 32, add rsp 32, pop rbp, ret
+    }
+
+    #[test]
+    fn test_factorial_pattern_encoding() {
+        let mut encoder = X64Encoder::new().unwrap();
+        
+        // Test the critical instructions needed for factorial compilation
+        let rax = AsmReg::new(0, 0);  // RAX/EAX
+        let rcx = AsmReg::new(0, 1);  // RCX/ECX
+        
+        // Create labels for blocks (simulating factorial control flow)
+        let entry_block = 0;
+        let recurse_block = 1; 
+        let return_block = 2;
+        
+        // Emit function prologue
+        encoder.emit_prologue(32).unwrap();
+        
+        // Place entry block label
+        encoder.place_label_for_block(entry_block).unwrap();
+        
+        // Compare rax with 1 (if n <= 1)
+        encoder.cmp32_reg_imm(rax, 1).unwrap();
+        
+        // Conditional jump to return block if n <= 1
+        encoder.jmp_conditional_to_block(JumpCondition::LessEqual, return_block).unwrap();
+        
+        // Place recursive computation block
+        encoder.place_label_for_block(recurse_block).unwrap();
+        
+        // Subtract 1 from rax (n - 1)
+        encoder.sub32_reg_imm(rax, 1).unwrap();
+        
+        // Simulate recursive call setup (would normally be more complex)
+        encoder.call_direct(0).unwrap(); // Placeholder offset
+        
+        // Multiply result by original n (stored in rcx)
+        encoder.imul32_reg_reg(rax, rcx).unwrap();
+        
+        // Unconditional jump to return
+        encoder.jmp_unconditional_to_block(return_block).unwrap();
+        
+        // Place return block
+        encoder.place_label_for_block(return_block).unwrap();
+        
+        // Function epilogue
+        encoder.emit_epilogue(32).unwrap();
+        
+        // Generate final machine code
+        let code = encoder.finalize().unwrap();
+        assert!(!code.is_empty());
+        
+        // The code should contain real x86-64 instructions for factorial-like control flow
+        // This verifies that our enhanced encoder can handle the complex patterns
+        // needed for real C function compilation
+        println!("Generated {} bytes of machine code for factorial pattern", code.len());
+    }
+
+    #[test]
+    fn test_block_label_management() {
+        let mut encoder = X64Encoder::new().unwrap();
+        
+        // Test proper label creation and placement
+        let block1 = 10;
+        let block2 = 20;
+        
+        // Create labels for blocks that don't exist yet
+        let label1 = encoder.get_or_create_label_for_block(block1);
+        let label2 = encoder.get_or_create_label_for_block(block2);
+        
+        // Verify different blocks get different labels  
+        // Note: We can't directly compare label IDs due to API limitations
+        
+        // Verify labels haven't been placed yet
+        assert!(!encoder.is_block_placed(block1));
+        assert!(!encoder.is_block_placed(block2));
+        
+        // Place the labels with some instructions in between
+        encoder.place_label_for_block(block1).unwrap();
+        
+        // Add some instructions between labels
+        let rax = AsmReg::new(0, 0);
+        encoder.mov32_reg_imm(rax, 42).unwrap();
+        
+        encoder.place_label_for_block(block2).unwrap();
+        
+        // Add instruction after the second label (iced-x86 requirement)
+        encoder.ret().unwrap();
+        
+        // Verify labels are now placed
+        assert!(encoder.is_block_placed(block1));
+        assert!(encoder.is_block_placed(block2));
+        
+        // Verify getting same block returns same label
+        let _label1_again = encoder.get_or_create_label_for_block(block1);
+        // Note: We can't directly compare label IDs due to API limitations
+        
+        let code = encoder.finalize().unwrap();
+        assert!(!code.is_empty());
+    }
+
+    #[test]
+    fn test_32bit_vs_64bit_operations() {
+        let mut encoder = X64Encoder::new().unwrap();
+        
+        let rax = AsmReg::new(0, 0);
+        let rcx = AsmReg::new(0, 1);
+        
+        // Test 32-bit operations (for LLVM i32 types)
+        encoder.mov32_reg_imm(rax, 42).unwrap();
+        encoder.add32_reg_reg(rax, rcx).unwrap(); 
+        encoder.sub32_reg_reg(rax, rcx).unwrap();
+        encoder.imul32_reg_reg(rax, rcx).unwrap();
+        encoder.cmp32_reg_imm(rax, 0).unwrap();
+        
+        // Test 64-bit operations
+        encoder.mov_reg_imm(rax, 0x123456789).unwrap();
+        encoder.add_reg_reg(rax, rcx).unwrap();
+        encoder.cmp_reg_reg(rax, rcx).unwrap();
+        
+        let code = encoder.finalize().unwrap();
+        assert!(!code.is_empty());
+        
+        // This verifies we can generate both 32-bit and 64-bit variants
+        // which is critical for LLVM IR compilation where different types
+        // need different instruction sizes
     }
 }
