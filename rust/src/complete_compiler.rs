@@ -718,7 +718,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
             let result_val = results[0];
             
             // Extract real comparison predicate from LLVM instruction if available
-            let predicate = self.extract_real_icmp_predicate(inst).unwrap_or_else(|| "sgt".to_string());
+            let predicate = inst.and_then(|i| self.extract_real_icmp_predicate(i)).unwrap_or_else(|| "sgt".to_string());
             self.compile_icmp_instruction(left_val, right_val, result_val, &predicate)
         } else {
             Err(CompilerError::UnsupportedInstruction(

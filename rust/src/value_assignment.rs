@@ -352,7 +352,7 @@ impl ValueAssignmentManager {
                 if assignment.references_left == 0 {
                     // Free the assignment
                     if let Some((&local_idx, _)) = self.assignments.iter()
-                        .find(|(_, &idx)| idx == assignment_idx) {
+                        .find(|&(_, &idx)| idx == assignment_idx) {
                         self.assignments.remove(&local_idx);
                     }
                     self.allocator.free(assignment_idx);

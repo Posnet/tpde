@@ -255,6 +255,10 @@ pub mod tests {
         fn has_allocas(&self) -> bool {
             false
         }
+        
+        fn get_icmp_predicate(&self, _inst: Self::InstRef) -> Option<String> {
+            None // Test implementation doesn't need real predicates
+        }
     }
 
     #[test]

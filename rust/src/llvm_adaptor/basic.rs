@@ -6,7 +6,6 @@ use inkwell::{
     basic_block::BasicBlock,
     module::Module,
     values::{BasicValueEnum, FunctionValue, InstructionValue},
-    Either,
 };
 use inkwell::llvm_sys::prelude::LLVMValueRef;
 use inkwell::values::{AnyValue, AsValueRef};
@@ -82,7 +81,8 @@ impl<'ctx> LlvmIrAdaptor<'ctx> {
             .and_then(|b| {
                 self.current?
                     .get_basic_blocks()
-                    .position(|bb| bb == b)
+                    .iter()
+                    .position(|&bb| bb == b)
             })
             .unwrap_or(0)
     }
@@ -156,7 +156,7 @@ impl<'ctx> IrAdaptor for LlvmIrAdaptor<'ctx> {
             if let Some(terminator) = b.get_terminator() {
                 use inkwell::values::InstructionOpcode;
                 match terminator.get_opcode() {
-                    InstructionOpcode::Branch => {
+                    InstructionOpcode::Br => {
                         // Handle conditional and unconditional branches
                         let num_operands = terminator.get_num_operands();
                         if num_operands == 1 {
@@ -166,7 +166,7 @@ impl<'ctx> IrAdaptor for LlvmIrAdaptor<'ctx> {
                             // Conditional branch
                             Box::new([1, 2].into_iter().filter_map(move |idx| {
                                 terminator.get_operand(idx).and_then(|op| op.right())
-                            }))
+                            }).map(Some))
                         } else {
                             Box::new(std::iter::empty())
                         }
@@ -175,7 +175,7 @@ impl<'ctx> IrAdaptor for LlvmIrAdaptor<'ctx> {
                         // Switch has default + cases
                         Box::new((1..terminator.get_num_operands()).step_by(2).filter_map(move |idx| {
                             terminator.get_operand(idx).and_then(|op| op.right())
-                        }))
+                        }).map(Some))
                     },
                     _ => Box::new(std::iter::empty()),
                 }
@@ -237,13 +237,14 @@ impl X64Backend {
 
     fn emit_mov_imm32(&mut self, asm: &mut ElfAssembler, reg: u8, imm: u32) {
         // MOV r32, imm32: B8+r id
-        asm.code.push(0xB8 + reg);
-        asm.code.extend_from_slice(&imm.to_le_bytes());
+        let mut code = vec![0xB8 + reg];
+        code.extend_from_slice(&imm.to_le_bytes());
+        asm.append(&code, 1);
     }
 
     fn emit_ret(&mut self, asm: &mut ElfAssembler) {
         // RET: C3
-        asm.code.push(0xC3);
+        asm.append(&[0xC3], 1);
     }
 
     fn compile_return(&mut self, asm: &mut ElfAssembler, _inst: InstructionValue) -> bool {

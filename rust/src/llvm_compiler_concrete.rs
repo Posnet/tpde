@@ -6,15 +6,103 @@
 
 use crate::{
     compilation_session::CompilationSession,
-    value_assignment::ValueAssignment,
-    register_file::RegisterFile, 
+    value_assignment::ValueAssignmentManager,
+    register_file::{RegisterFile, AsmReg},
     function_codegen::FunctionCodegen,
     value_ref::{ValuePartRef, CompilerContext},
-    x64_encoder::X64Encoder,
 };
 use bumpalo::Bump;
 use std::collections::HashMap;
 use inkwell::basic_block::BasicBlock;
+use inkwell::values::{InstructionValue, BasicValueEnum, FunctionValue, IntValue};
+use inkwell::IntPredicate;
+
+/// Addressing modes for x86-64 memory operations.
+#[derive(Debug, Clone)]
+pub enum AddressingMode {
+    /// Direct register addressing: [reg]
+    Register(AsmReg),
+    /// Register with displacement: [reg + offset]
+    RegisterOffset(AsmReg, i32),
+    /// Base + index with scale: [base + index*scale]
+    RegisterIndexScale(AsmReg, AsmReg, u8),
+    /// Full addressing: [base + index*scale + offset]
+    RegisterIndexScaleOffset(AsmReg, AsmReg, u8, i32),
+    /// Stack frame access: [rbp + offset]
+    StackOffset(i32),
+}
+
+/// GEP addressing expression for complex address calculations.
+#[derive(Debug, Clone)]
+pub struct GepExpression {
+    /// Base register or pointer
+    pub base: Option<AsmReg>,
+    /// Index register (for array access)
+    pub index: Option<AsmReg>,
+    /// Scale factor for index (element size)
+    pub scale: u64,
+    /// Displacement offset (for constant indices and struct fields)
+    pub displacement: i64,
+    /// Whether this expression needs materialization into a register
+    pub needs_materialization: bool,
+}
+
+impl GepExpression {
+    /// Create a new empty GEP expression
+    pub fn new() -> Self {
+        Self {
+            base: None,
+            index: None,
+            scale: 1,
+            displacement: 0,
+            needs_materialization: false,
+        }
+    }
+    
+    /// Create expression with base register
+    pub fn with_base(base: AsmReg) -> Self {
+        Self {
+            base: Some(base),
+            index: None,
+            scale: 1,
+            displacement: 0,
+            needs_materialization: false,
+        }
+    }
+    
+    /// Add displacement to expression
+    pub fn add_displacement(&mut self, offset: i64) {
+        self.displacement += offset;
+    }
+    
+    /// Set index with scale factor
+    pub fn set_index(&mut self, index: AsmReg, scale: u64) {
+        if self.index.is_some() {
+            // Multiple indices require materialization
+            self.needs_materialization = true;
+        } else {
+            self.index = Some(index);
+            self.scale = scale;
+        }
+    }
+    
+    /// Convert to x86-64 addressing mode if possible
+    pub fn to_addressing_mode(&self) -> Option<AddressingMode> {
+        match (self.base, self.index, self.scale, self.displacement) {
+            (Some(base), None, _, 0) => Some(AddressingMode::Register(base)),
+            (Some(base), None, _, disp) if disp as i32 as i64 == disp => {
+                Some(AddressingMode::RegisterOffset(base, disp as i32))
+            }
+            (Some(base), Some(index), scale, 0) if scale <= 8 => {
+                Some(AddressingMode::RegisterIndexScale(base, index, scale as u8))
+            }
+            (Some(base), Some(index), scale, disp) if scale <= 8 && disp as i32 as i64 == disp => {
+                Some(AddressingMode::RegisterIndexScaleOffset(base, index, scale as u8, disp as i32))
+            }
+            _ => None,
+        }
+    }
+}
 
 /// Concrete LLVM compiler with arena-based memory management.
 ///
@@ -23,13 +111,13 @@ use inkwell::basic_block::BasicBlock;
 /// and provides direct access to LLVM functionality without trait bounds.
 pub struct LlvmCompiler<'ctx, 'arena> {
     /// LLVM module being compiled.
-    module: &'ctx inkwell::module::Module<'ctx>,
+    module: inkwell::module::Module<'ctx>,
     
     /// Compilation session for arena allocation.
     session: &'arena mut CompilationSession<'arena>,
     
     /// Value assignment and tracking.
-    value_mgr: ValueAssignment,
+    value_mgr: ValueAssignmentManager,
     
     /// Register allocation state.
     register_file: RegisterFile,
@@ -100,10 +188,10 @@ impl std::error::Error for LlvmCompilerError {}
 impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
     /// Create a new LLVM compiler.
     pub fn new(
-        module: &'ctx inkwell::module::Module<'ctx>,
+        module: inkwell::module::Module<'ctx>,
         session: &'arena mut CompilationSession<'arena>,
     ) -> Result<Self, LlvmCompilerError> {
-        let value_mgr = ValueAssignment::new(1024, 8); // Reasonable defaults
+        let value_mgr = ValueAssignmentManager::new();
         // Create register file with GP and XMM registers
         let mut allocatable = crate::register_file::RegBitSet::new();
         allocatable.union(&crate::register_file::RegBitSet::all_in_bank(0, 16)); // GP regs
@@ -124,30 +212,31 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
     }
     
     /// Compile a function by name.
-    pub fn compile_function_by_name(&mut self, name: &str) -> Result<&CompiledFunction<'arena>, LlvmCompilerError> {
+    pub fn compile_function_by_name(&mut self, name: &str) -> Result<(), LlvmCompilerError> {
         // Check if already compiled
-        if let Some(compiled) = self.compiled_functions.get(name) {
-            return Ok(compiled);
+        if self.compiled_functions.contains_key(name) {
+            return Ok(());
         }
         
         // Find the function in the module
         let function = self.module.get_function(name)
             .ok_or_else(|| LlvmCompilerError::FunctionNotFound(name.to_string()))?;
         
-        self.compile_function(function)
+        self.compile_function(function)?;
+        Ok(())
     }
     
     /// Compile a specific LLVM function.
     pub fn compile_function(
         &mut self, 
         function: inkwell::values::FunctionValue<'ctx>
-    ) -> Result<&CompiledFunction<'arena>, LlvmCompilerError> {
+    ) -> Result<(), LlvmCompilerError> {
         let function_name = function.get_name().to_str()
             .map_err(|e| LlvmCompilerError::LlvmError(format!("Invalid function name: {:?}", e)))?;
         
         // Check if already compiled
-        if let Some(compiled) = self.compiled_functions.get(function_name) {
-            return Ok(compiled);
+        if self.compiled_functions.contains_key(function_name) {
+            return Ok(());
         }
         
         self.current_function = Some(function);
@@ -155,7 +244,7 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
         println!("🔧 Compiling LLVM function: {}", function_name);
         
         // Reset compiler state for new function
-        self.value_mgr = ValueAssignment::new(1024, 8); // Reset with same defaults
+        self.value_mgr = ValueAssignmentManager::new();
         // Reset register file
         let mut allocatable = crate::register_file::RegBitSet::new();
         allocatable.union(&crate::register_file::RegBitSet::all_in_bank(0, 16)); // GP regs
@@ -178,8 +267,12 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
         self.codegen.emit_epilogue()
             .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Epilogue generation failed: {:?}", e)))?;
         
+        // Take ownership of codegen and finalize
+        let codegen = std::mem::replace(&mut self.codegen, FunctionCodegen::new()
+            .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to create replacement codegen: {:?}", e)))?);
+        
         // Finalize and get machine code
-        let code_bytes = self.codegen.finalize()
+        let code_bytes = codegen.finalize()
             .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Code finalization failed: {:?}", e)))?;
         
         // Allocate code in session arena
@@ -196,9 +289,9 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
         // Record statistics
         self.session.record_function_compiled(function_name, code_bytes.len());
         
-        // Store in cache and return reference
+        // Store in cache
         self.compiled_functions.insert(function_name.to_string(), compiled);
-        Ok(self.compiled_functions.get(function_name).unwrap())
+        Ok(())
     }
     
     /// Setup function signature and calling convention.
@@ -329,25 +422,110 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
         }
     }
     
-    /// Compile ADD instruction with direct LLVM access.
+    /// Compile ADD instruction with real machine code generation.
     fn compile_add_instruction(
         &mut self,
         instruction: inkwell::values::InstructionValue<'ctx>
     ) -> Result<(), LlvmCompilerError> {
         println!("➕ Compiling ADD instruction");
         
-        // Direct access to LLVM instruction operands - no adaptor needed!
-        let _operand0 = instruction.get_operand(0).unwrap().left().unwrap();
-        let _operand1 = instruction.get_operand(1).unwrap().left().unwrap();
+        // Direct access to LLVM instruction operands
+        let operand0 = instruction.get_operand(0).unwrap().left().unwrap();
+        let operand1 = instruction.get_operand(1).unwrap().left().unwrap();
         
-        // TODO: Implement actual ADD compilation
-        // For now, just indicate what would be generated
-        println!("   Generated: ADD operand0, operand1 -> result");
+        // Get bit width from instruction type
+        let bit_width = instruction.get_type().into_int_type().get_bit_width();
+        
+        // Convert LLVM values to our value indices
+        let left_idx = self.get_or_create_value_index(operand0)?;
+        let right_idx = self.get_or_create_value_index(operand1)?;
+        
+        // For arithmetic operations, the instruction itself is the result value
+        // We'll use the instruction address as a unique ID for now
+        use inkwell::values::AsValueRef;
+        let inst_ptr = instruction.as_value_ref() as usize;
+        let result_idx = inst_ptr % 1024; // Simple hash for value index
+        
+        // Create value assignments
+        let value_size = (bit_width / 8) as u8;
+        if self.value_mgr.get_assignment(left_idx).is_none() {
+            self.value_mgr.create_assignment(left_idx, 1, value_size);
+        }
+        if self.value_mgr.get_assignment(right_idx).is_none() {
+            self.value_mgr.create_assignment(right_idx, 1, value_size);
+        }
+        if self.value_mgr.get_assignment(result_idx).is_none() {
+            self.value_mgr.create_assignment(result_idx, 1, value_size);
+        }
+        
+        // Create compiler context for register allocation
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+        
+        // Create value references
+        let mut left_ref = ValuePartRef::new(left_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create left ref: {:?}", e)))?;
+        let mut right_ref = ValuePartRef::new(right_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create right ref: {:?}", e)))?;
+        let mut result_ref = ValuePartRef::new(result_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create result ref: {:?}", e)))?;
+        
+        // Load operands to registers
+        let left_reg = left_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load left operand: {:?}", e)))?;
+        let right_reg = right_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load right operand: {:?}", e)))?;
+        
+        // Try to reuse left operand register for result (optimization)
+        let result_reg = result_ref.alloc_try_reuse(&mut left_ref, &mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to allocate result: {:?}", e)))?;
+        
+        // Generate optimized ADD instruction
+        let encoder = self.codegen.encoder_mut();
+        
+        match bit_width {
+            32 => {
+                if result_reg == left_reg {
+                    // In-place addition
+                    encoder.add32_reg_reg(result_reg, right_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit add32: {:?}", e)))?;
+                    println!("   Generated: add32 {}:{}, {}:{}", 
+                             result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
+                } else {
+                    // LEA optimization for non-destructive add
+                    encoder.lea(result_reg, left_reg, Some(right_reg), 1, 0)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit lea32: {:?}", e)))?;
+                    println!("   Generated: lea32 {}:{}, [{}:{} + {}:{}]", 
+                             result_reg.bank, result_reg.id, left_reg.bank, left_reg.id, 
+                             right_reg.bank, right_reg.id);
+                }
+            }
+            64 => {
+                if result_reg == left_reg {
+                    // In-place addition
+                    encoder.add64_reg_reg(result_reg, right_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit add64: {:?}", e)))?;
+                    println!("   Generated: add64 {}:{}, {}:{}", 
+                             result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
+                } else {
+                    // LEA optimization for non-destructive add
+                    encoder.lea(result_reg, left_reg, Some(right_reg), 1, 0)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit lea: {:?}", e)))?;
+                    println!("   Generated: lea {}:{}, [{}:{} + {}:{}]", 
+                             result_reg.bank, result_reg.id, left_reg.bank, left_reg.id, 
+                             right_reg.bank, right_reg.id);
+                }
+            }
+            _ => {
+                return Err(LlvmCompilerError::UnsupportedInstruction(
+                    format!("ADD instruction with {}-bit width not supported", bit_width)
+                ));
+            }
+        }
         
         Ok(())
     }
     
-    /// Compile ICMP instruction with real predicate extraction.
+    /// Compile ICMP instruction with real CMP+SETcc generation.
     fn compile_icmp_instruction(
         &mut self,
         instruction: inkwell::values::InstructionValue<'ctx>
@@ -360,8 +538,81 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
         
         println!("   Real predicate extracted: {:?}", predicate);
         
-        // TODO: Implement actual ICMP compilation with real predicate
-        println!("   Generated: CMP operand0, operand1; SET{:?} result", predicate);
+        // Get operands
+        let operand0 = instruction.get_operand(0).unwrap().left().unwrap();
+        let operand1 = instruction.get_operand(1).unwrap().left().unwrap();
+        
+        // Convert to value indices
+        let left_idx = self.get_or_create_value_index(operand0)?;
+        let right_idx = self.get_or_create_value_index(operand1)?;
+        
+        // ICMP result is a boolean (i1) value
+        use inkwell::values::AsValueRef;
+        let inst_ptr = instruction.as_value_ref() as usize;
+        let result_idx = inst_ptr % 1024;
+        
+        // Get operand bit width
+        let bit_width = operand0.into_int_value().get_type().get_bit_width();
+        let value_size = (bit_width / 8) as u8;
+        
+        // Create value assignments
+        if self.value_mgr.get_assignment(left_idx).is_none() {
+            self.value_mgr.create_assignment(left_idx, 1, value_size);
+        }
+        if self.value_mgr.get_assignment(right_idx).is_none() {
+            self.value_mgr.create_assignment(right_idx, 1, value_size);
+        }
+        if self.value_mgr.get_assignment(result_idx).is_none() {
+            self.value_mgr.create_assignment(result_idx, 1, 1); // Result is boolean
+        }
+        
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+        
+        // Load operands
+        let mut left_ref = ValuePartRef::new(left_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create left ref: {:?}", e)))?;
+        let mut right_ref = ValuePartRef::new(right_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create right ref: {:?}", e)))?;
+        let mut result_ref = ValuePartRef::new(result_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create result ref: {:?}", e)))?;
+        
+        let left_reg = left_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load left: {:?}", e)))?;
+        let right_reg = right_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load right: {:?}", e)))?;
+        let result_reg = result_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to allocate result: {:?}", e)))?;
+        
+        let encoder = self.codegen.encoder_mut();
+        
+        // Generate CMP instruction
+        match bit_width {
+            32 => encoder.cmp32_reg_reg(left_reg, right_reg)
+                .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit cmp32: {:?}", e)))?,
+            64 => encoder.cmp_reg_reg(left_reg, right_reg)
+                .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit cmp64: {:?}", e)))?,
+            _ => return Err(LlvmCompilerError::UnsupportedInstruction(
+                format!("ICMP with {}-bit operands not supported", bit_width)
+            ))
+        }
+        
+        // Generate SETcc instruction based on predicate
+        match predicate {
+            IntPredicate::EQ => encoder.sete_reg(result_reg),
+            IntPredicate::NE => encoder.setne_reg(result_reg),
+            IntPredicate::SGT => encoder.setg_reg(result_reg),
+            IntPredicate::SGE => encoder.setge_reg(result_reg),
+            IntPredicate::SLT => encoder.setl_reg(result_reg),
+            IntPredicate::SLE => encoder.setle_reg(result_reg),
+            IntPredicate::UGT => encoder.seta_reg(result_reg),
+            IntPredicate::UGE => encoder.setae_reg(result_reg),
+            IntPredicate::ULT => encoder.setb_reg(result_reg),
+            IntPredicate::ULE => encoder.setbe_reg(result_reg),
+        }.map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit setcc: {:?}", e)))?;
+        
+        println!("   Generated: CMP {}:{}, {}:{}; SET{:?} {}:{}", 
+                 left_reg.bank, left_reg.id, right_reg.bank, right_reg.id,
+                 predicate, result_reg.bank, result_reg.id);
         
         Ok(())
     }
@@ -386,14 +637,180 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
         Ok(())
     }
     
-    /// Placeholder implementations for other instructions.
-    fn compile_sub_instruction(&mut self, _instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
-        println!("➖ Compiling SUB instruction (placeholder)");
+    /// Compile SUB instruction with real machine code generation.
+    fn compile_sub_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
+        println!("➖ Compiling SUB instruction");
+        
+        // Similar to ADD but with subtraction
+        let operand0 = instruction.get_operand(0).unwrap().left().unwrap();
+        let operand1 = instruction.get_operand(1).unwrap().left().unwrap();
+        let bit_width = instruction.get_type().into_int_type().get_bit_width();
+        
+        let left_idx = self.get_or_create_value_index(operand0)?;
+        let right_idx = self.get_or_create_value_index(operand1)?;
+        
+        // SUB result value
+        use inkwell::values::AsValueRef;
+        let inst_ptr = instruction.as_value_ref() as usize;
+        let result_idx = inst_ptr % 1024;
+        
+        let value_size = (bit_width / 8) as u8;
+        if self.value_mgr.get_assignment(left_idx).is_none() {
+            self.value_mgr.create_assignment(left_idx, 1, value_size);
+        }
+        if self.value_mgr.get_assignment(right_idx).is_none() {
+            self.value_mgr.create_assignment(right_idx, 1, value_size);
+        }
+        if self.value_mgr.get_assignment(result_idx).is_none() {
+            self.value_mgr.create_assignment(result_idx, 1, value_size);
+        }
+        
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+        
+        let mut left_ref = ValuePartRef::new(left_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create left ref: {:?}", e)))?;
+        let mut right_ref = ValuePartRef::new(right_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create right ref: {:?}", e)))?;
+        let mut result_ref = ValuePartRef::new(result_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create result ref: {:?}", e)))?;
+        
+        let left_reg = left_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load left: {:?}", e)))?;
+        let right_reg = right_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load right: {:?}", e)))?;
+        let result_reg = result_ref.alloc_try_reuse(&mut left_ref, &mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to allocate result: {:?}", e)))?;
+        
+        let encoder = self.codegen.encoder_mut();
+        
+        match bit_width {
+            32 => {
+                if result_reg == left_reg {
+                    encoder.sub32_reg_reg(result_reg, right_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit sub32: {:?}", e)))?;
+                    println!("   Generated: sub32 {}:{}, {}:{}", 
+                             result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
+                } else {
+                    // Move left to result first
+                    encoder.mov32_reg_reg(result_reg, left_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov32: {:?}", e)))?;
+                    encoder.sub32_reg_reg(result_reg, right_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit sub32: {:?}", e)))?;
+                    println!("   Generated: mov32 {}:{}, {}:{}; sub32 {}:{}, {}:{}", 
+                             result_reg.bank, result_reg.id, left_reg.bank, left_reg.id,
+                             result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
+                }
+            }
+            64 => {
+                if result_reg == left_reg {
+                    encoder.sub64_reg_reg(result_reg, right_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit sub64: {:?}", e)))?;
+                    println!("   Generated: sub64 {}:{}, {}:{}", 
+                             result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
+                } else {
+                    // Move left to result first
+                    encoder.mov_reg_reg(result_reg, left_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov: {:?}", e)))?;
+                    encoder.sub64_reg_reg(result_reg, right_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit sub64: {:?}", e)))?;
+                    println!("   Generated: mov {}:{}, {}:{}; sub64 {}:{}, {}:{}", 
+                             result_reg.bank, result_reg.id, left_reg.bank, left_reg.id,
+                             result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
+                }
+            }
+            _ => {
+                return Err(LlvmCompilerError::UnsupportedInstruction(
+                    format!("SUB instruction with {}-bit width not supported", bit_width)
+                ));
+            }
+        }
+        
         Ok(())
     }
     
-    fn compile_mul_instruction(&mut self, _instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
-        println!("✖️  Compiling MUL instruction (placeholder)");
+    fn compile_mul_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
+        println!("✖️  Compiling MUL instruction");
+        
+        let operand0 = instruction.get_operand(0).unwrap().left().unwrap();
+        let operand1 = instruction.get_operand(1).unwrap().left().unwrap();
+        let bit_width = instruction.get_type().into_int_type().get_bit_width();
+        
+        let left_idx = self.get_or_create_value_index(operand0)?;
+        let right_idx = self.get_or_create_value_index(operand1)?;
+        
+        // MUL result value
+        use inkwell::values::AsValueRef;
+        let inst_ptr = instruction.as_value_ref() as usize;
+        let result_idx = inst_ptr % 1024;
+        
+        let value_size = (bit_width / 8) as u8;
+        if self.value_mgr.get_assignment(left_idx).is_none() {
+            self.value_mgr.create_assignment(left_idx, 1, value_size);
+        }
+        if self.value_mgr.get_assignment(right_idx).is_none() {
+            self.value_mgr.create_assignment(right_idx, 1, value_size);
+        }
+        if self.value_mgr.get_assignment(result_idx).is_none() {
+            self.value_mgr.create_assignment(result_idx, 1, value_size);
+        }
+        
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+        
+        let mut left_ref = ValuePartRef::new(left_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create left ref: {:?}", e)))?;
+        let mut right_ref = ValuePartRef::new(right_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create right ref: {:?}", e)))?;
+        let mut result_ref = ValuePartRef::new(result_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create result ref: {:?}", e)))?;
+        
+        let left_reg = left_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load left: {:?}", e)))?;
+        let right_reg = right_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load right: {:?}", e)))?;
+        
+        // MUL uses RAX for one operand and result
+        let rax = AsmReg::new(0, 0); // RAX
+        let rdx = AsmReg::new(0, 2); // RDX (for upper bits)
+        
+        let encoder = self.codegen.encoder_mut();
+        
+        // Move left operand to RAX if not already there
+        if left_reg != rax {
+            encoder.mov_reg_reg(rax, left_reg)
+                .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to mov to rax: {:?}", e)))?;
+        }
+        
+        // Generate IMUL instruction
+        match bit_width {
+            32 => {
+                // Use two-operand IMUL: rax = rax * right_reg
+                encoder.imul32_reg_reg(rax, right_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit imul32: {:?}", e)))?;
+                println!("   Generated: imul32 eax, {}:{}", right_reg.bank, right_reg.id);
+            }
+            64 => {
+                // Use two-operand IMUL: rax = rax * right_reg
+                encoder.imul_reg_reg(rax, right_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit imul64: {:?}", e)))?;
+                println!("   Generated: imul64 rax, {}:{}", right_reg.bank, right_reg.id);
+            }
+            _ => {
+                return Err(LlvmCompilerError::UnsupportedInstruction(
+                    format!("MUL instruction with {}-bit width not supported", bit_width)
+                ));
+            }
+        }
+        
+        // Move result from RAX to result register if different
+        let result_reg = result_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to allocate result: {:?}", e)))?;
+        
+        if result_reg != rax {
+            encoder.mov_reg_reg(result_reg, rax)
+                .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to mov from rax: {:?}", e)))?;
+            println!("   Generated: mov {}:{}, rax", result_reg.bank, result_reg.id);
+        }
+        
         Ok(())
     }
     
@@ -407,8 +824,105 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
         Ok(())
     }
     
-    fn compile_gep_instruction(&mut self, _instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
-        println!("🗂️  Compiling GEP instruction (placeholder)");
+    fn compile_gep_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
+        println!("🗂️  Compiling GEP instruction");
+        
+        // Get operand count
+        let operand_count = instruction.get_num_operands();
+        if operand_count < 2 {
+            return Err(LlvmCompilerError::UnsupportedInstruction(
+                "GEP instruction requires at least 2 operands".to_string()
+            ));
+        }
+        
+        // Get base pointer (first operand)
+        let base_ptr = instruction.get_operand(0).unwrap().left().unwrap();
+        let base_idx = self.get_or_create_value_index(base_ptr)?;
+        
+        // Get result - GEP instruction returns pointer
+        use inkwell::values::AsValueRef;
+        let inst_ptr = instruction.as_value_ref() as usize;
+        let result_idx = inst_ptr % 1024;
+        
+        // Initialize value assignments
+        if self.value_mgr.get_assignment(base_idx).is_none() {
+            self.value_mgr.create_assignment(base_idx, 1, 8); // Pointer size
+        }
+        if self.value_mgr.get_assignment(result_idx).is_none() {
+            self.value_mgr.create_assignment(result_idx, 1, 8); // Result is pointer
+        }
+        
+        // Process indices
+        let mut indices = Vec::new();
+        for i in 1..operand_count {
+            if let Some(idx_operand) = instruction.get_operand(i) {
+                if let Some(idx_val) = idx_operand.left() {
+                    let idx_idx = self.get_or_create_value_index(idx_val)?;
+                    if self.value_mgr.get_assignment(idx_idx).is_none() {
+                        self.value_mgr.create_assignment(idx_idx, 1, 4); // Index size
+                    }
+                    indices.push(idx_idx);
+                }
+            }
+        }
+        
+        // Extract element sizes and constants before creating context
+        let mut index_info = Vec::new();
+        for (idx_num, &index_idx) in indices.iter().enumerate() {
+            let element_size = self.get_gep_element_size(idx_num)?;
+            let const_val = self.try_get_constant_index(index_idx);
+            index_info.push((index_idx, element_size, const_val));
+        }
+        
+        // Create compiler context
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+        
+        // Load base pointer to register
+        let mut base_ref = ValuePartRef::new(base_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create base ref: {:?}", e)))?;
+        let base_reg = base_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load base: {:?}", e)))?;
+        
+        // Create GEP expression
+        let mut gep_expr = GepExpression::with_base(base_reg);
+        
+        // Process each index
+        for (idx_num, (index_idx, element_size, const_val)) in index_info.into_iter().enumerate() {
+            // Check if index is a constant
+            if let Some(const_val) = const_val {
+                // Fold constant into displacement
+                let offset = element_size as i64 * const_val;
+                gep_expr.add_displacement(offset);
+                println!("   GEP: Folded constant index {} -> displacement {}", const_val, offset);
+            } else {
+                // Dynamic index
+                let mut index_ref = ValuePartRef::new(index_idx, 0)
+                    .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create index ref: {:?}", e)))?;
+                let index_reg = index_ref.load_to_reg(&mut ctx)
+                    .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load index: {:?}", e)))?;
+                
+                if idx_num == 0 && gep_expr.index.is_none() {
+                    // First dynamic index - can use scaled addressing
+                    gep_expr.set_index(index_reg, element_size);
+                    println!("   GEP: Set dynamic index with scale {}", element_size);
+                } else {
+                    // Multiple indices need materialization
+                    gep_expr.needs_materialization = true;
+                    println!("   GEP: Complex index requires materialization");
+                }
+            }
+        }
+        
+        // Allocate result register
+        let mut result_ref = ValuePartRef::new(result_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create result ref: {:?}", e)))?;
+        let result_reg = result_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to allocate result: {:?}", e)))?;
+        
+        // Generate address calculation
+        self.materialize_gep_expression(gep_expr, result_reg)?;
+        
+        println!("✅ GEP instruction compiled successfully");
         Ok(())
     }
     
@@ -444,7 +958,94 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
     
     /// Get the LLVM module.
     pub fn module(&self) -> &inkwell::module::Module<'ctx> {
-        self.module
+        &self.module
+    }
+    
+    /// Get or create a value index for an LLVM value.
+    fn get_or_create_value_index(&mut self, value: BasicValueEnum<'ctx>) -> Result<usize, LlvmCompilerError> {
+        // Use pointer address as unique identifier
+        use inkwell::values::AsValueRef;
+        let ptr_addr = value.as_value_ref() as usize;
+        
+        // Simple index assignment - in real implementation would use proper mapping
+        Ok(ptr_addr % 1024) // Modulo to fit in our value assignment table
+    }
+    
+    /// Get element size for GEP instruction based on index position.
+    fn get_gep_element_size(&self, idx_num: usize) -> Result<u64, LlvmCompilerError> {
+        // Simplified size calculation
+        // TODO: Integrate with LLVM type system for accurate sizes
+        match idx_num {
+            0 => Ok(4), // First index: assume i32 array elements
+            1 => Ok(8), // Second index: assume 64-bit struct fields
+            _ => Ok(4), // Default
+        }
+    }
+    
+    /// Try to get constant value from an index.
+    fn try_get_constant_index(&self, index_idx: usize) -> Option<i64> {
+        // Simplified constant detection
+        // In real implementation would check LLVM ConstantInt
+        if index_idx >= 100 && index_idx <= 110 {
+            Some((index_idx - 100) as i64)
+        } else {
+            None
+        }
+    }
+    
+    /// Materialize GEP expression into machine code.
+    fn materialize_gep_expression(
+        &mut self,
+        gep_expr: GepExpression,
+        result_reg: AsmReg,
+    ) -> Result<(), LlvmCompilerError> {
+        let encoder = self.codegen.encoder_mut();
+        
+        // Try to use LEA for address calculation
+        if let Some(addr_mode) = gep_expr.to_addressing_mode() {
+            match addr_mode {
+                AddressingMode::Register(base) => {
+                    if result_reg != base {
+                        encoder.mov_reg_reg(result_reg, base)
+                            .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov: {:?}", e)))?;
+                    }
+                    println!("   Generated: mov {}:{}, {}:{}", result_reg.bank, result_reg.id, base.bank, base.id);
+                }
+                AddressingMode::RegisterOffset(base, offset) => {
+                    encoder.lea(result_reg, base, None, 1, offset)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit lea: {:?}", e)))?;
+                    println!("   Generated: lea {}:{}, [{}:{} + {}]", 
+                             result_reg.bank, result_reg.id, base.bank, base.id, offset);
+                }
+                AddressingMode::RegisterIndexScale(base, index, scale) => {
+                    encoder.lea(result_reg, base, Some(index), scale as u32, 0)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit lea: {:?}", e)))?;
+                    println!("   Generated: lea {}:{}, [{}:{} + {}:{}*{}]", 
+                             result_reg.bank, result_reg.id, base.bank, base.id, 
+                             index.bank, index.id, scale);
+                }
+                AddressingMode::RegisterIndexScaleOffset(base, index, scale, offset) => {
+                    encoder.lea(result_reg, base, Some(index), scale as u32, offset)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit lea: {:?}", e)))?;
+                    println!("   Generated: lea {}:{}, [{}:{} + {}:{}*{} + {}]", 
+                             result_reg.bank, result_reg.id, base.bank, base.id, 
+                             index.bank, index.id, scale, offset);
+                }
+                _ => {
+                    return Err(LlvmCompilerError::UnsupportedInstruction(
+                        "Complex GEP addressing mode not supported".to_string()
+                    ));
+                }
+            }
+        } else if gep_expr.needs_materialization {
+            // Complex expression needs multiple instructions
+            println!("   GEP: Complex materialization required (not implemented)");
+            return Err(LlvmCompilerError::UnsupportedInstruction(
+                "Complex GEP expressions not yet supported".to_string()
+            ));
+        }
+        
+        Ok(())
     }
 }
 
@@ -479,7 +1080,7 @@ mod tests {
         let arena = Bump::new();
         let mut session = CompilationSession::new(&arena);
         
-        let compiler = LlvmCompiler::new(&module, &mut session);
+        let compiler = LlvmCompiler::new(module, &mut session);
         assert!(compiler.is_ok());
     }
     
@@ -489,12 +1090,11 @@ mod tests {
         let module = create_simple_module(&context);
         let arena = Bump::new();
         let mut session = CompilationSession::new(&arena);
-        let mut compiler = LlvmCompiler::new(&module, &mut session).unwrap();
+        let mut compiler = LlvmCompiler::new(module, &mut session).unwrap();
         
-        let result = compiler.compile_function_by_name("add");
-        assert!(result.is_ok());
+        compiler.compile_function_by_name("add").unwrap();
         
-        let compiled = result.unwrap();
+        let compiled = compiler.compiled_functions().get("add").unwrap();
         assert_eq!(compiled.name, "add");
         assert!(compiled.code_size > 0);
     }
@@ -505,12 +1105,100 @@ mod tests {
         let module = create_simple_module(&context);
         let arena = Bump::new();
         let mut session = CompilationSession::new(&arena);
-        let mut compiler = LlvmCompiler::new(&module, &mut session).unwrap();
+        let mut compiler = LlvmCompiler::new(module, &mut session).unwrap();
         
         compiler.compile_function_by_name("add").unwrap();
         
         let stats = compiler.session().stats();
         assert_eq!(stats.functions_compiled, 1);
         assert!(stats.instructions_compiled > 0);
+    }
+    
+    fn create_gep_test_module(context: &Context) -> inkwell::module::Module {
+        let module = context.create_module("gep_test");
+        let i32_type = context.i32_type();
+        let i32_ptr_type = i32_type.ptr_type(inkwell::AddressSpace::default());
+        let fn_type = i32_type.fn_type(&[i32_ptr_type.into(), i32_type.into()], false);
+        let function = module.add_function("array_access", fn_type, None);
+        
+        let entry_block = context.append_basic_block(function, "entry");
+        let builder = context.create_builder();
+        builder.position_at_end(entry_block);
+        
+        // Get parameters: ptr and index
+        let ptr_param = function.get_nth_param(0).unwrap().into_pointer_value();
+        let index_param = function.get_nth_param(1).unwrap().into_int_value();
+        
+        // GEP instruction: ptr[index]
+        let indices = &[index_param];
+        let element_ptr = unsafe {
+            builder.build_in_bounds_gep(i32_type, ptr_param, indices, "element_ptr")
+        }.unwrap();
+        
+        // Load the value
+        let value = builder.build_load(i32_type, element_ptr, "value").unwrap();
+        builder.build_return(Some(&value.into_int_value())).unwrap();
+        
+        module
+    }
+    
+    #[test]
+    fn test_gep_instruction_compilation() {
+        let context = Context::create();
+        let module = create_gep_test_module(&context);
+        let arena = Bump::new();
+        let mut session = CompilationSession::new(&arena);
+        let mut compiler = LlvmCompiler::new(module, &mut session).unwrap();
+        
+        compiler.compile_function_by_name("array_access")
+            .expect("GEP compilation should succeed");
+        
+        let compiled = compiler.compiled_functions().get("array_access").unwrap();
+        assert_eq!(compiled.name, "array_access");
+        assert!(compiled.code_size > 0);
+        
+        // Check that GEP instruction was compiled
+        let stats = compiler.session().stats();
+        assert!(stats.instruction_counts.contains_key("GetElementPtr"));
+    }
+    
+    fn create_icmp_test_module(context: &Context) -> inkwell::module::Module {
+        let module = context.create_module("icmp_test");
+        let i32_type = context.i32_type();
+        let fn_type = i32_type.fn_type(&[i32_type.into(), i32_type.into()], false);
+        let function = module.add_function("compare", fn_type, None);
+        
+        let entry_block = context.append_basic_block(function, "entry");
+        let builder = context.create_builder();
+        builder.position_at_end(entry_block);
+        
+        let a = function.get_nth_param(0).unwrap().into_int_value();
+        let b = function.get_nth_param(1).unwrap().into_int_value();
+        
+        // Create ICMP with SGT predicate
+        let cmp_result = builder.build_int_compare(inkwell::IntPredicate::SGT, a, b, "cmp_sgt").unwrap();
+        
+        // Convert bool to i32
+        let result = builder.build_int_z_extend(cmp_result, i32_type, "result").unwrap();
+        builder.build_return(Some(&result)).unwrap();
+        
+        module
+    }
+    
+    #[test]
+    fn test_icmp_real_predicate_extraction() {
+        let context = Context::create();
+        let module = create_icmp_test_module(&context);
+        let arena = Bump::new();
+        let mut session = CompilationSession::new(&arena);
+        let mut compiler = LlvmCompiler::new(module, &mut session).unwrap();
+        
+        compiler.compile_function_by_name("compare")
+            .expect("ICMP compilation should succeed");
+        
+        // Verify ICMP was compiled
+        let stats = compiler.session().stats();
+        assert!(stats.instruction_counts.contains_key("ICmp"));
+        assert_eq!(stats.instruction_counts["ICmp"], 1);
     }
 }
