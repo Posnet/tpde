@@ -8,5 +8,9 @@ inkwell = { workspace = true }
 llvm-sys = { workspace = true }
 tpde-core = { path = "../tpde-core" }
 
+[[bin]]
+name = "test_phi_resolution"
+path = "../test_phi_resolution.rs"
+
 [lib]
 path = "src/lib.rs"

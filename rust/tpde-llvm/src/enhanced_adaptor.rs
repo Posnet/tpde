@@ -17,6 +17,47 @@ use std::collections::HashMap;
 use tpde_core::adaptor::IrAdaptor;
 use tpde_core::llvm_compiler::{LlvmAdaptorInterface, InstructionCategory};
 
+/// PHI node information for resolution and register allocation.
+///
+/// This provides access to PHI node incoming values and their source blocks,
+/// following the C++ LLVMAdaptor PHIRef pattern.
+#[derive(Debug, Clone)]
+pub struct PhiInfo<'ctx> {
+    /// The PHI instruction itself.
+    pub phi_instruction: InstructionValue<'ctx>,
+    /// Incoming values from predecessor blocks.
+    pub incoming_values: Vec<BasicValueEnum<'ctx>>,
+    /// Predecessor blocks corresponding to incoming values.
+    pub incoming_blocks: Vec<BasicBlock<'ctx>>,
+}
+
+impl<'ctx> PhiInfo<'ctx> {
+    /// Get the number of incoming values.
+    pub fn incoming_count(&self) -> usize {
+        self.incoming_values.len()
+    }
+    
+    /// Get the incoming value for a specific slot.
+    pub fn incoming_value(&self, slot: usize) -> Option<BasicValueEnum<'ctx>> {
+        self.incoming_values.get(slot).copied()
+    }
+    
+    /// Get the incoming block for a specific slot.
+    pub fn incoming_block(&self, slot: usize) -> Option<BasicBlock<'ctx>> {
+        self.incoming_blocks.get(slot).copied()
+    }
+    
+    /// Get the incoming value for a specific predecessor block.
+    pub fn incoming_value_for_block(&self, block: BasicBlock<'ctx>) -> Option<BasicValueEnum<'ctx>> {
+        for (i, &incoming_block) in self.incoming_blocks.iter().enumerate() {
+            if incoming_block == block {
+                return self.incoming_values.get(i).copied();
+            }
+        }
+        None
+    }
+}
+
 /// Enhanced LLVM IR adaptor that handles real LLVM IR constructs.
 ///
 /// This adaptor can compile actual C functions with:
@@ -104,6 +145,60 @@ impl<'ctx> EnhancedLlvmAdaptor<'ctx> {
     /// Check if an instruction is a PHI node.
     pub fn is_phi(&self, inst: InstructionValue<'ctx>) -> bool {
         matches!(inst.get_opcode(), InstructionOpcode::Phi)
+    }
+    
+    /// Get PHI node details for value assignment and register allocation.
+    ///
+    /// This provides access to PHI node incoming values and blocks, following
+    /// the C++ LLVMAdaptor::val_as_phi pattern for PHI resolution.
+    pub fn get_phi_info(&self, inst: InstructionValue<'ctx>) -> Result<PhiInfo<'ctx>, &'static str> {
+        if !self.is_phi(inst) {
+            return Err("Instruction is not a PHI node");
+        }
+        
+        // Try to cast to PHI value to access incoming values
+        // Due to inkwell API limitations, this might not work reliably
+        let phi_value = match inst.as_any_value_enum() {
+            inkwell::values::AnyValueEnum::PhiValue(phi) => phi,
+            _ => return Err("Failed to cast instruction to PHI value"),
+        };
+        
+        let mut incoming_values = Vec::new();
+        let mut incoming_blocks = Vec::new();
+        
+        // Extract all incoming (value, block) pairs
+        for i in 0..phi_value.count_incoming() {
+            let incoming_value = phi_value.get_incoming(i).unwrap().0;
+            let incoming_block = phi_value.get_incoming(i).unwrap().1;
+            
+            incoming_values.push(incoming_value);
+            incoming_blocks.push(incoming_block);
+        }
+        
+        Ok(PhiInfo {
+            phi_instruction: inst,
+            incoming_values,
+            incoming_blocks,
+        })
+    }
+    
+    /// Get all PHI nodes in a basic block.
+    ///
+    /// This follows the C++ pattern where PHI nodes are processed at the
+    /// beginning of each block during compilation.
+    pub fn get_block_phis(&self, block: BasicBlock<'ctx>) -> Vec<InstructionValue<'ctx>> {
+        let mut phi_instructions = Vec::new();
+        
+        for instruction in block.get_instructions() {
+            if self.is_phi(instruction) {
+                phi_instructions.push(instruction);
+            } else {
+                // PHI nodes must appear at the beginning of blocks in LLVM IR
+                break;
+            }
+        }
+        
+        phi_instructions
     }
     
     /// Check if an instruction is an alloca.
