@@ -671,6 +671,25 @@ impl X64Encoder {
             .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
         Ok(())
     }
+    
+    /// Emit indirect CALL instruction through memory.
+    pub fn call_mem(&mut self, base: AsmReg, offset: i32) -> Result<(), EncodingError> {
+        let base_reg = self.to_gp_register(base)?;
+        let mem = qword_ptr(base_reg + offset);
+        
+        self.assembler.call(mem)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit TEST instruction - register against immediate.
+    pub fn test_reg_imm(&mut self, reg: AsmReg, imm: i32) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp32_register(reg)?;
+        
+        self.assembler.test(dst_reg, imm)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
 
     // ==== LABEL MANAGEMENT FOR CONTROL FLOW ====
     
