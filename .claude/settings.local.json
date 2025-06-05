@@ -16,7 +16,8 @@
       "Bash(rg:*)",
       "Bash(git restore:*)",
       "Bash(python:*)",
-      "Bash(RUST_BACKTRACE=1 cargo run --bin test_phi_resolution)"
+      "Bash(RUST_BACKTRACE=1 cargo run --bin test_phi_resolution)",
+      "Bash(RUST_BACKTRACE=1 cargo test -p tpde-llvm test_enhanced_compiler_simple_function --lib -- --nocapture)"
     ],
     "deny": []
   }

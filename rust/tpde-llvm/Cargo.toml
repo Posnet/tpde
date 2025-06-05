@@ -16,5 +16,9 @@ path = "../test_phi_resolution.rs"
 name = "test_return_instructions"
 path = "../test_return_instructions.rs"
 
+[[bin]]
+name = "test_gep_functionality"
+path = "../test_gep_functionality.rs"
+
 [lib]
 path = "src/lib.rs"
