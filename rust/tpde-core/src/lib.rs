@@ -28,6 +28,8 @@ pub mod x64_backend;
 pub mod calling_convention;
 pub mod function_codegen;
 pub mod complete_compiler;
+pub mod llvm_compiler;
+pub mod instruction_selection_test;
 pub use compiler::{Backend, CompilerBase};
 pub use value_assignment::{ValueAssignment, ValueAssignmentManager, ValLocalIdx};
 pub use register_file::{RegisterFile, AsmReg, RegBitSet, RegAllocError};

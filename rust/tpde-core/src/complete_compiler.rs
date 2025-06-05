@@ -13,6 +13,7 @@ use crate::{
     register_file::{AsmReg, RegisterFile, RegAllocError, RegBitSet},
     value_assignment::ValueAssignmentManager,
     value_ref::{CompilerContext, ValuePartRef, ValueRefError},
+    llvm_compiler::LlvmAdaptorInterface,
 };
 use crate::x64_encoder::EncodingError;
 
@@ -250,29 +251,163 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         let operands: Vec<_> = self.adaptor.inst_operands(inst).collect();
         let results: Vec<_> = self.adaptor.inst_results(inst).collect();
         
-        println!("Compiling instruction with {} operands, {} results", operands.len(), results.len());
+        // For now, always fall back to operand-based classification
+        // TODO: Add proper opcode-based instruction selection when we have LLVM-specific compiler
+        
+        // Fall back to operand-based classification for other adaptors
+        println!("Compiling instruction with {} operands, {} results (operand-based)", operands.len(), results.len());
         
         match (operands.len(), results.len()) {
             (2, 1) => {
-                // Binary operation (e.g., add)
+                // Binary operation (add, sub, mul, etc.)
                 self.compile_binary_operation(&operands, &results)?;
             }
+            (1, 1) => {
+                // Unary operation with result (load, cast, etc.)
+                self.compile_unary_operation(&operands, &results)?;
+            }
+            (2, 0) => {
+                // Binary operation with no result (store)
+                self.compile_store_operation(&operands)?;
+            }
             (1, 0) => {
-                // Unary operation with no result (e.g., return)
-                self.compile_return_instruction(&operands)?;
+                // Unary operation with no result (return with value, branch)
+                self.compile_unary_no_result(&operands)?;
             }
             (0, 0) => {
-                // No operands or results (e.g., simple return)
+                // No operands or results (simple return, unconditional branch)
                 self.compile_simple_return()?;
             }
+            (0, 1) => {
+                // No operands but has result (alloca, load from constant)
+                self.compile_constant_or_alloca(&results)?;
+            }
             _ => {
-                return Err(CompilerError::UnsupportedInstruction(
-                    format!("Instruction with {} operands and {} results", operands.len(), results.len())
-                ));
+                // Handle complex instructions (calls, PHI nodes, etc.)
+                self.compile_complex_instruction(&operands, &results)?;
             }
         }
         
         Ok(())
+    }
+    
+    /// Compile instruction by opcode category (for LLVM adaptors).
+    fn compile_instruction_by_category(
+        &mut self,
+        category: crate::llvm_compiler::InstructionCategory,
+        operands: &[A::ValueRef],
+        results: &[A::ValueRef],
+    ) -> Result<(), CompilerError> {
+        use crate::llvm_compiler::InstructionCategory;
+        
+        match category {
+            InstructionCategory::Arithmetic => {
+                self.compile_arithmetic_by_category(operands, results)
+            }
+            InstructionCategory::Comparison => {
+                self.compile_comparison_by_category(operands, results)
+            }
+            InstructionCategory::Memory => {
+                self.compile_memory_by_category(operands, results)
+            }
+            InstructionCategory::ControlFlow => {
+                self.compile_control_flow_by_category(operands, results)
+            }
+            InstructionCategory::Phi => {
+                self.compile_phi_by_category(operands, results)
+            }
+            InstructionCategory::Conversion => {
+                self.compile_conversion_by_category(operands, results)
+            }
+            InstructionCategory::Other => {
+                Err(CompilerError::UnsupportedInstruction(
+                    "Unsupported instruction category".to_string()
+                ))
+            }
+        }
+    }
+    
+    /// Compile arithmetic instructions by category.
+    fn compile_arithmetic_by_category(
+        &mut self,
+        operands: &[A::ValueRef],
+        results: &[A::ValueRef],
+    ) -> Result<(), CompilerError> {
+        println!("Compiling arithmetic instruction using opcode-based selection");
+        self.compile_binary_operation(operands, results)
+    }
+    
+    /// Compile comparison instructions by category.
+    fn compile_comparison_by_category(
+        &mut self,
+        _operands: &[A::ValueRef],
+        _results: &[A::ValueRef],
+    ) -> Result<(), CompilerError> {
+        println!("Compiling comparison instruction (opcode-based placeholder)");
+        // TODO: Implement actual comparison instruction generation
+        Ok(())
+    }
+    
+    /// Compile memory instructions by category.
+    fn compile_memory_by_category(
+        &mut self,
+        operands: &[A::ValueRef],
+        results: &[A::ValueRef],
+    ) -> Result<(), CompilerError> {
+        println!("Compiling memory instruction (opcode-based placeholder)");
+        if operands.len() == 2 && results.is_empty() {
+            // Store operation
+            self.compile_store_operation(operands)
+        } else if operands.len() == 1 && results.len() == 1 {
+            // Load operation
+            self.compile_unary_operation(operands, results)
+        } else {
+            // Other memory operations
+            self.compile_constant_or_alloca(results)
+        }
+    }
+    
+    /// Compile control flow instructions by category.
+    fn compile_control_flow_by_category(
+        &mut self,
+        operands: &[A::ValueRef],
+        _results: &[A::ValueRef],
+    ) -> Result<(), CompilerError> {
+        println!("Compiling control flow instruction (opcode-based)");
+        if operands.len() == 1 {
+            self.compile_return_instruction(operands)
+        } else if operands.is_empty() {
+            self.compile_simple_return()
+        } else {
+            println!("Complex control flow instruction (placeholder)");
+            Ok(())
+        }
+    }
+    
+    /// Compile PHI instructions by category.
+    fn compile_phi_by_category(
+        &mut self,
+        _operands: &[A::ValueRef],
+        _results: &[A::ValueRef],
+    ) -> Result<(), CompilerError> {
+        println!("Compiling PHI instruction (opcode-based placeholder)");
+        // TODO: Implement PHI node handling
+        Ok(())
+    }
+    
+    /// Compile conversion instructions by category.
+    fn compile_conversion_by_category(
+        &mut self,
+        operands: &[A::ValueRef],
+        results: &[A::ValueRef],
+    ) -> Result<(), CompilerError> {
+        println!("Compiling conversion instruction (opcode-based placeholder)");
+        // For now, treat as unary operation
+        if operands.len() == 1 && results.len() == 1 {
+            self.compile_unary_operation(operands, results)
+        } else {
+            Ok(())
+        }
     }
     
     /// Compile a binary operation (like add).
@@ -334,6 +469,113 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 result_reg.bank, result_reg.id, left_reg.bank, left_reg.id, right_reg.bank, right_reg.id);
         
         Ok(())
+    }
+    
+    /// Compile a unary operation with result (load, cast, etc.).
+    fn compile_unary_operation(
+        &mut self,
+        operands: &[A::ValueRef],
+        results: &[A::ValueRef],
+    ) -> Result<(), CompilerError> {
+        println!("Compiling unary operation (placeholder - assuming load)");
+        
+        let src_val = operands[0];
+        let dst_val = results[0];
+        
+        let src_idx = self.adaptor.val_local_idx(src_val);
+        let dst_idx = self.adaptor.val_local_idx(dst_val);
+        
+        // Initialize assignments
+        if self.value_mgr.get_assignment(src_idx).is_none() {
+            self.value_mgr.create_assignment(src_idx, 1, 8);
+        }
+        if self.value_mgr.get_assignment(dst_idx).is_none() {
+            self.value_mgr.create_assignment(dst_idx, 1, 8);
+        }
+        
+        // For now, just implement as a move operation
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+        let mut src_ref = ValuePartRef::new(src_idx, 0)?;
+        let mut dst_ref = ValuePartRef::new(dst_idx, 0)?;
+        
+        let src_reg = src_ref.load_to_reg(&mut ctx)?;
+        let dst_reg = dst_ref.load_to_reg(&mut ctx)?;
+        
+        if src_reg != dst_reg {
+            self.codegen.encoder_mut().mov_reg_reg(dst_reg, src_reg)?;
+        }
+        
+        Ok(())
+    }
+    
+    /// Compile a store operation.
+    fn compile_store_operation(
+        &mut self,
+        operands: &[A::ValueRef],
+    ) -> Result<(), CompilerError> {
+        println!("Compiling store operation (placeholder)");
+        
+        let _value = operands[0];
+        let _address = operands[1];
+        
+        // TODO: Implement actual store instruction generation
+        // For now, this is a placeholder
+        
+        Ok(())
+    }
+    
+    /// Compile a unary operation with no result (return with value, branch).
+    fn compile_unary_no_result(
+        &mut self,
+        operands: &[A::ValueRef],
+    ) -> Result<(), CompilerError> {
+        // This could be a return instruction or a branch
+        self.compile_return_instruction(operands)
+    }
+    
+    /// Compile an instruction with no operands but has result (alloca, constant).
+    fn compile_constant_or_alloca(
+        &mut self,
+        results: &[A::ValueRef],
+    ) -> Result<(), CompilerError> {
+        println!("Compiling constant or alloca (placeholder)");
+        
+        let result_val = results[0];
+        let result_idx = self.adaptor.val_local_idx(result_val);
+        
+        // Initialize assignment for the result
+        if self.value_mgr.get_assignment(result_idx).is_none() {
+            self.value_mgr.create_assignment(result_idx, 1, 8);
+        }
+        
+        // TODO: Implement actual alloca/constant loading
+        // For now, just allocate a register
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+        let mut result_ref = ValuePartRef::new(result_idx, 0)?;
+        let _result_reg = result_ref.load_to_reg(&mut ctx)?;
+        
+        Ok(())
+    }
+    
+    /// Compile complex instructions (calls, PHI nodes, etc.).
+    fn compile_complex_instruction(
+        &mut self,
+        operands: &[A::ValueRef],
+        results: &[A::ValueRef],
+    ) -> Result<(), CompilerError> {
+        println!("Compiling complex instruction with {} operands, {} results (placeholder)", 
+                operands.len(), results.len());
+        
+        // TODO: Implement proper handling for:
+        // - Function calls with multiple arguments
+        // - PHI nodes with multiple incoming values
+        // - Switch instructions with multiple targets
+        // - Other complex IR constructs
+        
+        // For now, treat as unsupported
+        Err(CompilerError::UnsupportedInstruction(
+            format!("Complex instruction with {} operands and {} results", operands.len(), results.len())
+        ))
     }
     
     /// Compile a return instruction with operand.
