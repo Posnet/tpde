@@ -29,11 +29,17 @@ pub mod calling_convention;
 pub mod function_codegen;
 pub mod complete_compiler;
 pub mod llvm_compiler;
+pub mod compilation_session;
+pub mod llvm_compiler_concrete;
 pub mod instruction_selection_test;
+pub mod llvm_adaptor;
+pub mod encodegen;
 pub use compiler::{Backend, CompilerBase};
 pub use value_assignment::{ValueAssignment, ValueAssignmentManager, ValLocalIdx};
 pub use register_file::{RegisterFile, AsmReg, RegBitSet, RegAllocError};
 pub use value_ref::{ValueRef, ValuePartRef, ValueRefBuilder, ValueRefError, CompilerContext};
+pub use compilation_session::{CompilationSession, SessionStats, SessionError};
+pub use llvm_compiler_concrete::{LlvmCompiler, CompiledFunction, LlvmCompilerError};
 
 /// Temporary hello world to prove the crate builds.
 pub fn hello() -> &'static str {

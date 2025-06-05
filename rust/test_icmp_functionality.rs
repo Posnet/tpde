@@ -3,8 +3,8 @@
 //! This test exercises various ICMP predicates to check if the placeholder pattern mentioned
 //! in the analysis exists and to validate real opcode-based comparison generation.
 
-use tpde_llvm::enhanced_adaptor::EnhancedLlvmAdaptor;
-use tpde_core::complete_compiler::CompleteCompiler;
+use tpde_rust::llvm_adaptor::enhanced::EnhancedLlvmAdaptor;
+use tpde_rust::complete_compiler::CompleteCompiler;
 use inkwell::{
     context::Context,
     module::Module,
@@ -86,7 +86,7 @@ fn main() {
     println!("\n🔍 Test 1: Multiple ICMP predicates in one function");
     let comparison_module = create_comparison_function(&context);
     
-    match tpde_llvm::compile_enhanced_ir(&comparison_module) {
+    match tpde_core::compile_enhanced_ir(&comparison_module) {
         Ok(mut compiler) => {
             match compiler.compile_all() {
                 Ok(()) => {
@@ -105,7 +105,7 @@ fn main() {
     println!("\n📊 Test 2: Comprehensive ICMP predicate validation");
     let comprehensive_module = create_comprehensive_icmp_function(&context);
     
-    match tpde_llvm::compile_enhanced_ir(&comprehensive_module) {
+    match tpde_core::compile_enhanced_ir(&comprehensive_module) {
         Ok(mut compiler) => {
             match compiler.compile_all() {
                 Ok(()) => {

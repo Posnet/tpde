@@ -3,11 +3,11 @@
 //! This test validates the RetBuilder implementation and ensures that return instructions
 //! follow C++ TPDE patterns for ABI compliance, register allocation, and epilogue generation.
 
-use tpde_core::{
+use tpde_rust::{
     adaptor::IrAdaptor,
     complete_compiler::CompleteCompiler,
 };
-use tpde_llvm::enhanced_adaptor::EnhancedLlvmAdaptor;
+use tpde_rust::llvm_adaptor::enhanced::EnhancedLlvmAdaptor;
 use inkwell::{
     context::Context,
     module::Module,

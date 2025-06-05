@@ -3,8 +3,8 @@
 //! This test specifically exercises the GEP (GetElementPtr) instruction processing
 //! that was found to be fully implemented in the analysis.
 
-use tpde_llvm::enhanced_adaptor::EnhancedLlvmAdaptor;
-use tpde_core::complete_compiler::CompleteCompiler;
+use tpde_rust::llvm_adaptor::enhanced::EnhancedLlvmAdaptor;
+use tpde_rust::complete_compiler::CompleteCompiler;
 use inkwell::{
     context::Context,
     module::Module,
@@ -80,7 +80,7 @@ fn main() {
     println!("\n📊 Test 1: Array access with GEP instructions");
     let array_module = create_array_access_function(&context);
     
-    match tpde_llvm::compile_enhanced_ir(&array_module) {
+    match tpde_core::compile_enhanced_ir(&array_module) {
         Ok(mut compiler) => {
             match compiler.compile_all() {
                 Ok(()) => {
@@ -99,7 +99,7 @@ fn main() {
     println!("\n🏗️  Test 2: Struct field access with GEP instructions");
     let struct_module = create_struct_access_function(&context);
     
-    match tpde_llvm::compile_enhanced_ir(&struct_module) {
+    match tpde_core::compile_enhanced_ir(&struct_module) {
         Ok(mut compiler) => {
             match compiler.compile_all() {
                 Ok(()) => {

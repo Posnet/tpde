@@ -1,7 +1,7 @@
 //! Simple test for just return instruction debugging.
 
-use tpde_core::complete_compiler::CompleteCompiler;
-use tpde_llvm::enhanced_adaptor::EnhancedLlvmAdaptor;
+use tpde_rust::complete_compiler::CompleteCompiler;
+use tpde_rust::llvm_adaptor::enhanced::EnhancedLlvmAdaptor;
 use inkwell::{context::Context, module::Module};
 
 fn create_simple_return_function(context: &Context) -> Module {

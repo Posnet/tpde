@@ -1,12 +1,9 @@
-//! Encoding snippet generator entry points.
+//! Encoding snippet generator module.
 //!
-//! `tpde-encodegen` transforms short high level functions (typically written in
-//! C and compiled to LLVM IR) into Rust routines that emit the matching machine
-//! instructions. The generated code reuses registers when possible and can fuse
-//! constant operands or address expressions. By mixing these snippet encoders
-//! into a compiler one can implement most instruction selection logic without
-//! writing every pattern by hand. See [`tpde_core::overview`] for an
-//! extended overview.
+//! This module contains the functionality that was previously in the
+//! tpde-encodegen crate. It transforms short high level functions 
+//! (typically written in C and compiled to LLVM IR) into Rust routines 
+//! that emit the matching machine instructions.
 
 use inkwell::{
     context::Context,

@@ -1,9 +1,9 @@
 //! Test script to verify memory operation codegen works correctly
 //! This demonstrates load, store, and alloca compilation with the Rust TPDE implementation
 
-use tpde_core::complete_compiler::{CompleteCompiler, SimpleTestIR};
-use tpde_core::x64_encoder::{X64Encoder, EncodingError};
-use tpde_core::register_file::AsmReg;
+use tpde_rust::complete_compiler::{CompleteCompiler, SimpleTestIR};
+use tpde_rust::x64_encoder::{X64Encoder, EncodingError};
+use tpde_rust::register_file::AsmReg;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Testing memory operation codegen with Rust TPDE implementation");

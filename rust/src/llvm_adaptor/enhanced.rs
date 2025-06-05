@@ -14,8 +14,8 @@ use inkwell::{
 use inkwell::llvm_sys::prelude::LLVMValueRef;
 use inkwell::values::{AnyValue, AsValueRef, InstructionOpcode};
 use std::collections::HashMap;
-use tpde_core::adaptor::IrAdaptor;
-use tpde_core::llvm_compiler::{LlvmAdaptorInterface, InstructionCategory};
+use crate::adaptor::IrAdaptor;
+use crate::llvm_compiler::{LlvmAdaptorInterface, InstructionCategory};
 
 /// PHI node information for resolution and register allocation.
 ///

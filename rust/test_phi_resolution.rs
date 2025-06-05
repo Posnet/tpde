@@ -3,11 +3,11 @@
 //! This test demonstrates the PHI node resolution functionality that follows
 //! C++ TPDE patterns for handling control flow merges and cycles.
 
-use tpde_core::{
+use tpde_rust::{
     adaptor::IrAdaptor,
     complete_compiler::CompleteCompiler,
 };
-use tpde_llvm::enhanced_adaptor::EnhancedLlvmAdaptor;
+use tpde_rust::llvm_adaptor::enhanced::EnhancedLlvmAdaptor;
 use inkwell::{
     context::Context,
     module::Module,

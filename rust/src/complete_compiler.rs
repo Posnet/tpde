@@ -575,7 +575,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         // Dispatch based on category
         match category {
             InstructionCategory::Arithmetic => self.compile_arithmetic_by_category(&operands, &results),
-            InstructionCategory::Comparison => self.compile_comparison_by_category(inst, &operands, &results),
+            InstructionCategory::Comparison => self.compile_comparison_by_category(Some(inst), &operands, &results),
             InstructionCategory::Memory => self.compile_memory_by_category(&operands, &results),
             InstructionCategory::ControlFlow => self.compile_control_flow_by_category(&operands, &results),
             InstructionCategory::Phi => self.compile_phi_by_category(&operands, &results),
@@ -640,7 +640,8 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 self.compile_arithmetic_by_category(operands, results)
             }
             InstructionCategory::Comparison => {
-                self.compile_comparison_by_category(operands, results)
+                // For legacy dispatch without instruction reference, create a dummy None
+                self.compile_comparison_by_category(None, operands, results)
             }
             InstructionCategory::Memory => {
                 self.compile_memory_by_category(operands, results)
@@ -704,7 +705,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
     /// Compile comparison instructions by category.
     fn compile_comparison_by_category(
         &mut self,
-        inst: A::InstRef,
+        inst: Option<A::InstRef>,
         operands: &[A::ValueRef],
         results: &[A::ValueRef],
     ) -> Result<(), CompilerError> {

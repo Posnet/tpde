@@ -1,13 +1,42 @@
-[workspace]
-members = [
-    "tpde-core",
-    "tpde-encodegen",
-    "tpde-llvm"
-]
+[package]
+name = "tpde"
+version = "0.1.0"
+edition = "2024"
 
-resolver = "2"
+[lib]
+path = "src/lib.rs"
 
-[workspace.dependencies]
+[[bin]]
+name = "test_memory_ops"
+path = "test_memory_ops.rs"
+
+[[bin]]
+name = "test_control_flow"
+path = "test_control_flow.rs"
+
+[[bin]]
+name = "test_phi_resolution"
+path = "test_phi_resolution.rs"
+
+[[bin]]
+name = "test_return_instructions"
+path = "test_return_instructions.rs"
+
+[[bin]]
+name = "test_gep_functionality"
+path = "test_gep_functionality.rs"
+
+[[bin]]
+name = "test_icmp_functionality"
+path = "test_icmp_functionality.rs"
+
+[[bin]]
+name = "encodegen"
+path = "src/bin/encodegen.rs"
+
+[dependencies]
+object = { version = "0.37", features = ["all"] }
+iced-x86 = { version = "1.21", features = ["code_asm"] }
+bumpalo = { version = "3.16", features = ["allocator-api2"] }
 inkwell = { git = "https://github.com/stevefan1999-personal/inkwell.git", features = ["llvm19-1-prefer-dynamic"] }
 llvm-sys = { version = "191", features = ["prefer-dynamic"] }
-object = { version = "0.37", features = ["all"] }

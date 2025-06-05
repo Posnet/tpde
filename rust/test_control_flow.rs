@@ -1,9 +1,9 @@
 //! Test script to verify control flow instruction codegen works correctly
 //! This demonstrates branch, function call, and switch compilation with the Rust TPDE implementation
 
-use tpde_core::complete_compiler::{CompleteCompiler, SimpleTestIR};
-use tpde_core::x64_encoder::X64Encoder;
-use tpde_core::register_file::AsmReg;
+use tpde_rust::complete_compiler::{CompleteCompiler, SimpleTestIR};
+use tpde_rust::x64_encoder::X64Encoder;
+use tpde_rust::register_file::AsmReg;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Testing control flow instruction codegen with Rust TPDE implementation");
