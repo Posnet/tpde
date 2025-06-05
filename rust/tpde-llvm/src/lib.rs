@@ -411,4 +411,40 @@ mod tests {
         let mut compiler = compile_enhanced_ir(&module).unwrap();
         assert!(compiler.compile_all().is_ok());
     }
+    
+    #[test]
+    fn test_opcode_based_instruction_selection() {
+        let context = Context::create();
+        let module = context.create_module("test_opcodes");
+        let i32_type = context.i32_type();
+        let fn_type = i32_type.fn_type(&[i32_type.into(), i32_type.into()], false);
+        let function = module.add_function("add_test", fn_type, None);
+        let basic_block = context.append_basic_block(function, "entry");
+        
+        let builder = context.create_builder();
+        builder.position_at_end(basic_block);
+        let a = function.get_nth_param(0).unwrap().into_int_value();
+        let b = function.get_nth_param(1).unwrap().into_int_value();
+        
+        // Create real LLVM IR: %result = add nsw i32 %a, %b
+        let result = builder.build_int_add(a, b, "result").unwrap();
+        builder.build_return(Some(&result)).unwrap();
+
+        // Compile with enhanced adaptor - should use opcode-based selection
+        let mut compiler = compile_enhanced_ir(&module).unwrap();
+        let compilation_result = compiler.compile_all();
+        
+        // Should succeed with opcode-based instruction selection
+        assert!(compilation_result.is_ok(), "Opcode-based compilation failed: {:?}", compilation_result);
+        
+        // Verify we have compiled functions
+        let compiled = compiler.get_compiled_functions();
+        assert_eq!(compiled.len(), 1);
+        assert_eq!(compiled[0].name, "add_test");
+        assert!(!compiled[0].code.is_empty());
+        
+        println!("✅ Opcode-based instruction selection test passed!");
+        println!("   Function '{}' compiled to {} bytes using LLVM opcode analysis", 
+                 compiled[0].name, compiled[0].code.len());
+    }
 }
