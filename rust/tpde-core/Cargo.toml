@@ -10,6 +10,10 @@ path = "src/lib.rs"
 name = "test_memory_ops"
 path = "../test_memory_ops.rs"
 
+[[bin]]
+name = "test_control_flow"
+path = "../test_control_flow.rs"
+
 [dependencies]
 object = { workspace = true }
 iced-x86 = { version = "1.21", features = ["code_asm"] }

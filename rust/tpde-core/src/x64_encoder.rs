@@ -468,6 +468,16 @@ impl X64Encoder {
         Ok(())
     }
     
+    /// Emit TEST instruction - register to register (8-bit).
+    pub fn test8_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp8_register(dst)?;
+        let src_reg = self.to_gp8_register(src)?;
+        
+        self.assembler.test(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
     /// Emit SUB instruction - immediate to register (32-bit).
     pub fn sub32_reg_imm(&mut self, dst: AsmReg, imm: i32) -> Result<(), EncodingError> {
         let dst_reg = self.to_gp32_register(dst)?;
