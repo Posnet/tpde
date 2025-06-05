@@ -11,7 +11,12 @@
       "Bash(git submodule:*)",
       "Bash(cargo check:*)",
       "Bash(git commit:*)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "mcp__sequential-thinking__sequentialthinking",
+      "Bash(rg:*)",
+      "Bash(git restore:*)",
+      "Bash(python:*)",
+      "Bash(RUST_BACKTRACE=1 cargo run --bin test_phi_resolution)"
     ],
     "deny": []
   }

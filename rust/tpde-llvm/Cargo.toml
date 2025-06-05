@@ -12,5 +12,9 @@ tpde-core = { path = "../tpde-core" }
 name = "test_phi_resolution"
 path = "../test_phi_resolution.rs"
 
+[[bin]]
+name = "test_return_instructions"
+path = "../test_return_instructions.rs"
+
 [lib]
 path = "src/lib.rs"
