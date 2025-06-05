@@ -234,10 +234,20 @@ impl<'ctx> EnhancedLlvmAdaptor<'ctx> {
     }
     
     /// Get comparison predicate for icmp/fcmp instructions.
-    pub fn get_comparison_predicate(&self, _inst: InstructionValue<'ctx>) -> Option<IntPredicate> {
-        // This would need to extract the predicate from the instruction
-        // For now, return a default - would need more inkwell API access
-        Some(IntPredicate::EQ)
+    pub fn get_comparison_predicate(&self, inst: InstructionValue<'ctx>) -> Option<IntPredicate> {
+        use inkwell::values::InstructionOpcode;
+        
+        // Check if this is an ICMP instruction
+        if inst.get_opcode() == InstructionOpcode::ICmp {
+            // Extract the predicate from the ICMP instruction
+            // inkwell provides get_icmp_predicate() method for ICMP instructions
+            if let Some(predicate) = inst.get_icmp_predicate() {
+                return Some(predicate);
+            }
+        }
+        
+        // Not an ICMP instruction or couldn't extract predicate
+        None
     }
     
     /// Get the target blocks for a branch instruction.
@@ -761,6 +771,31 @@ impl<'ctx> LlvmAdaptorInterface for EnhancedLlvmAdaptor<'ctx> {
             }
         } else {
             InstructionCategory::Other
+        }
+    }
+    
+    fn get_icmp_predicate(&self, inst: Self::InstRef) -> Option<String> {
+        if let Some(instruction) = inst {
+            if let Some(predicate) = self.get_comparison_predicate(instruction) {
+                // Convert IntPredicate to string representation
+                let predicate_str = match predicate {
+                    IntPredicate::EQ => "eq",
+                    IntPredicate::NE => "ne", 
+                    IntPredicate::UGT => "ugt",
+                    IntPredicate::UGE => "uge",
+                    IntPredicate::ULT => "ult",
+                    IntPredicate::ULE => "ule",
+                    IntPredicate::SGT => "sgt",
+                    IntPredicate::SGE => "sge",
+                    IntPredicate::SLT => "slt",
+                    IntPredicate::SLE => "sle",
+                };
+                Some(predicate_str.to_string())
+            } else {
+                None
+            }
+        } else {
+            None
         }
     }
     

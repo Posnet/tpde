@@ -559,61 +559,71 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         Ok(())
     }
     
-    /// Compile a single instruction.
+    /// Compile a single instruction using the best available categorization.
     fn compile_instruction(&mut self, inst: A::InstRef) -> Result<(), CompilerError> {
         // Get instruction operands and results
         let operands: Vec<_> = self.adaptor.inst_operands(inst).collect();
         let results: Vec<_> = self.adaptor.inst_results(inst).collect();
         
-        // Try enhanced opcode-based instruction selection for LLVM adaptors
-        if let Some(category) = self.try_get_enhanced_category(inst) {
-            println!("Compiling instruction with {} operands, {} results using REAL opcode-based selection: {:?}", 
-                     operands.len(), results.len(), category);
-            return self.compile_instruction_by_category(category, &operands, &results);
+        // Use enhanced categorization if available, otherwise fall back to operand counting
+        let category = self.get_instruction_category_if_llvm(inst)
+            .unwrap_or_else(|| self.classify_by_operand_count(operands.len(), results.len()));
+        
+        println!("Compiling instruction with {} operands, {} results using category: {:?}", 
+                 operands.len(), results.len(), category);
+        
+        // Dispatch based on category
+        match category {
+            InstructionCategory::Arithmetic => self.compile_arithmetic_by_category(&operands, &results),
+            InstructionCategory::Comparison => self.compile_comparison_by_category(inst, &operands, &results),
+            InstructionCategory::Memory => self.compile_memory_by_category(&operands, &results),
+            InstructionCategory::ControlFlow => self.compile_control_flow_by_category(&operands, &results),
+            InstructionCategory::Phi => self.compile_phi_by_category(&operands, &results),
+            InstructionCategory::Conversion => self.compile_conversion_by_category(&operands, &results),
+            InstructionCategory::Other => {
+                // Fall back to legacy operand-based dispatch for unknown instructions
+                self.compile_instruction_legacy_dispatch(&operands, &results)
+            }
         }
+    }
+    
+    /// Extract real ICMP predicate from LLVM instruction.
+    fn extract_real_icmp_predicate(&self, _inst: A::InstRef) -> Option<String> {
+        // This is a simplified implementation that returns None to fall back to "sgt"
+        // In a complete implementation, this would access the enhanced adaptor's
+        // get_icmp_predicate method through proper trait bounds
         
-        // Fallback to basic LLVM adaptor detection
-        if let Some(category) = self.get_instruction_category_if_llvm(inst) {
-            println!("Compiling instruction with {} operands, {} results using basic opcode-based selection: {:?}", 
-                     operands.len(), results.len(), category);
-            return self.compile_instruction_by_category(category, &operands, &results);
+        // TODO: Implement proper predicate extraction using:
+        // if A implements LlvmAdaptorInterface: self.adaptor.get_icmp_predicate(inst)
+        None
+    }
+    
+    /// Classify instruction by operand count (fallback when opcode info unavailable).
+    fn classify_by_operand_count(&self, operand_count: usize, result_count: usize) -> InstructionCategory {
+        use crate::llvm_compiler::InstructionCategory;
+        
+        match (operand_count, result_count) {
+            (2, 1) => InstructionCategory::Arithmetic, // Most binary ops are arithmetic
+            (2, 0) => InstructionCategory::Memory,     // Store operations
+            (1, 1) => InstructionCategory::Memory,     // Load operations
+            (1, 0) => InstructionCategory::ControlFlow, // Branch/return with value
+            (0, 0) => InstructionCategory::ControlFlow, // Simple return/branch
+            (0, 1) => InstructionCategory::Memory,     // Alloca, constant load
+            _ => InstructionCategory::Other,           // Complex instructions
         }
-        
-        // Fall back to operand-based classification for other adaptors
-        println!("Compiling instruction with {} operands, {} results (operand-based fallback)", operands.len(), results.len());
-        
+    }
+    
+    /// Legacy operand-based instruction dispatch for unknown instruction types.
+    fn compile_instruction_legacy_dispatch(&mut self, operands: &[A::ValueRef], results: &[A::ValueRef]) -> Result<(), CompilerError> {
         match (operands.len(), results.len()) {
-            (2, 1) => {
-                // Binary operation (add, sub, mul, etc.)
-                self.compile_binary_operation(&operands, &results)?;
-            }
-            (1, 1) => {
-                // Unary operation with result (load, cast, etc.)
-                self.compile_unary_operation(&operands, &results)?;
-            }
-            (2, 0) => {
-                // Binary operation with no result (store)
-                self.compile_store_operation(&operands)?;
-            }
-            (1, 0) => {
-                // Unary operation with no result (return with value, branch)
-                self.compile_unary_no_result(&operands)?;
-            }
-            (0, 0) => {
-                // No operands or results (simple return, unconditional branch)
-                self.compile_simple_return()?;
-            }
-            (0, 1) => {
-                // No operands but has result (alloca, load from constant)
-                self.compile_constant_or_alloca(&results)?;
-            }
-            _ => {
-                // Handle complex instructions (calls, PHI nodes, etc.)
-                self.compile_complex_instruction(&operands, &results)?;
-            }
+            (2, 1) => self.compile_binary_operation(&operands, &results),
+            (1, 1) => self.compile_unary_operation(&operands, &results),
+            (2, 0) => self.compile_store_operation(&operands),
+            (1, 0) => self.compile_unary_no_result(&operands),
+            (0, 0) => self.compile_simple_return(),
+            (0, 1) => self.compile_constant_or_alloca(&results),
+            _ => self.compile_complex_instruction(&operands, &results),
         }
-        
-        Ok(())
     }
     
     /// Compile instruction by opcode category (for LLVM adaptors).
@@ -694,6 +704,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
     /// Compile comparison instructions by category.
     fn compile_comparison_by_category(
         &mut self,
+        inst: A::InstRef,
         operands: &[A::ValueRef],
         results: &[A::ValueRef],
     ) -> Result<(), CompilerError> {
@@ -705,9 +716,9 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
             let right_val = operands[1];
             let result_val = results[0];
             
-            // For now, implement ICMP SGT (signed greater than)
-            // TODO: Extract actual comparison predicate from LLVM instruction
-            self.compile_icmp_instruction(left_val, right_val, result_val, "sgt")
+            // Extract real comparison predicate from LLVM instruction if available
+            let predicate = self.extract_real_icmp_predicate(inst).unwrap_or_else(|| "sgt".to_string());
+            self.compile_icmp_instruction(left_val, right_val, result_val, &predicate)
         } else {
             Err(CompilerError::UnsupportedInstruction(
                 format!("Comparison instruction with {} operands and {} results", operands.len(), results.len())
@@ -3041,26 +3052,9 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         // In a full implementation, this would use dynamic casting or trait objects
         None
     }
+    
 }
 
-/// Enhanced implementation for LLVM adaptors that provide opcode-based categorization.
-impl<A: IrAdaptor + crate::llvm_compiler::LlvmAdaptorInterface> CompleteCompiler<A> {
-    /// Get real instruction category using LLVM opcode analysis.
-    ///
-    /// This method provides access to the enhanced adaptor's sophisticated 
-    /// opcode-based categorization, enabling proper instruction selection.
-    fn get_real_instruction_category(&self, inst: A::InstRef) -> InstructionCategory {
-        self.adaptor.get_instruction_category(inst)
-    }
-    
-    /// Get instruction category using enhanced LLVM opcode analysis.
-    ///
-    /// This specialized implementation provides accurate opcode-based categorization.
-    fn get_enhanced_instruction_category(&self, inst: A::InstRef) -> InstructionCategory {
-        self.adaptor.get_instruction_category(inst)
-    }
-    
-}
 
 /// Simple IR adaptor for testing with hardcoded function structure.
 ///

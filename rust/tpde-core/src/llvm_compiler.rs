@@ -30,6 +30,9 @@ pub trait LlvmAdaptorInterface: crate::adaptor::IrAdaptor {
     /// Get instruction opcode information for classification.
     fn get_instruction_category(&self, inst: Self::InstRef) -> InstructionCategory;
     
+    /// Get comparison predicate for ICMP instructions.
+    fn get_icmp_predicate(&self, inst: Self::InstRef) -> Option<String>;
+    
     /// Check if the current function makes calls.
     fn makes_calls(&self) -> bool;
     
