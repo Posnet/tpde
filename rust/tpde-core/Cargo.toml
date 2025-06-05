@@ -6,6 +6,10 @@ edition = "2021"
 [lib]
 path = "src/lib.rs"
 
+[[bin]]
+name = "test_memory_ops"
+path = "../test_memory_ops.rs"
+
 [dependencies]
 object = { workspace = true }
 iced-x86 = { version = "1.21", features = ["code_asm"] }

@@ -447,4 +447,45 @@ mod tests {
         println!("   Function '{}' compiled to {} bytes using LLVM opcode analysis", 
                  compiled[0].name, compiled[0].code.len());
     }
+    
+    #[test]
+    fn test_comprehensive_arithmetic_compilation() {
+        let context = Context::create();
+        let module = context.create_module("arithmetic_test");
+        let i32_type = context.i32_type();
+        
+        // Test function: int arithmetic_test(int a, int b, int c) { return (a + b) * c; }
+        let fn_type = i32_type.fn_type(&[i32_type.into(), i32_type.into(), i32_type.into()], false);
+        let function = module.add_function("arithmetic_test", fn_type, None);
+        let basic_block = context.append_basic_block(function, "entry");
+        
+        let builder = context.create_builder();
+        builder.position_at_end(basic_block);
+        let a = function.get_nth_param(0).unwrap().into_int_value();
+        let b = function.get_nth_param(1).unwrap().into_int_value();
+        let c = function.get_nth_param(2).unwrap().into_int_value();
+        
+        // Generate real LLVM IR with multiple arithmetic operations
+        let add_result = builder.build_int_add(a, b, "add_result").unwrap();  // ADD
+        let final_result = builder.build_int_mul(add_result, c, "mul_result").unwrap(); // MUL
+        builder.build_return(Some(&final_result)).unwrap();
+
+        // Compile with enhanced adaptor - should use real arithmetic instruction selection
+        let mut compiler = compile_enhanced_ir(&module).unwrap();
+        let compilation_result = compiler.compile_all();
+        
+        // Should succeed with real arithmetic instruction compilation
+        assert!(compilation_result.is_ok(), "Arithmetic compilation failed: {:?}", compilation_result);
+        
+        // Verify we have compiled the function with multiple arithmetic operations
+        let compiled = compiler.get_compiled_functions();
+        assert_eq!(compiled.len(), 1);
+        assert_eq!(compiled[0].name, "arithmetic_test");
+        assert!(!compiled[0].code.is_empty());
+        
+        println!("✅ Comprehensive arithmetic compilation test passed!");
+        println!("   Function '{}' with ADD and MUL operations compiled to {} bytes", 
+                 compiled[0].name, compiled[0].code.len());
+        println!("   Real C++ equivalent: (a + b) * c with proper register allocation");
+    }
 }

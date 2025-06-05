@@ -21,6 +21,19 @@ pub enum EncodingError {
     InvalidMemoryOperand,
 }
 
+impl std::fmt::Display for EncodingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EncodingError::InvalidRegister => write!(f, "Invalid register for operation"),
+            EncodingError::UnsupportedInstruction => write!(f, "Unsupported instruction or operand combination"),
+            EncodingError::AssemblyError(msg) => write!(f, "Assembly error: {}", msg),
+            EncodingError::InvalidMemoryOperand => write!(f, "Invalid memory operand"),
+        }
+    }
+}
+
+impl std::error::Error for EncodingError {}
+
 /// x86-64 instruction encoder using iced-x86.
 ///
 /// This provides the equivalent functionality to the C++ fadec-based encoder,
@@ -112,6 +125,61 @@ impl X64Encoder {
             _ => Err(EncodingError::InvalidRegister),
         }
     }
+    
+    /// Convert AsmReg to iced-x86 16-bit GP register.
+    fn to_gp16_register(&self, reg: AsmReg) -> Result<AsmRegister16, EncodingError> {
+        if reg.bank != 0 {
+            return Err(EncodingError::InvalidRegister);
+        }
+        
+        match reg.id {
+            0 => Ok(iced_x86::code_asm::ax),
+            1 => Ok(iced_x86::code_asm::cx),
+            2 => Ok(iced_x86::code_asm::dx),
+            3 => Ok(iced_x86::code_asm::bx),
+            4 => Ok(iced_x86::code_asm::sp),
+            5 => Ok(iced_x86::code_asm::bp),
+            6 => Ok(iced_x86::code_asm::si),
+            7 => Ok(iced_x86::code_asm::di),
+            8 => Ok(iced_x86::code_asm::r8w),
+            9 => Ok(iced_x86::code_asm::r9w),
+            10 => Ok(iced_x86::code_asm::r10w),
+            11 => Ok(iced_x86::code_asm::r11w),
+            12 => Ok(iced_x86::code_asm::r12w),
+            13 => Ok(iced_x86::code_asm::r13w),
+            14 => Ok(iced_x86::code_asm::r14w),
+            15 => Ok(iced_x86::code_asm::r15w),
+            _ => Err(EncodingError::InvalidRegister),
+        }
+    }
+    
+    /// Convert AsmReg to iced-x86 8-bit GP register.
+    fn to_gp8_register(&self, reg: AsmReg) -> Result<AsmRegister8, EncodingError> {
+        if reg.bank != 0 {
+            return Err(EncodingError::InvalidRegister);
+        }
+        
+        match reg.id {
+            0 => Ok(iced_x86::code_asm::al),
+            1 => Ok(iced_x86::code_asm::cl),
+            2 => Ok(iced_x86::code_asm::dl),
+            3 => Ok(iced_x86::code_asm::bl),
+            4 => Ok(iced_x86::code_asm::spl),
+            5 => Ok(iced_x86::code_asm::bpl),
+            6 => Ok(iced_x86::code_asm::sil),
+            7 => Ok(iced_x86::code_asm::dil),
+            // For R8-R15, we use the 8-bit part which is accessed via r8b, r9b, etc.
+            8 => Ok(iced_x86::code_asm::r8b),
+            9 => Ok(iced_x86::code_asm::r9b),
+            10 => Ok(iced_x86::code_asm::r10b),
+            11 => Ok(iced_x86::code_asm::r11b),
+            12 => Ok(iced_x86::code_asm::r12b),
+            13 => Ok(iced_x86::code_asm::r13b),
+            14 => Ok(iced_x86::code_asm::r14b),
+            15 => Ok(iced_x86::code_asm::r15b),
+            _ => Err(EncodingError::InvalidRegister),
+        }
+    }
 
     /// Convert AsmReg to iced-x86 Register for XMM registers.
     fn to_xmm_register(&self, reg: AsmReg) -> Result<AsmRegisterXmm, EncodingError> {
@@ -165,7 +233,7 @@ impl X64Encoder {
         let dst_reg = self.to_gp_register(dst)?;
         let base_reg = self.to_gp_register(base)?;
         
-        let mem = base_reg + offset;
+        let mem = qword_ptr(base_reg + offset);
         self.assembler.mov(dst_reg, mem)
             .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
         Ok(())
@@ -176,7 +244,7 @@ impl X64Encoder {
         let base_reg = self.to_gp_register(base)?;
         let src_reg = self.to_gp_register(src)?;
         
-        let mem = base_reg + offset;
+        let mem = qword_ptr(base_reg + offset);
         self.assembler.mov(mem, src_reg)
             .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
         Ok(())
@@ -351,10 +419,30 @@ impl X64Encoder {
         Ok(())
     }
     
+    /// Emit ADD instruction - register to register (64-bit).
+    pub fn add64_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp_register(dst)?;
+        let src_reg = self.to_gp_register(src)?;
+        
+        self.assembler.add(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
     /// Emit SUB instruction - register to register (32-bit).
     pub fn sub32_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
         let dst_reg = self.to_gp32_register(dst)?;
         let src_reg = self.to_gp32_register(src)?;
+        
+        self.assembler.sub(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit SUB instruction - register to register (64-bit).
+    pub fn sub64_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp_register(dst)?;
+        let src_reg = self.to_gp_register(src)?;
         
         self.assembler.sub(dst_reg, src_reg)
             .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
@@ -385,6 +473,92 @@ impl X64Encoder {
         let dst_reg = self.to_gp32_register(dst)?;
         
         self.assembler.sub(dst_reg, imm)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit SUB instruction - immediate to register (64-bit).
+    pub fn sub64_reg_imm(&mut self, dst: AsmReg, imm: i32) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp_register(dst)?;
+        
+        self.assembler.sub(dst_reg, imm)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit AND instruction - immediate to register (64-bit).
+    pub fn and64_reg_imm(&mut self, dst: AsmReg, imm: i32) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp_register(dst)?;
+        
+        self.assembler.and(dst_reg, imm)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    // ==== MEMORY OPERATIONS ====
+    
+    /// Emit MOVZX instruction - 8-bit memory to 32-bit register (zero extend).
+    pub fn movzx_reg8_mem(&mut self, dst: AsmReg, base: AsmReg, offset: i32) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp32_register(dst)?;
+        let base_reg = self.to_gp_register(base)?;
+        
+        let mem = byte_ptr(base_reg + offset);
+        self.assembler.movzx(dst_reg, mem)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit MOVZX instruction - 16-bit memory to 32-bit register (zero extend).
+    pub fn movzx_reg16_mem(&mut self, dst: AsmReg, base: AsmReg, offset: i32) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp32_register(dst)?;
+        let base_reg = self.to_gp_register(base)?;
+        
+        let mem = word_ptr(base_reg + offset);
+        self.assembler.movzx(dst_reg, mem)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit MOV instruction - 32-bit memory to register.
+    pub fn mov32_reg_mem(&mut self, dst: AsmReg, base: AsmReg, offset: i32) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp32_register(dst)?;
+        let base_reg = self.to_gp_register(base)?;
+        
+        let mem = dword_ptr(base_reg + offset);
+        self.assembler.mov(dst_reg, mem)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit MOV instruction - 8-bit register to memory.
+    pub fn mov8_mem_reg(&mut self, base: AsmReg, offset: i32, src: AsmReg) -> Result<(), EncodingError> {
+        let base_reg = self.to_gp_register(base)?;
+        let src_reg = self.to_gp8_register(src)?;
+        
+        let mem = byte_ptr(base_reg + offset);
+        self.assembler.mov(mem, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit MOV instruction - 16-bit register to memory.
+    pub fn mov16_mem_reg(&mut self, base: AsmReg, offset: i32, src: AsmReg) -> Result<(), EncodingError> {
+        let base_reg = self.to_gp_register(base)?;
+        let src_reg = self.to_gp16_register(src)?;
+        
+        let mem = word_ptr(base_reg + offset);
+        self.assembler.mov(mem, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit MOV instruction - 32-bit register to memory.
+    pub fn mov32_mem_reg(&mut self, base: AsmReg, offset: i32, src: AsmReg) -> Result<(), EncodingError> {
+        let base_reg = self.to_gp_register(base)?;
+        let src_reg = self.to_gp32_register(src)?;
+        
+        let mem = dword_ptr(base_reg + offset);
+        self.assembler.mov(mem, src_reg)
             .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
         Ok(())
     }
