@@ -121,6 +121,11 @@ impl<'ctx> EnhancedLlvmAdaptor<'ctx> {
         matches!(inst.get_opcode(), InstructionOpcode::Store)
     }
     
+    /// Check if an instruction is a GEP (GetElementPtr).
+    pub fn is_gep(&self, inst: InstructionValue<'ctx>) -> bool {
+        matches!(inst.get_opcode(), InstructionOpcode::GetElementPtr)
+    }
+    
     /// Check if an instruction is arithmetic.
     pub fn is_arithmetic(&self, inst: InstructionValue<'ctx>) -> bool {
         matches!(inst.get_opcode(),
