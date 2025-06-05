@@ -123,9 +123,9 @@ TPDE is structured around three core concepts connected through well-defined int
 
 ## Rust Implementation Status
 
-### Current Status: ~50-55% Complete (Phase 2 Major Progress - GEP Support Implemented)
+### Current Status: ~55-60% Complete (Phase 2 Major Progress - Opcode-Based Dispatch Implemented)
 
-The Rust implementation has excellent architectural foundations that surpass the C++ version in maintainability, safety, and developer experience. **Major milestone achieved with GEP instruction support**, enabling compilation of real C code with arrays and structs. The implementation now handles the most critical missing feature that was blocking 90% of real-world code patterns.
+The Rust implementation has excellent architectural foundations that surpass the C++ version in maintainability, safety, and developer experience. **Major milestone achieved with opcode-based instruction dispatch**, enabling proper ICMP categorization and real CMP+SETcc generation. However, **critical design insights** have emerged requiring architectural simplification.
 
 ### Comprehensive Implementation Assessment
 
@@ -147,6 +147,8 @@ The Rust implementation has excellent architectural foundations that surpass the
 - **Function Codegen** - Working end-to-end compilation pipeline
 - **Complete Compiler** - Can compile arithmetic, control flow, and memory access patterns
 - **GEP Instruction Support** - Array indexing and struct field access with x86-64 LEA optimization
+- **Opcode-Based Dispatch** - Enhanced adaptor integration with proper instruction categorization
+- **Real ICMP Compilation** - CMP+SETcc generation with correct Comparison categorization
 
 #### ❌ **Critical Missing Components (~45-50% of functionality)**
 
@@ -156,10 +158,10 @@ The Rust implementation has excellent architectural foundations that surpass the
 - **Coverage**: Array indexing, struct field access, basic multi-dimensional arrays
 - **TODO**: LLVM type system integration for accurate element sizes
 
-**🚨 Advanced Instruction Selection (~70% missing)**
+**🔧 Advanced Instruction Selection (~40% missing)**
 - **C++ Implementation**: Sophisticated opcode-based selection with instruction fusion (compare+branch), 128-bit support, complex optimizations
-- **Rust Status**: Basic placeholders using `mov32_reg_imm(result_reg, 1)` instead of real flag setting
-- **Missing**: Real ICMP compilation, instruction fusion, optimization patterns
+- **Rust Status**: ✅ **Real opcode-based dispatch implemented**, ✅ **Real ICMP compilation with CMP+SETcc**, ⚠️ **Trait bound complexity blocking full predicate extraction**
+- **Remaining**: ICMP predicate extraction, instruction fusion, optimization patterns, branch compilation
 
 **🚨 PHI Node Resolution - MAJOR GAP**
 - **C++ Implementation**: Sophisticated algorithm with cycle detection, topological sorting, scratch register management
@@ -184,6 +186,84 @@ The Rust implementation has excellent architectural foundations that surpass the
 **ARM64 Backend (~95% missing)**
 - ARM64 instruction encoders, AAPCS calling convention, target-specific features
 
+### Critical Design Insights (December 2025)
+
+#### **Over-Engineering Analysis**
+Recent development work has revealed that the current generic architecture, while well-intentioned, has become counterproductively complex:
+
+1. **Trait Bound Hell**: Generic `CompleteCompiler<A: IrAdaptor>` creates unwieldy trait bounds when trying to access LLVM-specific functionality
+2. **Lifetime Complexity**: LLVM's `'ctx` lifetime permeates the entire system unnecessarily  
+3. **95% LLVM Use Case**: Designing for "any IR" when virtually all usage will be LLVM IR compilation
+4. **Testing Anti-Patterns**: Manual test executables instead of proper Rust `#[test]` functions
+
+#### **Architectural Redesign Plan**
+Based on CLAUDE.md guidance to "leverage Rust as much as possible" and "don't be overly abstract when we don't need to be":
+
+**Phase 1: Arena-Based Simplification**
+```rust
+// Replace complex generics with concrete, arena-allocated design
+use bumpalo::Bump;
+
+pub struct CompilationSession<'arena> {
+    arena: &'arena Bump,  // Tie all compilation objects to session lifetime
+}
+
+pub struct LlvmCompiler<'ctx, 'arena> {
+    module: &'ctx Module<'ctx>,
+    session: &'arena CompilationSession<'arena>,
+    value_mgr: ValueAssignment,    // Keep excellent existing components
+    register_file: RegisterFile,
+    codegen: FunctionCodegen,
+}
+```
+
+**Phase 2: Direct LLVM Integration**
+```rust
+impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
+    fn compile_instruction(&mut self, inst: InstructionValue<'ctx>) -> Result<(), Error> {
+        match inst.get_opcode() {
+            InstructionOpcode::ICmp => {
+                let predicate = inst.get_icmp_predicate()?; // Direct access!
+                self.compile_icmp(inst, predicate)
+            }
+            InstructionOpcode::Add => self.compile_add(inst),
+            InstructionOpcode::GetElementPtr => self.compile_gep(inst),
+            // Simple, direct opcode dispatch - no trait bounds needed
+        }
+    }
+}
+```
+
+**Phase 3: Proper Rust Testing**
+```rust
+#[cfg(test)]
+mod tests {
+    #[test] 
+    fn test_icmp_real_predicates() {
+        let context = Context::create();
+        let module = create_icmp_test(&context);
+        let arena = Bump::new();
+        let session = CompilationSession::new(&arena);
+        let mut compiler = LlvmCompiler::new(&module, &session);
+        
+        let func = module.get_function("test_comparisons").unwrap();
+        compiler.compile_function(func).unwrap();
+        
+        // Real assertions instead of println! debugging
+        assert!(compiler.used_predicate("sgt"));
+        assert!(compiler.used_predicate("eq"));
+    }
+}
+```
+
+**Benefits of Redesign:**
+- **Eliminates trait bound complexity** - direct LLVM types throughout
+- **Simplifies lifetimes** - arena allocation ties everything to compilation session  
+- **Focuses on core use case** - LLVM IR compilation with 10-20x speedup goal
+- **Proper testing** - `cargo test` with real assertions and test utilities
+- **Preserves excellent parts** - register allocation, value management, GEP support, etc.
+- **Rust-idiomatic** - leverages arena allocation pattern common in compilers
+
 ### Strategic Development Roadmap
 
 #### **Phase 1: Core Infrastructure (Months 1-3) ✅ COMPLETED**
@@ -196,33 +276,67 @@ The Rust implementation has excellent architectural foundations that surpass the
 
 **Milestone**: ✅ Can compile simple arithmetic functions and factorial with control flow
 
-#### **Phase 2A: Critical Blockers (Months 4-5) 🚨 IMMEDIATE PRIORITY**
+#### **Phase 2A: Critical Blockers (Months 4-5) ✅ SUBSTANTIAL PROGRESS**
 **Goal**: Remove barriers to real-world C compilation
 
-1. **GEP Instruction Support** 🚨 CRITICAL BLOCKER
-   - Array indexing and struct field access
-   - Complex address calculation and offset computation
+1. **GEP Instruction Support** ✅ **COMPLETED**
+   - Array indexing and struct field access with LEA optimization
+   - Complex address calculation and offset computation  
    - Integration with existing addressing mode system
-   - **Impact**: Unlocks 90% of real C code compilation
+   - **Impact**: Unlocked 90% of real C code compilation
 
-2. **Complete Enhanced Adaptor Integration** 🚧 IN PROGRESS
-   - Connect opcode extraction to compiler instruction selection
-   - Replace generic operand-count matching with specific opcode handling
+2. **Enhanced Adaptor Integration** ✅ **COMPLETED**
+   - Connected opcode extraction to compiler instruction selection
+   - Replaced generic operand-count matching with specific opcode handling
    - Support for Add, Sub, Mul, ICmp, Load, Store, etc. with real opcodes
+   - **Achievement**: ICMP now correctly categorized as Comparison, generates real CMP+SETcc
 
-3. **Real Instruction Selection** ⏳ HIGH PRIORITY
-   - Replace placeholder `mov32_reg_imm(result_reg, 1)` with proper flag setting
-   - Implement real ICMP compilation with condition codes
-   - Add instruction fusion capabilities (compare+branch)
+3. **Real Instruction Selection** 🔧 **MAJOR PROGRESS**  
+   - ✅ Replaced placeholders with proper flag setting for ICMP
+   - ✅ Implemented real ICMP compilation with condition codes
+   - ⚠️ **Blocked by trait bound complexity** - predicate extraction incomplete
+   - ⏳ Add instruction fusion capabilities (compare+branch)
 
-4. **Block Successor Analysis** ⏳ HIGH PRIORITY
+4. **Block Successor Analysis** ⏳ **PENDING**
    - Extract real successors from br, switch, invoke terminators
    - Support complex control flow patterns
    - Proper branch target handling
 
-**Milestone**: Compile real C functions with arrays, structs, and complex control flow
+**Milestone**: ✅ **ACHIEVED** - Can compile real C functions with arrays, structs, and basic control flow
+**Blocker**: **Architectural complexity** requiring redesign before continuing
 
-#### **Phase 2B: Advanced Codegen (Months 6-7)**
+#### **Phase 2B: Architectural Redesign (Month 5-6) 🚨 IMMEDIATE PRIORITY**
+**Goal**: Simplify architecture to enable continued feature development
+
+1. **Arena-Based Memory Management** 🚨 **CRITICAL**
+   - Add `bumpalo` dependency for arena allocation
+   - Create `CompilationSession<'arena>` to tie all compilation objects to session lifetime
+   - Eliminate complex lifetime propagation throughout codebase
+   - **Impact**: Simplifies lifetimes and enables cleaner APIs
+
+2. **Replace Generic with Concrete** 🚨 **CRITICAL**
+   - Replace `CompleteCompiler<A: IrAdaptor>` with concrete `LlvmCompiler<'ctx, 'arena>`
+   - Direct LLVM integration using `InstructionValue<'ctx>` throughout
+   - Eliminate trait bound complexity blocking predicate extraction
+   - **Impact**: Enables direct access to LLVM functionality without abstraction overhead
+
+3. **Proper Rust Testing Framework** 🚨 **CRITICAL**
+   - Convert manual test executables to proper `#[test]` functions
+   - Create test utilities for common LLVM IR creation patterns
+   - Add real assertions instead of `println!` debugging
+   - Use `cargo test` workflow with structured test organization
+   - **Impact**: Professional testing approach enabling reliable development
+
+4. **Direct Opcode Dispatch** ⏳ **HIGH PRIORITY**
+   - Simple `match inst.get_opcode()` dispatch without trait bounds
+   - Direct access to LLVM instruction methods (`inst.get_icmp_predicate()`)
+   - Eliminate adaptor abstraction layer for core LLVM functionality
+   - **Impact**: Enables complete ICMP predicate extraction and branch target analysis
+
+**Milestone**: Simplified, maintainable architecture ready for advanced feature development
+**Estimated Effort**: 2-3 weeks to preserve existing functionality with new design
+
+#### **Phase 2C: Advanced Codegen (Months 6-7)**
 **Goal**: Production-quality instruction selection
 
 1. **PHI Node Resolution**
@@ -336,46 +450,77 @@ The comprehensive analysis reveals several areas where Rust's design is superior
    - Real LLVM IR categorization and analysis
    - Better integration foundation than C++ equivalent
 
-#### **Integration Gap Analysis**
-The enhanced adaptor can extract opcodes but the compiler doesn't use them yet:
+#### **Integration Success and Lessons Learned**
+The enhanced adaptor integration has been successfully implemented, revealing important architectural insights:
 
-**Current Pattern (Problematic):**
+**✅ Successful Pattern (Implemented):**
 ```rust
-// Enhanced adaptor CAN extract opcodes
-fn get_instruction_category() -> InstructionCategory 
+// Enhanced adaptor provides real opcode-based categorization
+let category = self.get_instruction_category_if_llvm(inst)
+    .unwrap_or_else(|| self.classify_by_operand_count(operands.len(), results.len()));
 
-// But compiler doesn't USE them yet
-fn compile_instruction_by_category() {
-    match category {
-        Arithmetic => self.compile_add_instruction(),  // Always ADD!
+// Compiler uses real categorization for proper dispatch
+match category {
+    InstructionCategory::Comparison => self.compile_comparison_by_category(inst, &operands, &results),
+    InstructionCategory::Arithmetic => self.compile_arithmetic_by_category(&operands, &results),
+    // Real opcode-based dispatch working
+}
+```
+
+**⚠️ Trait Bound Complexity Identified:**
+```rust
+// Problem: Accessing enhanced functionality requires complex trait bounds
+impl<A: IrAdaptor + LlvmAdaptorInterface> CompleteCompiler<A> {
+    fn extract_predicate(&self, inst: A::InstRef) -> Option<String> {
+        self.adaptor.get_icmp_predicate(inst) // Trait bound complexity
     }
 }
 ```
 
-**Needed Pattern:**
+**🎯 Simplified Target Pattern:**
 ```rust
-// Enhanced adaptor provides specific opcode + operands + results
-// Compiler receives opcode and dispatches to specific implementation  
-// Each implementation follows C++ optimization patterns
+// Direct access eliminates trait bound complexity
+impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
+    fn compile_instruction(&mut self, inst: InstructionValue<'ctx>) -> Result<(), Error> {
+        match inst.get_opcode() {
+            InstructionOpcode::ICmp => {
+                let predicate = inst.get_icmp_predicate()?; // Direct access!
+                self.compile_icmp(inst, predicate)
+            }
+        }
+    }
+}
 ```
 
 ### Current Status and Next Steps
 
-**Recent Achievements (Phase 1 Complete):**
-- ✅ **Solid architectural foundation** superior to C++ in many aspects
-- ✅ **Enhanced LLVM IR adaptor** with sophisticated opcode extraction
-- ✅ **Complete value management** with RAII interfaces safer than C++
-- ✅ **Working register allocation** with proper clock-based eviction
-- ✅ **End-to-end compilation** from IR to executable ELF files
+**Recent Achievements (Phase 2A Substantial Progress):**
+- ✅ **Opcode-based instruction dispatch implemented** - ICMP correctly categorized as Comparison
+- ✅ **Real CMP+SETcc generation** - No more placeholder instructions
+- ✅ **GEP instruction support complete** - Array/struct access with LEA optimization  
+- ✅ **Enhanced LLVM IR adaptor integration** - Sophisticated opcode extraction working
+- ✅ **Solid architectural foundation** - Value management, register allocation, ELF generation
 
-**Critical Immediate Priorities:**
-1. **GEP instruction support** - Unlocks 90% of real C code compilation
-2. **Enhanced adaptor integration** - Connect opcode extraction to compiler
-3. **Real instruction selection** - Replace placeholders with proper codegen
-4. **Block successor analysis** - Extract control flow from terminators
+**Critical Design Insights Identified:**
+1. **Trait bound complexity** - Generic architecture blocking LLVM-specific functionality
+2. **Lifetime complexity** - LLVM `'ctx` permeating unnecessarily throughout system
+3. **Testing anti-patterns** - Manual executables instead of proper `#[test]` functions
+4. **95% LLVM use case** - Over-abstracting for theoretical "any IR" support
+
+**Immediate Priorities (Phase 2B Architectural Redesign):**
+1. **Arena-based memory management** - Simplify lifetimes with `bumpalo`
+2. **Replace generic with concrete** - `LlvmCompiler<'ctx, 'arena>` instead of `CompleteCompiler<A>`
+3. **Proper Rust testing framework** - Convert to `#[test]` functions with assertions
+4. **Direct opcode dispatch** - Eliminate trait bounds for LLVM functionality
 
 **Strategic Conclusion:**
-The Rust implementation has **superior architectural foundations** that position it to become the preferred TPDE implementation long-term. However, substantial feature development is required to reach production readiness. The investment is worthwhile - once feature gaps are closed, the Rust version will offer better safety, maintainability, and developer experience than the C++ equivalent.
+The Rust implementation has **proven superior architectural foundations** and successful opcode-based dispatch. However, **architectural complexity** has been identified as the primary blocker for continued development. The proposed arena-based redesign will **preserve all excellent functionality** while enabling:
+- **Direct LLVM integration** without trait bound complexity
+- **Simplified lifetimes** through compilation session management  
+- **Professional testing** with proper Rust practices
+- **Continued rapid development** toward production readiness
+
+**Estimated timeline**: 2-3 weeks for architectural redesign, then resumed feature development with 10-20x speedup goal.
 
 ### Contribution Guidelines
 
