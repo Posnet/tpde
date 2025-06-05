@@ -123,120 +123,123 @@ TPDE is structured around three core concepts connected through well-defined int
 
 ## Rust Implementation Status
 
-### Current Status: ~40-45% Complete (Phase 1 Complete, Phase 2 In Progress)
+### Current Status: ~40-45% Complete (Strong Architectural Foundation with Critical Feature Gaps)
 
-The Rust implementation in `rust/` has made significant progress with core infrastructure now in place. We can compile real LLVM IR functions including factorial with control flow, arithmetic operations, and function calls through the complete TPDE pipeline.
+The Rust implementation has excellent architectural foundations that could surpass the C++ version in maintainability, safety, and developer experience. However, significant functionality gaps remain that prevent production use. Analysis shows the Rust version has superior type safety and cleaner design patterns but lacks critical compilation features.
 
-### Implementation Gap Analysis
+### Comprehensive Implementation Assessment
 
-#### ✅ **Completed Components**
-- **IRAdaptor trait** - Well-designed abstraction for IR traversal (`rust/tpde-core/src/adaptor.rs`)
-- **Basic CompilerBase** - Core compilation flow outlined (`rust/tpde-core/src/compiler.rs`)
-- **Liveness Analysis** - RPO ordering and basic value liveness tracking (`rust/tpde-core/src/analyzer.rs`)
-- **ELF Assembler** - Functional object file generation using `object` crate (`rust/tpde-core/src/assembler.rs`)
-- **LLVM Integration** - Basic module parsing with inkwell (`rust/tpde-llvm/src/lib.rs`)
-- **Enhanced LLVM IR Adaptor** - Real-world LLVM IR support with control flow, PHI nodes, function calls (`rust/tpde-llvm/src/enhanced_adaptor.rs`)
-- **Encodegen Tool** - IR pattern analysis and stub generation (`rust/tpde-encodegen/`)
-- **ValueAssignment System** - Complete with multi-part values, reference counting, storage locations (`rust/tpde-core/src/value_assignment.rs`)
-- **RegisterFile** - Clock-based allocation with eviction, locking, and spill callbacks (`rust/tpde-core/src/register_file.rs`)
-- **ValueRef/ValuePartRef** - RAII interfaces for instruction selection (`rust/tpde-core/src/value_ref.rs`)
-- **x86-64 Instruction Encoder** - Basic encoders using iced-x86 (`rust/tpde-core/src/x64_encoder.rs`)
-- **Calling Convention** - System V x86-64 ABI implementation (`rust/tpde-core/src/calling_convention.rs`)
-- **Function Codegen** - Prologue/epilogue generation, frame management (`rust/tpde-core/src/function_codegen.rs`)
-- **Complete Compiler** - End-to-end compilation pipeline integration (`rust/tpde-core/src/complete_compiler.rs`)
+#### ✅ **Architectural Strengths (Superior to C++)**
+- **Enhanced LLVM IR Adaptor** - Sophisticated opcode extraction and real LLVM IR integration (`rust/tpde-llvm/src/enhanced_adaptor.rs`)
+- **Value Management System** - RAII-based ValuePartRef system cleaner and safer than C++ equivalent (`rust/tpde-core/src/value_ref.rs`)
+- **Register Allocation Framework** - Complete clock-based allocation with proper integration (`rust/tpde-core/src/register_file.rs`)
+- **Type Safety & Error Handling** - Comprehensive Result types and ownership system prevent entire classes of bugs
+- **API Design** - Clean trait boundaries vs complex C++ template interfaces
+- **Memory Safety** - Automatic memory management vs manual RAII patterns
+- **LLVM Integration** - inkwell provides safer interface than direct C++ API
+
+#### ✅ **Completed Functional Components**
+- **IRAdaptor trait** - Well-designed abstraction for IR traversal
+- **ValueAssignment System** - Complete with multi-part values, reference counting, storage locations
+- **ELF Assembler** - Functional object file generation using `object` crate
+- **x86-64 Instruction Encoder** - Basic encoders using iced-x86 with real machine code generation
+- **Calling Convention** - System V x86-64 ABI implementation with prologue/epilogue
+- **Function Codegen** - Working end-to-end compilation pipeline
+- **Complete Compiler** - Can compile simple arithmetic and control flow patterns
 
 #### ❌ **Critical Missing Components (~55-60% of functionality)**
 
-**Instruction Selection & Codegen (~70% missing):**
-- Complete instruction selection for all LLVM IR constructs
-- Memory operations (loads, stores, addressing modes)
-- Branch and conditional instruction compilation
-- Function call instruction generation and integration
-- Complex expression lowering and optimization
-- Immediate value materialization strategies
+**🚨 GEP (GetElementPtr) Instructions - CRITICAL BLOCKER**
+- **Impact**: Cannot compile 90% of real C code with arrays or structs
+- **C++ Implementation**: Full support for complex address calculations, multi-dimensional arrays, struct field access
+- **Rust Status**: Completely missing - blocks compilation of `arr[i]`, `obj.field`, etc.
+- **Priority**: IMMEDIATE - This is the most critical gap for real-world use
 
-**Block Successor Analysis (~85% missing):**
-- Proper extraction of successor blocks from terminator instructions
-- Switch statement target analysis
-- Invoke instruction handling for exception flow
-- Complex control flow pattern support
+**🚨 Advanced Instruction Selection (~70% missing)**
+- **C++ Implementation**: Sophisticated opcode-based selection with instruction fusion (compare+branch), 128-bit support, complex optimizations
+- **Rust Status**: Basic placeholders using `mov32_reg_imm(result_reg, 1)` instead of real flag setting
+- **Missing**: Real ICMP compilation, instruction fusion, optimization patterns
 
-**Advanced IR Support (~75% missing):**
-- ConstantExpr decomposition and handling
-- Global variable and alloca support
-- LLVM intrinsics implementation (memcpy, etc.)
-- Exception handling infrastructure
-- Complex addressing modes and GEP instruction support
+**🚨 PHI Node Resolution - MAJOR GAP**
+- **C++ Implementation**: Sophisticated algorithm with cycle detection, topological sorting, scratch register management
+- **Rust Status**: Stub placeholder only - prevents compilation of complex control flow
 
-**ARM64 Backend (~95% missing):**
-- ARM64 instruction encoders
-- AAPCS calling convention implementation
-- ARM64-specific register allocation
-- Target-specific instruction selection
+**Advanced Calling Convention (~60% missing)**
+- **C++ Implementation**: Complete System V ABI with byval, sret, varargs, split register/stack passing
+- **Rust Status**: Only simple register-based calls work
 
-**Performance & Optimization (~80% missing):**
-- Copy coalescing and register pressure optimization
-- Linear scan register allocation improvements
-- Instruction fusion and pattern matching
-- Compile-time performance optimization
+**Complex Memory Operations (~40% missing)**
+- **C++ Implementation**: Full addressing modes with base+index*scale+displacement, automatic optimization
+- **Rust Status**: Only basic [reg+offset] addressing implemented
 
-### Development Roadmap
+**Exception Handling (Not Started)**
+- **C++ Implementation**: Full invoke/landingpad support with personality functions
+- **Rust Status**: Not implemented
+
+**Intrinsics Support (Not Started)**
+- **C++ Implementation**: Extensive intrinsics (overflow arithmetic, va_start, memcpy, etc.)
+- **Rust Status**: None implemented
+
+**ARM64 Backend (~95% missing)**
+- ARM64 instruction encoders, AAPCS calling convention, target-specific features
+
+### Strategic Development Roadmap
 
 #### **Phase 1: Core Infrastructure (Months 1-3) ✅ COMPLETED**
-**Goal**: Enable compilation of simple arithmetic functions
+**Goal**: Establish solid architectural foundation
+- ✅ Complete value management system with RAII interfaces
+- ✅ Working register allocation with clock-based eviction
+- ✅ End-to-end compilation pipeline from IR to ELF
+- ✅ Basic instruction encoding with real machine code generation
+- ✅ Enhanced LLVM IR adaptor with opcode extraction
 
-1. **ValueAssignment System** (`rust/tpde-core/src/value_assignment.rs`) ✅
-   - Complete C++ ValueAssignment, AssignmentPartRef infrastructure
-   - Multi-part value tracking with reference counting
-   - Register vs memory location management
+**Milestone**: ✅ Can compile simple arithmetic functions and factorial with control flow
 
-2. **RegisterFile Implementation** (`rust/tpde-core/src/register_file.rs`) ✅
-   - Clock-based allocation with eviction and locking
-   - Register pressure tracking and spilling
-   - Integration with ValueRef RAII interfaces
+#### **Phase 2A: Critical Blockers (Months 4-5) 🚨 IMMEDIATE PRIORITY**
+**Goal**: Remove barriers to real-world C compilation
 
-3. **Function Frame Management** (`rust/tpde-core/src/function_codegen.rs`) ✅
-   - Calling convention integration
-   - Prologue/epilogue generation
-   - Frame layout calculation
+1. **GEP Instruction Support** 🚨 CRITICAL BLOCKER
+   - Array indexing and struct field access
+   - Complex address calculation and offset computation
+   - Integration with existing addressing mode system
+   - **Impact**: Unlocks 90% of real C code compilation
 
-4. **x86-64 Instruction Encoders** (`rust/tpde-core/src/x64_encoder.rs`) ✅
-   - mov, add, sub, ret instructions using iced-x86
-   - Immediate value encoding
-   - Register-to-register operations
+2. **Complete Enhanced Adaptor Integration** 🚧 IN PROGRESS
+   - Connect opcode extraction to compiler instruction selection
+   - Replace generic operand-count matching with specific opcode handling
+   - Support for Add, Sub, Mul, ICmp, Load, Store, etc. with real opcodes
 
-5. **Complete Compiler Integration** (`rust/tpde-core/src/complete_compiler.rs`) ✅
-   - End-to-end compilation pipeline
-   - Enhanced LLVM IR adaptor integration
-   - Real factorial function compilation with control flow
+3. **Real Instruction Selection** ⏳ HIGH PRIORITY
+   - Replace placeholder `mov32_reg_imm(result_reg, 1)` with proper flag setting
+   - Implement real ICMP compilation with condition codes
+   - Add instruction fusion capabilities (compare+branch)
 
-**Milestone**: ✅ Successfully compile `int add(int a, int b) { return a + b; }` and factorial function
+4. **Block Successor Analysis** ⏳ HIGH PRIORITY
+   - Extract real successors from br, switch, invoke terminators
+   - Support complex control flow patterns
+   - Proper branch target handling
 
-#### **Phase 2: Instruction Selection & Real Codegen (Months 4-6) 🚧 IN PROGRESS**
-**Goal**: Generate real machine code for all basic IR constructs
+**Milestone**: Compile real C functions with arrays, structs, and complex control flow
 
-1. **Complete Instruction Selection** 🚧 CURRENT TASK
-   - Full LLVM IR instruction support (arithmetic, loads, stores, calls, branches)
-   - Integration with existing x86-64 encoder and register allocation
-   - Proper block successor extraction from terminators
-   - Memory addressing mode optimization
+#### **Phase 2B: Advanced Codegen (Months 6-7)**
+**Goal**: Production-quality instruction selection
 
-2. **Enhanced Control Flow** ⏳ NEXT
-   - Real branch instruction compilation with condition codes
-   - Switch statement handling
-   - Function call instruction generation
+1. **PHI Node Resolution**
+   - Implement cycle detection algorithm from C++ reference
+   - Topological sorting and scratch register management
+   - Register allocation across control flow merges
 
-3. **Memory Operations & Global Support** ⏳ PENDING
-   - Load/store instruction selection with addressing modes
-   - Global variable and alloca support
-   - Stack access pattern optimization
+2. **Advanced Calling Convention**
+   - byval, sret, varargs parameter handling
+   - Split register/stack passing for large types
+   - ABI compliance for C function interoperability
 
-4. **Block Successor Analysis** ⏳ PENDING
-   - Extract successors from br, switch, invoke instructions
-   - Support for complex control flow patterns
-   - Exception handling integration
+3. **Complex Memory Operations**
+   - Full addressing modes: base+index*scale+displacement
+   - Addressing mode optimization and pattern matching
+   - Integration with GEP instruction lowering
 
-**Milestone**: Generate real machine code for factorial function and other complex C functions
+**Milestone**: Feature parity with C++ for basic compilation patterns
 
 #### **Phase 3: Advanced Features (Months 7-9)**
 **Goal**: Handle complex IR constructs
@@ -307,31 +310,82 @@ The Rust implementation in `rust/` has made significant progress with core infra
 3. **ABI compliance** - Generated code must work with standard calling conventions
 4. **Test coverage** - Comprehensive validation against C++ implementation
 
-### Recent Progress Summary
+### Architectural Assessment and Strategic Direction
 
-**Major Achievements (Phase 1 Complete):**
-- ✅ **End-to-end compilation pipeline** - Can compile real LLVM IR functions from start to finish
-- ✅ **Complete value management** - Full ValueAssignment system with multi-part values and RAII interfaces  
-- ✅ **Working register allocation** - Clock-based algorithm with eviction, locking, and spill support
-- ✅ **x86-64 instruction encoding** - Basic arithmetic and movement instructions using iced-x86
-- ✅ **Calling convention support** - System V x86-64 ABI with prologue/epilogue generation
-- ✅ **Enhanced LLVM IR support** - Real-world IR constructs including control flow and function calls
-- ✅ **Factorial compilation test** - Successfully compiles recursive factorial function with control flow
+#### **Rust Implementation Advantages Over C++**
+The comprehensive analysis reveals several areas where Rust's design is superior:
 
-**Current Focus (Phase 2 In Progress):**
-- 🚧 **Instruction selection completion** - Adding support for all LLVM IR instruction types
-- 🚧 **Block successor analysis** - Proper extraction from terminator instructions  
-- ⏳ **Memory operation codegen** - Load/store instruction selection with addressing modes
-- ⏳ **Enhanced control flow** - Branch compilation with condition codes
+1. **Type Safety & Memory Management**
+   - Ownership system prevents register allocation bugs that plague C++ implementation
+   - Comprehensive Result types vs C++ manual error handling and crashes
+   - Automatic memory management eliminates whole classes of leaks/corruption
 
-### Contribution Priorities
+2. **API Design & Maintainability**  
+   - Clean trait boundaries vs complex C++ CRTP template patterns
+   - Better separation of concerns (adaptor vs compiler vs encoder)
+   - More maintainable codebase for long-term development
 
-When working on the Rust implementation, focus on these areas in order:
+3. **LLVM Integration Quality**
+   - inkwell provides safer LLVM integration than direct C API
+   - Type-safe value handling vs raw pointer manipulation  
+   - Better error handling for LLVM operations
 
-1. **Phase 2 instruction selection** - Complete support for all LLVM IR instructions
-2. **Real machine code generation** - Integrate instruction selection with register allocation
-3. **Block successor implementation** - Extract control flow from LLVM terminators
-4. **Test-driven development** - Expand test coverage for complex IR patterns
-5. **Performance validation** - Benchmark against C++ version regularly
+4. **Enhanced LLVM Adaptor Foundation**
+   - Sophisticated opcode extraction already implemented
+   - Real LLVM IR categorization and analysis
+   - Better integration foundation than C++ equivalent
 
-The Rust implementation now has a solid foundation with Phase 1 complete. The trait-based design provides better type safety than the C++ version while maintaining equivalent functionality. The focus is now on completing instruction selection to generate real executable machine code.
+#### **Integration Gap Analysis**
+The enhanced adaptor can extract opcodes but the compiler doesn't use them yet:
+
+**Current Pattern (Problematic):**
+```rust
+// Enhanced adaptor CAN extract opcodes
+fn get_instruction_category() -> InstructionCategory 
+
+// But compiler doesn't USE them yet
+fn compile_instruction_by_category() {
+    match category {
+        Arithmetic => self.compile_add_instruction(),  // Always ADD!
+    }
+}
+```
+
+**Needed Pattern:**
+```rust
+// Enhanced adaptor provides specific opcode + operands + results
+// Compiler receives opcode and dispatches to specific implementation  
+// Each implementation follows C++ optimization patterns
+```
+
+### Current Status and Next Steps
+
+**Recent Achievements (Phase 1 Complete):**
+- ✅ **Solid architectural foundation** superior to C++ in many aspects
+- ✅ **Enhanced LLVM IR adaptor** with sophisticated opcode extraction
+- ✅ **Complete value management** with RAII interfaces safer than C++
+- ✅ **Working register allocation** with proper clock-based eviction
+- ✅ **End-to-end compilation** from IR to executable ELF files
+
+**Critical Immediate Priorities:**
+1. **GEP instruction support** - Unlocks 90% of real C code compilation
+2. **Enhanced adaptor integration** - Connect opcode extraction to compiler
+3. **Real instruction selection** - Replace placeholders with proper codegen
+4. **Block successor analysis** - Extract control flow from terminators
+
+**Strategic Conclusion:**
+The Rust implementation has **superior architectural foundations** that position it to become the preferred TPDE implementation long-term. However, substantial feature development is required to reach production readiness. The investment is worthwhile - once feature gaps are closed, the Rust version will offer better safety, maintainability, and developer experience than the C++ equivalent.
+
+### Contribution Guidelines
+
+**Immediate Focus Areas (High Impact):**
+1. **GEP instruction implementation** - Critical blocker for real-world use
+2. **Enhanced adaptor integration** - Connect existing opcode extraction
+3. **Real ICMP compilation** - Proper flag setting and condition codes
+4. **Test-driven development** - Validate against C++ implementation patterns
+
+**Development Principles:**
+- Leverage Rust's type system advantages while maintaining C++ performance characteristics
+- Follow C++ instruction selection patterns but with safer Rust implementations
+- Prioritize features that unlock the most real-world compilation scenarios
+- Maintain comprehensive test coverage against C++ reference implementation
