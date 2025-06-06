@@ -123,9 +123,9 @@ TPDE is structured around three core concepts connected through well-defined int
 
 ## Rust Implementation Status
 
-### Current Status: ~65-70% Complete (Phase 2B Architectural Redesign In Progress)
+### Current Status: ~70-75% Complete (Phase 2B Architectural Redesign COMPLETED)
 
-The Rust implementation has excellent architectural foundations that surpass the C++ version in maintainability, safety, and developer experience. **Major milestones achieved**: arena-based memory management, concrete LLVM compiler implementation, and GEP instruction support with LEA optimization. The architectural redesign is **successfully underway**, eliminating trait bound complexity.
+The Rust implementation has excellent architectural foundations that surpass the C++ version in maintainability, safety, and developer experience. **Major milestones achieved**: arena-based memory management, concrete LLVM compiler implementation, GEP instruction support with LEA optimization, and complete architectural redesign. The redesign has **been successfully completed**, eliminating all trait bound complexity.
 
 ### Comprehensive Implementation Assessment
 
@@ -139,41 +139,37 @@ The Rust implementation has excellent architectural foundations that surpass the
 - **LLVM Integration** - inkwell provides safer interface than direct C++ API
 
 #### ✅ **Completed Functional Components**
-- **IRAdaptor trait** - Well-designed abstraction for IR traversal
+- **Concrete LlvmCompiler** - Direct LLVM integration without trait bounds (`rust/src/llvm/compiler.rs`)
 - **ValueAssignment System** - Complete with multi-part values, reference counting, storage locations
 - **ELF Assembler** - Functional object file generation using `object` crate
-- **x86-64 Instruction Encoder** - Basic encoders using iced-x86 with real machine code generation
+- **x86-64 Instruction Encoder** - Full encoders using iced-x86 with real machine code generation
 - **Calling Convention** - System V x86-64 ABI implementation with prologue/epilogue
 - **Function Codegen** - Working end-to-end compilation pipeline
-- **Complete Compiler** - Can compile arithmetic, control flow, and memory access patterns
+- **Memory Operations** - Load/Store instructions with addressing modes
 - **GEP Instruction Support** - Array indexing and struct field access with x86-64 LEA optimization
-- **Opcode-Based Dispatch** - Enhanced adaptor integration with proper instruction categorization
-- **Real ICMP Compilation** - CMP+SETcc generation with correct Comparison categorization
+- **Direct Opcode Dispatch** - Clean `match inst.get_opcode()` pattern without trait bounds
+- **Real ICMP Compilation** - CMP+SETcc generation with proper predicate handling
+- **Arithmetic Operations** - Add, Sub, Mul with proper flag handling
+- **Stack Allocation** - Alloca instruction support
+- **Function Calls** - Direct call instruction compilation
 
-#### ❌ **Critical Missing Components (~45-50% of functionality)**
-
-**✅ GEP (GetElementPtr) Instructions - COMPLETED** 
-- **Status**: ✅ Basic GEP support implemented with addressing mode optimization
-- **Implementation**: GepExpression structure with constant folding and LEA instruction usage
-- **Coverage**: Array indexing, struct field access, basic multi-dimensional arrays
-- **TODO**: LLVM type system integration for accurate element sizes
-
-**🔧 Advanced Instruction Selection (~40% missing)**
-- **C++ Implementation**: Sophisticated opcode-based selection with instruction fusion (compare+branch), 128-bit support, complex optimizations
-- **Rust Status**: ✅ **Real opcode-based dispatch implemented**, ✅ **Real ICMP compilation with CMP+SETcc**, ⚠️ **Trait bound complexity blocking full predicate extraction**
-- **Remaining**: ICMP predicate extraction, instruction fusion, optimization patterns, branch compilation
+#### ❌ **Critical Missing Components (~25-30% of functionality)**
 
 **🚨 PHI Node Resolution - MAJOR GAP**
 - **C++ Implementation**: Sophisticated algorithm with cycle detection, topological sorting, scratch register management
 - **Rust Status**: Stub placeholder only - prevents compilation of complex control flow
 
+**Branch Instructions - Partial**
+- **C++ Implementation**: Full br, switch, invoke support with complex control flow
+- **Rust Status**: Basic unconditional branches only, no conditional branches or switch statements
+
 **Advanced Calling Convention (~60% missing)**
 - **C++ Implementation**: Complete System V ABI with byval, sret, varargs, split register/stack passing
 - **Rust Status**: Only simple register-based calls work
 
-**Complex Memory Operations (~40% missing)**
+**Complex Memory Operations (~30% missing)**
 - **C++ Implementation**: Full addressing modes with base+index*scale+displacement, automatic optimization
-- **Rust Status**: Only basic [reg+offset] addressing implemented
+- **Rust Status**: Basic [reg+offset] and GEP-based addressing implemented
 
 **Exception Handling (Not Started)**
 - **C++ Implementation**: Full invoke/landingpad support with personality functions
@@ -305,7 +301,7 @@ mod tests {
 **Milestone**: ✅ **ACHIEVED** - Can compile real C functions with arrays, structs, and basic control flow
 **Blocker**: **Architectural complexity** requiring redesign before continuing
 
-#### **Phase 2B: Architectural Redesign ✅ SUBSTANTIAL PROGRESS**
+#### **Phase 2B: Architectural Redesign ✅ COMPLETED**
 **Goal**: Simplify architecture to enable continued feature development
 
 1. **Arena-Based Memory Management** ✅ **COMPLETED**
@@ -525,9 +521,9 @@ The Rust implementation has **successfully completed the architectural redesign*
 ### Contribution Guidelines
 
 **Immediate Focus Areas (High Impact):**
-1. **GEP instruction implementation** - Critical blocker for real-world use
-2. **Enhanced adaptor integration** - Connect existing opcode extraction
-3. **Real ICMP compilation** - Proper flag setting and condition codes
+1. **PHI Node Resolution** - Critical blocker for complex control flow
+2. **Conditional Branch Instructions** - Enable if/else and loop constructs
+3. **Switch Statement Support** - Multi-way branching for efficient code
 4. **Test-driven development** - Validate against C++ implementation patterns
 
 **Development Principles:**
