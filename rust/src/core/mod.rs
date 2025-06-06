@@ -1,3 +1,14 @@
+// This module serves as the central hub for TPDE's core infrastructure components,
+// providing fundamental building blocks for fast IR compilation that are shared across
+// different IR types and target architectures. It exports and organizes key subsystems:
+// session management (arena-based memory allocation and compilation statistics),
+// register allocation (clock-based eviction with bitset tracking), value management
+// (multi-part values with reference counting and storage locations), value references
+// (RAII-based lifetime management), ELF assembly (direct object file generation),
+// and framework traits (IrAdaptor, Analyzer, Backend, CompilerBase). All components
+// are designed with performance as the primary goal, using arena allocation to minimize
+// overhead, zero-cost abstractions, and type safety to prevent bugs at compile time.
+
 //! Core TPDE Infrastructure
 //!
 //! This module provides the fundamental building blocks for fast IR compilation,

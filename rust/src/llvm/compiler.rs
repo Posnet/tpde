@@ -1,3 +1,15 @@
+// This module provides the concrete LlvmCompiler implementation that directly compiles LLVM IR
+// to x86-64 machine code using arena-based memory management. The compiler eliminates trait
+// bounds by working directly with inkwell's InstructionValue types and implements opcode-based
+// dispatch for instruction selection. Key components include: direct instruction compilation
+// (add, sub, mul, icmp, load, store, GEP, branch, call, alloca, PHI), System V ABI calling
+// convention support, x86-64 addressing modes with LEA optimization for GEP, basic PHI node
+// tracking (resolution not fully implemented), and integration with FunctionCodegen for machine
+// code emission. The compiler processes functions in RPO block order, allocates registers
+// on-demand, and generates real x86-64 instructions. Major gaps include PHI node resolution,
+// conditional branches (only unconditional implemented), and complex calling convention features.
+// This concrete design replaced the generic framework after architectural redesign.
+
 //! LLVM compiler implementation.
 //!
 //! This module provides an arena-based LLVM compiler with direct LLVM integration,

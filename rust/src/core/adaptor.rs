@@ -1,3 +1,13 @@
+// This module defines the IrAdaptor trait, which serves as the bridge between TPDE and
+// any SSA-based intermediate representation (IR). The trait provides a minimal interface
+// for the compiler to query IR structure: functions, blocks, instructions, and their
+// relationships. It defines associated types for value/instruction/block/function references,
+// methods to enumerate and switch between functions, iterate over blocks and instructions,
+// query operands and results, and track value liveness. The design assumes SSA form with
+// single-entry functions, basic blocks ending in terminators, multi-result instructions,
+// and phi nodes for control flow. This abstraction allows TPDE to work with different
+// IRs (like LLVM) without depending on their specific implementation details.
+
 //! IRAdaptor responsibilities.
 //!
 //! The adaptor is the glue between TPDE and the user's SSA based IR. It exposes

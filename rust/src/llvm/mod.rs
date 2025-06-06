@@ -1,3 +1,16 @@
+// This module implements direct LLVM IR compilation with a concrete design that eliminates
+// abstraction overhead after the architectural redesign. It provides the LlvmCompiler for
+// function-to-machine-code compilation, LlvmAdaptor for IR traversal and analysis, and
+// supporting infrastructure for instruction selection. The implementation uses direct
+// InstructionValue manipulation with opcode-based dispatch, avoiding trait bounds for
+// clean LLVM API access. Supports arithmetic (add/sub/mul), comparisons (icmp), memory
+// operations (load/store/alloca/GEP), basic control flow (unconditional br, ret), and
+// direct function calls. Major gaps include PHI nodes (preventing loops), conditional
+// branches, switch statements, exception handling, and intrinsics. Uses arena allocation
+// via CompilationSession for efficient memory management and integrates tightly with
+// inkwell for LLVM bindings. This concrete approach replaced the generic framework after
+// hitting trait bound complexity issues during enhanced adaptor integration.
+
 //! LLVM IR Compiler Implementation
 //!
 //! This module provides direct LLVM IR compilation with a concrete, optimized

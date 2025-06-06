@@ -1,3 +1,15 @@
+// This module implements function analysis for LLVM IR using arena allocation to minimize
+// heap allocations and maximize performance. FunctionAnalyzer consumes itself to produce
+// FunctionAnalysis results stored entirely in the compilation session arena. The analyzer
+// performs three key passes: 1) Instruction analysis to identify PHI nodes and count
+// instructions, 2) Successor extraction from terminator instructions (br, switch, invoke, etc.)
+// to build the control flow graph, 3) Block layout computation (currently natural order,
+// RPO planned). It tracks PHI node information including incoming values and predecessor
+// blocks, block successor/predecessor relationships for control flow, and provides efficient
+// queries for PHI nodes per block and successor lookup. The arena-based design ensures all
+// analysis data has unified lifetime tied to the compilation session, avoiding complex
+// lifetime management while maintaining performance.
+
 //! Function analyzer that uses arena allocation and consumes itself to produce results.
 //!
 //! This design avoids copies and heap allocations by using arena allocation

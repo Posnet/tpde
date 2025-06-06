@@ -1,3 +1,17 @@
+// This test suite comprehensively validates the concrete LlvmCompiler implementation after
+// the architectural redesign that eliminated trait bound complexity. The tests cover core
+// compilation scenarios including load/store operations for memory access patterns, conditional
+// branches for control flow (if/else), GEP instructions for array indexing, and arithmetic
+// operations (add, sub, mul). Each test creates a minimal LLVM IR function using inkwell,
+// compiles it with LlvmCompiler, and verifies successful code generation by checking that
+// machine code was produced (non-zero size), functions were tracked in compiled_functions map,
+// session statistics were updated correctly, and specific instruction types were recognized
+// and compiled. These integration tests validate the direct LLVM integration approach where
+// InstructionValue<'ctx> is used throughout without abstraction layers. The tests demonstrate
+// that the simplified architecture successfully compiles real LLVM IR patterns while maintaining
+// the performance and functionality goals of TPDE. They serve as regression tests to ensure
+// core compilation capabilities remain intact as the compiler evolves.
+
 //! Tests for the concrete LLVM compiler implementation.
 
 use bumpalo::Bump;

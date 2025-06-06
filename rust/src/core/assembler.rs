@@ -1,3 +1,13 @@
+// This module provides the Assembler trait and ElfAssembler implementation for generating
+// machine code output. The Assembler trait defines the interface for architecture-specific
+// assemblers to manage sections, symbols, labels, and relocations during code generation.
+// It supports both object file emission and JIT execution by mapping code directly into
+// memory. The ElfAssembler is a concrete implementation using the `object` crate to produce
+// ELF binary files. It manages multiple sections (text, data, etc.), tracks offsets within
+// sections, handles label creation and placement for jump targets, defines symbols for
+// functions and data, and builds the final ELF object file. This abstraction allows the
+// compiler to generate machine code without knowing the specific output format details.
+
 use super::adaptor::IrAdaptor;
 
 /// Trait implemented by architecture specific assemblers.

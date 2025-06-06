@@ -1,3 +1,17 @@
+// This example directly tests the x86-64 encoder's ability to generate CALL instructions,
+// which are fundamental for function invocation in compiled code. The test demonstrates
+// three types of CALL instructions supported by the encoder: indirect call through register
+// (call rax) used when the function address is computed at runtime, direct call with offset
+// (call 0x12345678) for statically known addresses, and indirect call through memory
+// (call [rbp+8]) for vtables or function pointers stored on stack. The example also shows
+// a complete function call sequence following System V x86-64 ABI: loading arguments into
+// RDI/RSI registers, loading the function pointer, executing the CALL instruction, and
+// handling the return value in RAX. This low-level test validates that the x64::encoder
+// module can generate the actual machine code bytes for CALL instructions, which is critical
+// for implementing function calls at the LLVM IR level. The test helps ensure that the
+// enhanced encoder has all the necessary instructions to support the LlvmCompiler's
+// compile_call_instruction method.
+
 use tpde::x64::{Encoder as X64Encoder, EncodingError};
 use tpde::core::AsmReg;
 

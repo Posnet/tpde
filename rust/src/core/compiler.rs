@@ -1,3 +1,15 @@
+// This module defines the core compiler framework with CompilerBase and Backend trait.
+// CompilerBase orchestrates the entire compilation pipeline: it coordinates between the
+// IrAdaptor (for IR access), Analyzer (for liveness/block ordering), and architecture-specific
+// Backend implementations. The compilation flow iterates through functions, computes liveness
+// info, generates prologue, compiles each instruction in RPO block order, and emits epilogue.
+// The Backend trait provides hooks for architecture-specific code generation including
+// prologue/epilogue generation and per-instruction compilation. Register allocation happens
+// on-the-fly based on liveness information. The design uses unsafe pointers to work around
+// Rust's borrow checker limitations when the backend needs mutable access to the compiler
+// base during instruction compilation. This is a simplified skeleton of the C++ template-heavy
+// architecture adapted to Rust's trait system.
+
 //! Compiler reference overview.
 //!
 //! `CompilerBase` orchestrates the transformation from the user's IR into machine code.

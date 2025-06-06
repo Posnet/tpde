@@ -1,3 +1,15 @@
+// This module provides RAII wrappers (ValueRef and ValuePartRef) for safe interaction with
+// the register allocator during instruction selection. ValueRef represents a complete IR value
+// with automatic reference counting and cleanup, supporting multi-part values (e.g., 128-bit
+// values in two 64-bit registers). ValuePartRef provides fine-grained access to individual
+// parts with register allocation, locking, and spilling support. Key features include:
+// automatic register allocation when accessing values, reference counting with ownership modes
+// (Owned, RefCounted, Unowned), register locking to prevent eviction during use, modification
+// tracking for spill/reload decisions, and register reuse optimization between instructions.
+// The CompilerContext pattern avoids Rust borrowing issues by passing mutable references to
+// the underlying systems. This abstraction allows instruction selection code to work with
+// values without managing low-level register allocation details directly.
+
 //! RAII wrappers for safe register allocation and value management.
 //!
 //! This module provides ValueRef and ValuePartRef - the high-level interfaces

@@ -1,3 +1,14 @@
+// This module implements the System V AMD64 ABI calling convention for x86-64 Linux/Unix systems.
+// It provides CCAssigner trait and SysVAssigner implementation to handle argument passing and
+// return value placement according to the standard ABI. Key features: GP arguments pass in
+// RDI, RSI, RDX, RCX, R8, R9 (first 6), FP arguments pass in XMM0-XMM7 (first 8), remaining
+// arguments go on stack with 8-byte alignment, return values use RAX/RDX (int) or XMM0/XMM1
+// (float), and callee-saved registers are RBX, R12-R15. FunctionFrame manages the stack layout
+// including saved registers, spill slots, and local variables. The implementation ensures 16-byte
+// stack alignment per ABI requirements and supports varargs functions via must_assign_stack flag.
+// This mirrors the C++ CCAssigner infrastructure while adapting to Rust's type system and
+// provides the foundation for correct C function interoperability.
+
 //! System V x86-64 calling convention implementation.
 //!
 //! This module implements the System V ABI for x86-64, providing argument passing,

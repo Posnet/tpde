@@ -1,3 +1,16 @@
+// This test validates the ElfAssembler's ability to generate ELF object files that can be
+// linked into executables. ELF (Executable and Linkable Format) is the standard binary format
+// for Linux/Unix systems, and TPDE must generate valid ELF objects to integrate with existing
+// toolchains. The test uses a DummyAdaptor that implements IrAdaptor trait with minimal
+// functionality, allowing isolated testing of the assembler without needing a full IR.
+// The test creates a minimal function "foo" containing just a RET instruction (0xC3),
+// demonstrating the assembler's ability to create labels, place them at specific offsets,
+// append machine code bytes, define symbols with proper section/offset/size information,
+// and build a complete ELF object. The test then parses the generated object using the
+// object crate to verify it contains the expected .text section and foo symbol. This
+// validates that TPDE can produce object files compatible with standard linkers like ld
+// or lld, enabling compiled functions to be linked with C libraries or other object files.
+
 use tpde::core::IrAdaptor;
 use tpde::core::{Assembler, ElfAssembler};
 use object::{File, Object};

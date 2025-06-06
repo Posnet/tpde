@@ -1,3 +1,17 @@
+// This module provides high-level function code generation that orchestrates x86-64 machine
+// code emission with proper calling convention compliance. FunctionCodegen is the main component
+// that integrates SysVAssigner (calling convention), X64Encoder (machine code), and FunctionFrame
+// (stack layout) to generate complete function bodies. Key responsibilities include processing
+// function arguments according to System V ABI (first 6 integers in RDI/RSI/RDX/RCX/R8/R9,
+// first 8 floats in XMM0-XMM7, rest on stack), managing return value placement (RAX/RDX for
+// integers, XMM0/XMM1 for floats), generating standard prologue (push rbp, mov rbp rsp,
+// save callee-saved registers, allocate stack), and matching epilogue. The module supports
+// spill slot allocation for register pressure, callee-saved register preservation (RBX, R12-R15),
+// and proper stack alignment. ArgInfo provides type descriptions for arguments/returns.
+// This abstraction layer ensures all generated functions are ABI-compliant and can correctly
+// interoperate with C code, handling both simple cases and complex scenarios with many
+// arguments or mixed integer/floating-point parameters.
+
 //! Function code generation with calling conventions.
 //!
 //! This module provides the bridge between calling conventions and machine code

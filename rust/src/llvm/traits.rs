@@ -1,3 +1,14 @@
+// This module defines LLVM-specific traits and types that extend the generic IrAdaptor
+// interface with LLVM-specific functionality. InstructionCategory provides a classification
+// system for LLVM instructions (Arithmetic, Comparison, Memory, ControlFlow, Phi, Conversion,
+// Other) that enables proper instruction selection in the compiler. LlvmAdaptorInterface
+// trait extends IrAdaptor with methods to extract LLVM-specific information: instruction
+// categorization by opcode, ICMP predicate extraction for comparison instructions, and
+// function property queries (makes_calls, has_allocas). This trait was part of the
+// enhanced adaptor integration but revealed trait bound complexity issues during the
+// architectural redesign, leading to the shift to concrete LLVM types. The types remain
+// useful for instruction dispatch even in the concrete implementation.
+
 //! LLVM-specific traits and types.
 //!
 //! This module defines the interfaces and types specific to LLVM IR compilation.

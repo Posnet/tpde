@@ -1,3 +1,14 @@
+// This is the main library entry point for the TPDE Rust implementation, providing a fast
+// compiler backend framework for LLVM IR with 10-20x speedup over LLVM -O0. It exports
+// the public API for direct LLVM compilation, core infrastructure components (value
+// management, register allocation, sessions), x86-64 backend functionality, and experimental
+// features. The crate uses a concrete LLVM-specific design with arena-based memory management
+// to eliminate trait bound complexity. Primary modules include: llvm (direct compiler),
+// core (value/register/session management), x64 (instruction encoding and ABI), and
+// experimental (future ARM64 support). Currently ~70-75% complete with arithmetic, memory ops,
+// basic control flow, and function calls implemented, but missing PHI nodes, conditional
+// branches, exception handling, and intrinsics.
+
 //! TPDE Rust Implementation - Fast LLVM IR Compilation
 //!
 //! TPDE (Turbo-Powered Direct Execution) provides extremely fast compilation 

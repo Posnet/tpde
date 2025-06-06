@@ -1,3 +1,13 @@
+// This module provides functionality for generating Rust instruction encoding snippets from
+// LLVM IR patterns, formerly part of the tpde-encodegen crate. It analyzes LLVM IR functions
+// whose names start with "pattern_" and generates corresponding Rust functions that emit
+// machine instructions. The module parses LLVM IR text/modules using inkwell, extracts
+// pattern functions, analyzes their instruction sequences (add, sub, mul, ret, store, load,
+// call, br), and produces Rust code stubs with encoding hints. This is used to transform
+// high-level C functions compiled to LLVM IR into low-level instruction emission routines
+// for the TPDE compiler backend. The generated code provides templates for x86/ARM instruction
+// encoding based on the LLVM IR structure.
+
 //! Encoding snippet generator module.
 //!
 //! This module contains the functionality that was previously in the

@@ -1,3 +1,14 @@
+// This module implements the Analyzer component that computes block layout and value liveness
+// information for SSA IR functions. It performs two key analyses: 1) Reverse Post-Order (RPO)
+// traversal to determine optimal block ordering for code generation, and 2) Liveness analysis
+// to track when values are first defined and last used across basic blocks. The analyzer
+// works with any IR through the IrAdaptor trait, building a block ordering map and tracking
+// LivenessInfo (first/last block indices, reference count, and whether values must stay live
+// through entire blocks). This information is critical for the register allocator to make
+// efficient allocation decisions and minimize spills. The implementation follows the C++
+// version's algorithm, using depth-first search for RPO computation and linear scanning
+// for liveness tracking.
+
 use super::adaptor::IrAdaptor;
 use core::marker::PhantomData;
 use std::collections::{HashMap, HashSet};

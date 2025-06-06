@@ -1,3 +1,17 @@
+// This test suite validates function call compilation, verifying that TPDE correctly handles
+// various calling scenarios following System V x86-64 ABI. Function calls are complex operations
+// requiring proper argument marshalling to registers (RDI, RSI, RDX, RCX, R8, R9) and stack,
+// preservation of caller-saved registers, generation of CALL instructions, and handling of
+// return values. The tests cover: 1) Simple function calls where test_call invokes add(x, y)
+// demonstrating basic ABI compliance; 2) Recursive calls in the factorial function testing
+// self-referential calls and proper stack management; 3) Functions with 8+ arguments validating
+// register exhaustion and stack-based parameter passing (args 7-8 go on stack); 4) Void function
+// calls ensuring proper handling of functions with no return value. Each test compiles the
+// function and verifies that call instructions were recognized and compiled by checking session
+// statistics. These tests are critical for validating that compiled TPDE functions can correctly
+// invoke other functions, whether they're in the same module, external C functions, or system
+// libraries, making function calls essential for any non-trivial program compilation.
+
 //! Test function call compilation.
 
 use tpde::core::CompilationSession;

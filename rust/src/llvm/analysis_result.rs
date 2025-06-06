@@ -1,3 +1,14 @@
+// This module defines data structures for storing function analysis results that can be
+// owned by the compiler, avoiding lifetime issues with the analyzer. FunctionAnalysisResult
+// captures key analysis data: block count and layout order, PHI node information per block,
+// instruction counts, and branch indicators. PhiNodeInfo stores details about individual
+// PHI nodes including their block location, result value index, and incoming value/block
+// pairs. This separation of analysis data from the analyzer allows the compiler to own
+// and use the results throughout compilation without borrowing conflicts. The structures
+// support efficient PHI node lookups by block and provide helper methods for querying
+// PHI presence and retrieving nodes for specific blocks. This is essential for PHI node
+// resolution during code generation.
+
 //! Function analysis results that can be owned by the compiler.
 //!
 //! This separates the analysis data from the analyzer itself,

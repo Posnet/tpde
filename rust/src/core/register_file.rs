@@ -1,3 +1,14 @@
+// This module implements TPDE's core register allocation system using a clock-based algorithm
+// with on-demand spilling. RegisterFile manages physical register allocation across multiple
+// banks (GP, FP, etc.), tracking which values own which registers. Key components include:
+// AsmReg (bank+id register identifier), RegBitSet (efficient 64-bit register tracking per bank),
+// Assignment (tracks value ownership of registers), and the main RegisterFile struct. The
+// allocator uses a clock algorithm: first tries free registers, then evicts using a circular
+// scan. Features include reference counting via locks to prevent eviction, spill callbacks
+// for saving evicted values, clobber tracking for modified registers, and per-bank allocation
+// clocks. Supports up to 4 banks with 64 registers each. This provides the foundation for
+// TPDE's fast register allocation without expensive graph coloring or linear scan algorithms.
+
 //! Register allocation and management.
 //!
 //! This module implements the RegisterFile system that performs actual register allocation,

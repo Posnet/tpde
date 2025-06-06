@@ -1,3 +1,15 @@
+// This module provides the EnhancedLlvmAdaptor that enables traversal and analysis of LLVM IR
+// for compilation. It implements the IrAdaptor trait to navigate functions, blocks, and
+// instructions while providing LLVM-specific functionality through LlvmAdaptorInterface.
+// Key features include: instruction categorization by opcode (arithmetic, comparison, memory,
+// control flow, PHI, conversion), real control flow analysis with successor extraction from
+// terminators, PHI node information extraction for SSA form, value indexing for liveness
+// analysis, support for globals/parameters/allocas, and instruction type queries (is_call,
+// is_branch, is_phi, etc.). The adaptor handles complex patterns like recursive functions,
+// conditional branches, and PHI nodes. It works around inkwell API limitations for successor
+// extraction using fallback heuristics. This enhanced version replaces the basic adaptor
+// to support real C function compilation including factorial, fibonacci, and similar patterns.
+
 //! Enhanced LLVM IR adaptor for real-world compilation.
 //!
 //! This module provides a production-ready LLVM IR adaptor that can handle

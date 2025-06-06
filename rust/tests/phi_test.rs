@@ -1,3 +1,18 @@
+// This test suite validates PHI node compilation, one of the most complex aspects of SSA
+// (Static Single Assignment) form compilation. PHI nodes appear at control flow merge points
+// where different execution paths bring different values for the same variable. The tests
+// cover three critical scenarios: 1) Simple PHI nodes in if/else patterns where the max
+// function demonstrates basic value selection at merge points; 2) Loop PHI nodes in the
+// sum_to_n function showing how loop-carried dependencies work with PHI nodes receiving
+// values from both loop entry and back-edges; 3) PHI cycles where values are swapped
+// between PHI nodes, requiring sophisticated resolution algorithms to avoid infinite loops
+// during code generation. PHI node compilation is particularly challenging because it requires
+// careful coordination of value movements, cycle detection to identify circular dependencies,
+// and temporary register allocation to break cycles. These tests verify that TPDE correctly
+// handles PHI nodes essential for compiling any non-trivial control flow. Note: Full PHI
+// resolution with cycle breaking is not yet implemented in the Rust version, representing
+// a critical gap for loop compilation.
+
 //! Test PHI node compilation in LLVM compiler.
 
 use tpde::core::CompilationSession;

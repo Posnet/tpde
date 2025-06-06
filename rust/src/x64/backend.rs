@@ -1,3 +1,14 @@
+// This module provides the x86-64 backend implementation that bridges the generic compiler
+// infrastructure with x86-64 specific code generation. X64Backend implements the Backend trait
+// to handle instruction selection and register allocation for x86-64 targets. It integrates
+// ValueAssignmentManager for SSA value tracking, RegisterFile for physical register allocation,
+// CompilerContext for coordinating value references, and InstructionSelector for emitting
+// machine code. The backend demonstrates compilation of binary operations (add, sub) using
+// register allocation with operand reuse optimization, generates function prologue/epilogue
+// with proper stack frame setup, and provides a simplified instruction dispatch based on
+// operand/result counts. This is a demonstration implementation showing how TPDE components
+// work together; a production version would use proper opcode-based dispatch from the IR adaptor.
+
 //! x86-64 Backend implementation.
 //!
 //! This module provides a complete x86-64 backend that bridges the CompilerBase

@@ -1,3 +1,15 @@
+// This module implements PHI node resolution with cycle detection for LLVM's SSA form,
+// based on the C++ implementation but using arena allocation. PHI nodes require special
+// handling at control flow merge points where different values converge. The PhiResolver
+// detects cycles in PHI dependencies using DFS (depth-first search) and breaks them using
+// temporary registers. Key components: PhiState tracks resolution progress (Unvisited,
+// OnStack, Resolved), PhiMove represents value movements needed for resolution, cycle
+// detection identifies circular dependencies between PHI nodes, and cycle breaking uses
+// scratch registers to resolve circular moves. The implementation is designed to work with
+// the arena-based compilation session for efficient memory management. Note: This module
+// is not yet fully integrated with the compiler due to incomplete FunctionAnalyzer API,
+// representing a critical gap for loop compilation.
+
 //! PHI node resolution for SSA form.
 //!
 //! This module implements PHI node resolution with cycle detection,

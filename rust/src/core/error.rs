@@ -1,3 +1,13 @@
+// This module defines error types for the TPDE compiler using the thiserror crate for
+// idiomatic Rust error handling. CompileError is the main error enum covering various
+// failure scenarios: unsupported instruction widths/opcodes, register allocation failures,
+// code generation errors, missing functions, invalid LLVM values, PHI node cycles, and
+// block layout issues. Each variant carries relevant context (operation names, widths,
+// opcodes, error reasons) for debugging. The module also provides CompileResult<T> as
+// a convenience type alias for Result<T, CompileError>. These error types enable proper
+// error propagation throughout the compiler with descriptive error messages via the
+// Display trait implementation provided by thiserror.
+
 //! Error types for the TPDE compiler.
 //!
 //! Using thiserror for more idiomatic error handling.

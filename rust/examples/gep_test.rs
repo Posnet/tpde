@@ -1,3 +1,17 @@
+// This example thoroughly tests the GetElementPtr (GEP) instruction compilation in TPDE,
+// demonstrating how the compiler handles C-style array indexing and pointer arithmetic.
+// GEP is critical for compiling real C code as it's used for all array accesses, struct
+// field accesses, and complex pointer manipulations. The example creates LLVM functions
+// that showcase different GEP patterns: basic array indexing `arr[idx]` which should compile
+// to LEA instruction on x86-64, GEP followed by load for reading array elements, and
+// placeholders for more complex patterns like multi-dimensional arrays and struct fields.
+// The test verifies that TPDE correctly lowers GEP instructions to efficient x86-64 address
+// calculations using LEA (Load Effective Address) which can compute base + index*scale + offset
+// in a single instruction. This is a key optimization that differentiates TPDE from naive
+// compilers. The example helps validate that the enhanced adaptor's GEP support is working
+// correctly and that the compiler can handle the pointer arithmetic patterns essential for
+// C compilation.
+
 use inkwell::context::Context;
 use inkwell::types::BasicTypeEnum;
 use inkwell::values::BasicValueEnum;

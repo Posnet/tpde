@@ -1,3 +1,17 @@
+// This test suite validates the FunctionAnalyzer's ability to extract control flow graph
+// information from LLVM IR, particularly block successor relationships. Accurate successor
+// extraction is critical for proper code layout, branch target calculation, and PHI node
+// resolution. The tests cover complex control flow patterns including nested conditionals
+// (if within if), switch statements with multiple cases and default, unconditional branches,
+// return statements (no successors), and loops with back-edges. The test creates a function
+// with diverse control flow: nested if statements testing x > 10 and x > 20, a switch
+// statement with cases 0, 1, and default, demonstrating that the analyzer correctly identifies
+// conditional branches (2+ successors), unconditional branches (1 successor), terminators
+// like return (0 successors), and join blocks where multiple paths converge. The loop test
+// specifically validates back-edge detection where the loop body branches back to the header,
+// creating a cycle in the CFG. This functionality is essential for the compiler to generate
+// correct jump instructions and properly place basic block labels in the final machine code.
+
 //! Test block successor extraction functionality.
 
 use tpde::core::CompilationSession;

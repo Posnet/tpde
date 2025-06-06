@@ -1,3 +1,17 @@
+// This example tests the complete function call instruction generation pipeline in TPDE,
+// verifying that the compiler correctly handles inter-function calls with proper ABI compliance.
+// Function calls are complex operations requiring argument marshalling according to System V
+// x86-64 ABI (RDI, RSI, RDX, RCX, R8, R9 for first 6 integer args), preservation of caller-saved
+// registers before the call, generation of the actual CALL instruction to the target function,
+// and handling of return values in RAX. The example creates a simple test scenario where
+// `test_call(x, y)` calls `add(x, y)`, demonstrating that TPDE can compile function calls
+// that would work correctly when linked with external C code. This test is critical for
+// validating that the compiler's calling convention implementation matches the platform ABI,
+// enabling compiled TPDE functions to interoperate with system libraries and other compiled
+// code. The test also shows compilation statistics including the number of call instructions
+// processed, helping verify that call instructions are being recognized and compiled rather
+// than skipped or generating placeholders.
+
 use inkwell::context::Context;
 use tpde::llvm::{LlvmCompiler, LlvmAdaptor};
 use tpde::core::CompilationSession;

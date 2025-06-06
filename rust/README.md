@@ -1,3 +1,8 @@
+// This README documents the Rust implementation of TPDE, providing an overview of the current
+// status (~70-75% complete), architectural design decisions, completed features, and remaining
+// work. The document serves as the primary reference for developers working on or evaluating
+// the Rust port of TPDE.
+
 # TPDE Rust Implementation
 
 This directory contains the Rust implementation of TPDE (Turbo-Powered Direct Execution), a fast compiler backend framework designed for low-latency compilation with reasonable code quality.

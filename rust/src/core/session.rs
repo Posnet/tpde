@@ -1,3 +1,15 @@
+// This module provides arena-based compilation session management using the bumpalo crate
+// to simplify lifetime management in TPDE. CompilationSession is the central hub that owns
+// the arena allocator and tracks all compilation state with a unified lifetime. It stores
+// value locations (register/stack/memory), block information (layout order, predecessors,
+// successors, PHI nodes), PHI node resolution data, interned strings, and compilation
+// statistics. All objects are allocated in the arena and share the session lifetime,
+// eliminating complex lifetime annotations. The session provides methods to track function
+// compilation progress, record instruction counts, manage PHI nodes, and gather performance
+// metrics. SessionStats tracks compilation metrics like function count, code size, instruction
+// breakdown, register allocations, and spills. This arena-based approach was introduced during
+// the architectural redesign to replace generic trait bounds with concrete LLVM types.
+
 //! Arena-based compilation session management.
 //!
 //! This module provides simplified lifetime management for TPDE compilation

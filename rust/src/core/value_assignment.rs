@@ -1,3 +1,15 @@
+// This module implements the ValueAssignment system for tracking where IR values are stored
+// (registers, stack, or memory) during compilation. It manages multi-part values (e.g., 128-bit
+// values split into two 64-bit parts), reference counting for lifetime management, and storage
+// allocation. Key components: PartData (packed 16-bit representation of register assignments),
+// ValueAssignment (tracks location and parts for each value), AssignmentFlags (control behavior
+// like delay_free and variable_ref), StorageLocation (stack offset or variable reference),
+// AssignmentAllocator (efficient memory pool with free lists by part count), and
+// ValueAssignmentManager (maps local value indices to assignments). The system supports
+// efficient register allocation by tracking which values are in registers vs spilled to stack,
+// manages reference counts to know when storage can be freed, and handles complex values that
+// span multiple registers. This is a core component enabling TPDE's fast register allocation.
+
 //! Value assignment system for tracking register and stack locations.
 //!
 //! This module implements the core ValueAssignment infrastructure that tracks

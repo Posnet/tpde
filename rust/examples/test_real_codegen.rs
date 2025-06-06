@@ -1,3 +1,16 @@
+// This example demonstrates real machine code generation capabilities of the TPDE compiler by
+// compiling a simple add function from LLVM IR to x86-64 machine code. It serves as a basic
+// smoke test to verify that the compiler can handle fundamental arithmetic operations and
+// generate actual executable instructions rather than placeholders. The example creates a
+// minimal LLVM function `int add(int a, int b) { return a + b; }` using inkwell, then uses
+// LlvmCompiler to compile it to native code. The test validates that proper x86-64 instructions
+// are generated including function prologue (push rbp, mov rbp rsp), ADD instruction for the
+// arithmetic operation, result placement in RAX register per System V ABI, and function epilogue
+// (pop rbp, ret). This example also demonstrates compilation session usage with arena allocation
+// and shows how to extract compilation statistics like instruction count and code size. It's
+// useful for verifying basic compiler functionality after making changes to instruction selection
+// or code generation components.
+
 use inkwell::context::Context;
 use tpde::llvm::{LlvmCompiler, LlvmAdaptor};
 use tpde::core::CompilationSession;

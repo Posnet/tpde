@@ -1,3 +1,17 @@
+// This module provides comprehensive x86-64 instruction encoding capabilities using the iced-x86
+// library, serving as the machine code generation backend for the TPDE compiler. X64Encoder
+// is the core component that converts AsmReg register references into real x86-64 machine code,
+// supporting all major instruction types: moves (MOV, MOVZX), arithmetic (ADD, SUB, IMUL),
+// comparisons (CMP, TEST), control flow (JMP, Jcc, CALL, RET), memory operations with various
+// addressing modes, and stack manipulation (PUSH, POP). The encoder handles both 32-bit and
+// 64-bit instruction variants for proper LLVM i32/i64 type compilation, manages labels for
+// basic blocks to enable forward/backward jumps, and includes all SETcc instructions for
+// condition code materialization. InstructionSelector provides higher-level patterns like
+// register reuse optimization for binary operations. This implementation achieves parity with
+// the C++ fadec-based encoder while providing safer Rust abstractions. Critical features
+// include support for LEA instruction for efficient address calculations and function
+// prologue/epilogue generation following System V ABI conventions.
+
 //! x86-64 instruction encoding using iced-x86.
 //!
 //! This module provides real x86-64 machine code generation equivalent to the C++
