@@ -57,8 +57,7 @@ pub trait IrAdaptor {
     /// Iterator over blocks in the current function.
     ///
     /// ```ignore
-    /// # use tpde_core::guide;
-    /// # let mut adaptor = unimplemented!("see guide for an example adaptor");
+    /// # let mut adaptor = unimplemented!(); // see docs/tpde/guide.md for example
     /// adaptor.switch_func(adaptor.funcs().next().unwrap());
     /// for block in adaptor.blocks() {
     ///     for inst in adaptor.block_insts(block) {

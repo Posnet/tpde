@@ -27,6 +27,13 @@
 //! - [`x64`] - x86-64 specific code (encoder, calling convention)
 //! - [`legacy`] - Deprecated implementations for reference
 //! - [`experimental`] - Work in progress features
+//!
+//! # Documentation
+//!
+//! For detailed documentation about the TPDE framework, see:
+//! - `docs/tpde/overview.md` - Framework overview and architecture
+//! - `docs/tpde/guide.md` - Implementation guide with examples
+//! - `docs/tpde/adaptor.md` - IRAdaptor implementation details
 
 // New organized modules
 pub mod llvm;
@@ -35,8 +42,7 @@ pub mod x64;
 pub mod legacy;
 pub mod experimental;
 
-// Other modules
-pub mod docs;
+// Utility modules
 pub mod encodegen;
 
 // Re-export common types from organized modules
