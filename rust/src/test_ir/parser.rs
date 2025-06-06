@@ -533,8 +533,15 @@ impl<'a> Parser<'a> {
             
             // Check if there's an operation or just empty value definition
             self.skip_whitespace(false);
-            let op = if self.current_char() == Some('%') || self.current_char() == Some('\n') || self.is_at_line_end() {
-                // Empty value definition ("any" operation)
+            
+            // Check if we're at the end of the line
+            let at_eol = self.current_char() == Some('\n') || self.is_at_line_end();
+            
+            let op = if at_eol {
+                // Empty value definition ("any" operation) with no operands
+                Operation::Any
+            } else if self.current_char() == Some('%') {
+                // This is an "any" operation with operands (e.g., "%dep = %alloca, %val")
                 Operation::Any
             } else {
                 // Read operation
@@ -770,25 +777,20 @@ impl<'a> Parser<'a> {
             }
             Operation::Any | Operation::None => {
                 // Variable number of operands
-                // For "any" op without explicit operands, check for implicit references
-                if op == Operation::Any {
+                // For "any" op, check if there are operands
+                if op == Operation::Any && self.current_char() == Some('%') {
                     // Parse comma-separated value references
-                    let mut op_count = 0;
                     let mut first = true;
                     loop {
                         if !first {
+                            self.skip_whitespace(false);
                             if !self.try_read(',') {
                                 break;
                             }
+                            self.skip_whitespace(false);
                         }
                         
-                        self.skip_whitespace(true);
                         if self.current_char() != Some('%') {
-                            if first {
-                                // No operands at all
-                                break;
-                            }
-                            // Trailing comma
                             break;
                         }
                         
@@ -799,7 +801,6 @@ impl<'a> Parser<'a> {
                             index: self.ir.value_operands.len() as u32,
                         });
                         self.ir.value_operands.push(0); // Placeholder
-                        op_count += 1;
                     }
                 }
             }
@@ -951,7 +952,7 @@ entry:
   %val =
   jump ^ret, ^other
 other:
-  %val2 = %val
+  %val2 =
   jump ^ret
 ret:
   %phi = phi [^entry, %val], [^other, %val2]
