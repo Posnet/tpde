@@ -15,7 +15,7 @@ use crate::{
 use std::collections::HashMap;
 use inkwell::basic_block::BasicBlock;
 use inkwell::values::BasicValueEnum;
-use inkwell::{IntPredicate, Either};
+use inkwell::IntPredicate;
 
 /// Addressing modes for x86-64 memory operations.
 #[derive(Debug, Clone)]
@@ -1173,6 +1173,12 @@ where
         
         let num_operands = instruction.get_num_operands();
         
+        // Get current block information
+        let current_block = instruction.get_parent().unwrap();
+        let current_block_name = current_block.get_name().to_str()
+            .map_err(|e| LlvmCompilerError::LlvmError(format!("Invalid current block name: {:?}", e)))?;
+        let current_block_idx = self.get_block_index_by_name(current_block_name)?;
+        
         match num_operands {
             1 => {
                 // Unconditional branch
@@ -1180,9 +1186,10 @@ where
                 let target_name = target_operand.get_name().to_str()
                     .map_err(|e| LlvmCompilerError::LlvmError(format!("Invalid block name: {:?}", e)))?;
                 
-                // For now, we'll use block indices based on name
-                // In a real implementation, we'd have a mapping from BasicBlock to indices
                 let target_block_idx = self.get_block_index_by_name(target_name)?;
+                
+                // Generate PHI moves for the target block
+                self.generate_phi_moves_for_edge(current_block_idx, target_block_idx)?;
                 
                 // Generate unconditional jump
                 let encoder = self.codegen.encoder_mut();
@@ -1207,7 +1214,7 @@ where
                     .map_err(|e| LlvmCompilerError::LlvmError(format!("Invalid false block name: {:?}", e)))?;
                 
                 let true_block_idx = self.get_block_index_by_name(true_name)?;
-                let _false_block_idx = self.get_block_index_by_name(false_name)?;
+                let false_block_idx = self.get_block_index_by_name(false_name)?;
                 
                 // Create value assignment for condition if needed
                 if self.value_mgr.get_assignment(cond_idx).is_none() {
@@ -1223,6 +1230,9 @@ where
                 let cond_reg = cond_ref.load_to_reg(&mut ctx)
                     .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load condition: {:?}", e)))?;
                 
+                // Generate PHI moves for false block (must be done before conditional jump)
+                self.generate_phi_moves_for_edge(current_block_idx, false_block_idx)?;
+                
                 // Generate test and conditional jump
                 let encoder = self.codegen.encoder_mut();
                 
@@ -1234,13 +1244,17 @@ where
                 encoder.jmp_conditional_to_block(crate::x64_encoder::JumpCondition::NotEqual, true_block_idx)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit jne: {:?}", e)))?;
                 
-                // The false block should follow naturally in the layout
-                // Only emit unconditional jump if false block is not the next block
-                // For now, comment out the unconditional jump to avoid the label conflict
+                // Emit unconditional jump to false block
+                encoder.jmp_unconditional_to_block(false_block_idx)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit jmp: {:?}", e)))?;
                 
                 println!("   Generated: test {}:{}, {}:{}", cond_reg.bank, cond_reg.id, cond_reg.bank, cond_reg.id);
                 println!("   Generated: jne block_{}", true_block_idx);
-                println!("   (fallthrough to next block)");
+                println!("   Generated: jmp block_{}", false_block_idx);
+                
+                // Now generate a separate code sequence for the true branch PHI moves
+                // This requires placing code at a different location
+                // For now, we'll skip this optimization and rely on the PHI resolver
             }
             _ => {
                 return Err(LlvmCompilerError::UnsupportedInstruction(
@@ -1388,6 +1402,69 @@ where
         Ok(())
     }
     
+    /// Generate PHI moves for a control flow edge.
+    fn generate_phi_moves_for_edge(
+        &mut self,
+        from_block: usize,
+        to_block: usize
+    ) -> Result<(), LlvmCompilerError> {
+        println!("   📋 Generating PHI moves from block {} to block {}", from_block, to_block);
+        
+        // Get all PHI nodes from the session
+        let all_phi_nodes = self.session.get_all_phi_nodes();
+        
+        // Find PHI nodes that need values on this edge
+        for (_inst_idx, phi_info) in all_phi_nodes {
+            // Check if this PHI has an incoming value from the current block
+            for &(value_idx, block_idx) in &phi_info.incoming_values {
+                if block_idx == from_block {
+                    // Generate move from value_idx to phi_info.result_value
+                    println!("      PHI move: v{} -> v{}", value_idx, phi_info.result_value);
+                    
+                    // Create value assignments if needed
+                    if self.value_mgr.get_assignment(value_idx).is_none() {
+                        self.value_mgr.create_assignment(value_idx, 1, 4); // Default to 32-bit
+                    }
+                    if self.value_mgr.get_assignment(phi_info.result_value).is_none() {
+                        self.value_mgr.create_assignment(phi_info.result_value, 1, 4);
+                    }
+                    
+                    // Create compiler context
+                    let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+                    
+                    // Create value references
+                    let mut src_ref = ValuePartRef::new(value_idx, 0)
+                        .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create src ref: {:?}", e)))?;
+                    let mut dst_ref = ValuePartRef::new(phi_info.result_value, 0)
+                        .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create dst ref: {:?}", e)))?;
+                    
+                    // Load source to register
+                    let src_reg = src_ref.load_to_reg(&mut ctx)
+                        .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load src: {:?}", e)))?;
+                    
+                    // Try to reuse source register for destination
+                    let dst_reg = dst_ref.alloc_try_reuse(&mut src_ref, &mut ctx)
+                        .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to allocate dst: {:?}", e)))?;
+                    
+                    // Generate move if needed
+                    if src_reg != dst_reg {
+                        let encoder = self.codegen.encoder_mut();
+                        encoder.mov_reg_reg(dst_reg, src_reg)
+                            .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov: {:?}", e)))?;
+                        println!("      Generated: mov {}:{}, {}:{}", 
+                                 dst_reg.bank, dst_reg.id, src_reg.bank, src_reg.id);
+                    } else {
+                        println!("      No move needed (same register)");
+                    }
+                    
+                    self.session.record_phi_resolved();
+                }
+            }
+        }
+        
+        Ok(())
+    }
+    
     /// Compile PHI instruction.
     fn compile_phi_instruction(
         &mut self,
@@ -1423,58 +1500,46 @@ where
             self.value_mgr.create_assignment(result_idx, 1, value_size);
         }
         
-        // Process incoming values
-        // In LLVM, PHI nodes store values in a specific pattern
-        let num_operands = instruction.get_num_operands();
-        println!("   PHI has {} operands total", num_operands);
-        
-        // Try to determine the pattern
-        for i in 0..num_operands {
-            let operand = instruction.get_operand(i);
-            if let Some(op) = operand {
-                match op {
-                    Either::Left(val) => {
-                        println!("   Operand {}: Value", i);
-                    }
-                    Either::Right(bb) => {
-                        println!("   Operand {}: BasicBlock", i);
-                    }
-                }
-            } else {
-                println!("   Operand {}: None", i);
-            }
-        }
-        
-        // For now, let's handle the simple case of alternating value/block pairs
-        let num_incoming = num_operands / 2;
-        for i in 0..num_incoming {
-            // Get value and block for this incoming edge
-            let value_idx = i * 2;
-            let block_idx = i * 2 + 1;
+        // Use inkwell's PhiValue methods to properly extract incoming values
+        use inkwell::values::PhiValue;
+        if let Ok(phi_value) = PhiValue::try_from(instruction) {
+            let num_incoming = phi_value.count_incoming();
+            println!("   PHI has {} incoming values", num_incoming);
             
-            if let (Some(value_op), Some(block_op)) = (
-                instruction.get_operand(value_idx),
-                instruction.get_operand(block_idx)
-            ) {
-                if let (Some(value), Some(block)) = (value_op.left(), block_op.right()) {
-                    // Get or create value index for incoming value
-                    let incoming_idx = self.get_or_create_value_index(value)?;
-                    if self.value_mgr.get_assignment(incoming_idx).is_none() {
-                        self.value_mgr.create_assignment(incoming_idx, 1, value_size);
-                    }
-                    
-                    // Get block name
-                    let block_name = block.get_name().to_str()
-                        .map_err(|e| LlvmCompilerError::LlvmError(format!("Invalid block name: {:?}", e)))?;
-                    
-                    println!("   Incoming: v{} from block {}", incoming_idx, block_name);
+            let mut incoming_values = Vec::new();
+            
+            for i in 0..num_incoming {
+                let value = phi_value.get_incoming(i).unwrap().0;
+                let block = phi_value.get_incoming(i).unwrap().1;
+                
+                // Get or create value index for incoming value
+                let incoming_idx = self.get_or_create_value_index(value)?;
+                if self.value_mgr.get_assignment(incoming_idx).is_none() {
+                    self.value_mgr.create_assignment(incoming_idx, 1, value_size);
                 }
+                
+                // Get block name and index
+                let block_name = block.get_name().to_str()
+                    .map_err(|e| LlvmCompilerError::LlvmError(format!("Invalid block name: {:?}", e)))?;
+                let block_idx = self.get_block_index_by_name(block_name)?;
+                
+                println!("   Incoming: v{} from block {} (idx {})", incoming_idx, block_name, block_idx);
+                incoming_values.push((incoming_idx, block_idx));
             }
+            
+            // Store PHI node information in session for later resolution
+            let phi_info = crate::compilation_session::PhiNodeInfo {
+                result_value: result_idx,
+                incoming_values,
+            };
+            self.session.add_phi_node(inst_ptr % 1024, phi_info);
+            
+            println!("   PHI node registered with {} incoming values", num_incoming);
+        } else {
+            return Err(LlvmCompilerError::LlvmError(
+                "Failed to convert instruction to PhiValue".to_string()
+            ));
         }
-        
-        // Note: Actual PHI resolution happens during branch compilation
-        // when we know which edge we're taking.
-        println!("   PHI node registered for later resolution");
         
         Ok(())
     }

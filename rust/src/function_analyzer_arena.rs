@@ -61,13 +61,13 @@ pub struct PhiIncoming {
 /// Builder that consumes itself to produce analysis results.
 pub struct FunctionAnalyzer<'ctx, 'arena> {
     session: &'arena CompilationSession<'arena>,
-    blocks: &'arena [BasicBlock<'ctx>],
+    blocks: Vec<BasicBlock<'ctx>>,
     
     // Working data - will be moved to results
-    block_layout: &'arena mut [usize],
-    block_phi_info: &'arena mut [(usize, usize)],
-    phi_nodes: &'arena mut [PhiNode],
-    phi_incoming: &'arena mut [PhiIncoming],
+    block_layout: Vec<usize>,
+    block_phi_info: Vec<(usize, usize)>,
+    phi_nodes: Vec<PhiNode>,
+    phi_incoming: Vec<PhiIncoming>,
     
     // Counters
     phi_count: usize,
@@ -94,42 +94,13 @@ impl<'ctx, 'arena> FunctionAnalyzer<'ctx, 'arena> {
             });
         }
         
-        // Allocate working space in arena
-        let blocks = session.alloc_slice(&blocks);
-        let block_layout = session.alloc_slice(&vec![0; num_blocks]);
-        let block_phi_info = session.alloc_slice(&vec![(0, 0); num_blocks]);
-        let phi_nodes = session.alloc_slice(&vec![PhiNode {
-            block_idx: 0,
-            result_idx: 0,
-            incoming_start: 0,
-            incoming_count: 0,
-        }; Self::MAX_PHI_NODES]);
-        let phi_incoming = session.alloc_slice(&vec![PhiIncoming {
-            value_idx: 0,
-            pred_block_idx: 0,
-        }; Self::MAX_PHI_INCOMING]);
-        
-        // Convert to mutable slices
-        let block_layout = unsafe {
-            std::slice::from_raw_parts_mut(block_layout.as_ptr() as *mut usize, block_layout.len())
-        };
-        let block_phi_info = unsafe {
-            std::slice::from_raw_parts_mut(block_phi_info.as_ptr() as *mut (usize, usize), block_phi_info.len())
-        };
-        let phi_nodes = unsafe {
-            std::slice::from_raw_parts_mut(phi_nodes.as_ptr() as *mut PhiNode, phi_nodes.len())
-        };
-        let phi_incoming = unsafe {
-            std::slice::from_raw_parts_mut(phi_incoming.as_ptr() as *mut PhiIncoming, phi_incoming.len())
-        };
-        
         Ok(Self {
             session,
             blocks,
-            block_layout,
-            block_phi_info,
-            phi_nodes,
-            phi_incoming,
+            block_layout: vec![0; num_blocks],
+            block_phi_info: vec![(0, 0); num_blocks],
+            phi_nodes: Vec::with_capacity(Self::MAX_PHI_NODES),
+            phi_incoming: Vec::with_capacity(Self::MAX_PHI_INCOMING),
             phi_count: 0,
             phi_incoming_count: 0,
             instruction_count: 0,
@@ -144,20 +115,27 @@ impl<'ctx, 'arena> FunctionAnalyzer<'ctx, 'arena> {
         // Second pass: compute block layout
         self.compute_block_layout()?;
         
-        // Move data into results (no copies!)
+        // Allocate results in arena
+        let num_blocks = self.blocks.len();
+        let block_layout = self.session.alloc_slice(&self.block_layout[..num_blocks]);
+        let block_phi_info = self.session.alloc_slice(&self.block_phi_info[..num_blocks]);
+        let phi_nodes = self.session.alloc_slice(&self.phi_nodes[..self.phi_count]);
+        let phi_incoming = self.session.alloc_slice(&self.phi_incoming[..self.phi_incoming_count]);
+        
         Ok(FunctionAnalysis {
-            num_blocks: self.blocks.len(),
-            block_layout: &self.block_layout[..self.blocks.len()],
-            block_phi_info: &self.block_phi_info[..self.blocks.len()],
-            phi_nodes: &self.phi_nodes[..self.phi_count],
-            phi_incoming: &self.phi_incoming[..self.phi_incoming_count],
+            num_blocks,
+            block_layout,
+            block_phi_info,
+            phi_nodes,
+            phi_incoming,
             phi_count: self.phi_count,
             instruction_count: self.instruction_count,
         })
     }
     
     fn analyze_instructions(&mut self) -> CompileResult<()> {
-        for (block_idx, &block) in self.blocks.iter().enumerate() {
+        for block_idx in 0..self.blocks.len() {
+            let block = self.blocks[block_idx];
             let phi_start = self.phi_count;
             let mut block_phi_count = 0;
             
@@ -210,21 +188,21 @@ impl<'ctx, 'arena> FunctionAnalyzer<'ctx, 'arena> {
                 let value_idx = value.as_value_ref() as usize % 1024;
                 let pred_idx = self.find_block_index(block)?;
                 
-                self.phi_incoming[self.phi_incoming_count] = PhiIncoming {
+                self.phi_incoming.push(PhiIncoming {
                     value_idx,
                     pred_block_idx: pred_idx,
-                };
+                });
                 self.phi_incoming_count += 1;
                 incoming_count += 1;
             }
         }
         
-        self.phi_nodes[self.phi_count] = PhiNode {
+        self.phi_nodes.push(PhiNode {
             block_idx,
             result_idx,
             incoming_start,
             incoming_count,
-        };
+        });
         self.phi_count += 1;
         
         Ok(())
