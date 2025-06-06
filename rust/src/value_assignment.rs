@@ -11,7 +11,7 @@ use std::collections::HashMap;
 pub type ValLocalIdx = usize;
 
 /// Flags controlling ValueAssignment behavior.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct AssignmentFlags {
     /// Whether the assignment is a variable reference (global, alloca).
     pub variable_ref: bool,
@@ -21,17 +21,6 @@ pub struct AssignmentFlags {
     pub delay_free: bool,
     /// Whether the assignment is in the delayed free list.
     pub pending_free: bool,
-}
-
-impl Default for AssignmentFlags {
-    fn default() -> Self {
-        Self {
-            variable_ref: false,
-            stack_variable: false,
-            delay_free: false,
-            pending_free: false,
-        }
-    }
 }
 
 /// Storage location for a value assignment.
@@ -203,7 +192,7 @@ impl ValueAssignment {
 ///
 /// Uses a combination of free lists and bump allocation for optimal performance
 /// in the common case of single-part assignments.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct AssignmentAllocator {
     /// Storage pool for assignments.
     assignments: Vec<ValueAssignment>,
@@ -216,11 +205,7 @@ pub struct AssignmentAllocator {
 impl AssignmentAllocator {
     /// Create a new assignment allocator.
     pub fn new() -> Self {
-        Self {
-            assignments: Vec::new(),
-            free_lists: Default::default(),
-            large_free_list: Vec::new(),
-        }
+        Self::default()
     }
 
     /// Allocate a new assignment with the given number of parts.
@@ -291,14 +276,20 @@ pub struct ValueAssignmentManager {
     delayed_free_list: Vec<usize>,
 }
 
-impl ValueAssignmentManager {
-    /// Create a new value assignment manager.
-    pub fn new() -> Self {
+impl Default for ValueAssignmentManager {
+    fn default() -> Self {
         Self {
             allocator: AssignmentAllocator::new(),
             assignments: HashMap::new(),
             delayed_free_list: Vec::new(),
         }
+    }
+}
+
+impl ValueAssignmentManager {
+    /// Create a new value assignment manager.
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Create an assignment for the given local value.
@@ -325,6 +316,7 @@ impl ValueAssignmentManager {
 
     /// Remove reference to a value, potentially freeing its assignment.
     pub fn remove_ref(&mut self, local_idx: ValLocalIdx) {
+        #[allow(clippy::collapsible_if)]
         if let Some(&assignment_idx) = self.assignments.get(&local_idx) {
             if let Some(assignment) = self.allocator.get_mut(assignment_idx) {
                 if assignment.remove_ref() {

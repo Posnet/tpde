@@ -112,7 +112,7 @@ impl ElfAssembler {
 
     /// Return true if the label has not been placed yet.
     pub fn label_is_pending(&self, label: ElfLabel) -> bool {
-        self.labels.get(label.0).map_or(false, |l| l.offset.is_none())
+        self.labels.get(label.0).is_some_and(|l| l.offset.is_none())
     }
 }
 

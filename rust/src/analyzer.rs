@@ -30,15 +30,21 @@ pub struct Analyzer<A: IrAdaptor> {
     _marker: PhantomData<A>,
 }
 
-impl<A: IrAdaptor> Analyzer<A> {
-    /// Create a new analyzer.
-    pub fn new() -> Self {
+impl<A: IrAdaptor> Default for Analyzer<A> {
+    fn default() -> Self {
         Self {
             order: Vec::new(),
             block_map: HashMap::new(),
             liveness: Vec::new(),
             _marker: PhantomData,
         }
+    }
+}
+
+impl<A: IrAdaptor> Analyzer<A> {
+    /// Create a new analyzer.
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Sequence of blocks in reverse post order.

@@ -26,7 +26,7 @@ impl std::fmt::Display for EncodingError {
         match self {
             EncodingError::InvalidRegister => write!(f, "Invalid register for operation"),
             EncodingError::UnsupportedInstruction => write!(f, "Unsupported instruction or operand combination"),
-            EncodingError::AssemblyError(msg) => write!(f, "Assembly error: {}", msg),
+            EncodingError::AssemblyError(msg) => write!(f, "Assembly error: {msg}"),
             EncodingError::InvalidMemoryOperand => write!(f, "Invalid memory operand"),
         }
     }

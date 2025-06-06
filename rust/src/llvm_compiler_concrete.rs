@@ -110,7 +110,8 @@ struct BinaryOpContext {
     right_idx: usize,
     result_idx: usize,
     bit_width: u32,
-    value_size: u8,
+    #[allow(dead_code)]
+    value_size: u8,  // Kept for consistency with value assignment creation
 }
 
 /// Concrete LLVM compiler with arena-based memory management.

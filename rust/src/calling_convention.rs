@@ -100,42 +100,8 @@ pub struct SysVAssigner {
     ret_xmm_cnt: usize,
 }
 
-impl SysVAssigner {
-    /// System V x86-64 GP argument registers.
-    const GP_ARG_REGS: [AsmReg; 6] = [
-        AsmReg::new(0, 7),  // RDI
-        AsmReg::new(0, 6),  // RSI  
-        AsmReg::new(0, 2),  // RDX
-        AsmReg::new(0, 1),  // RCX
-        AsmReg::new(0, 8),  // R8
-        AsmReg::new(0, 9),  // R9
-    ];
-    
-    /// System V x86-64 XMM argument registers.
-    const XMM_ARG_REGS: [AsmReg; 8] = [
-        AsmReg::new(1, 0),  // XMM0
-        AsmReg::new(1, 1),  // XMM1
-        AsmReg::new(1, 2),  // XMM2
-        AsmReg::new(1, 3),  // XMM3
-        AsmReg::new(1, 4),  // XMM4
-        AsmReg::new(1, 5),  // XMM5
-        AsmReg::new(1, 6),  // XMM6
-        AsmReg::new(1, 7),  // XMM7
-    ];
-    
-    /// Return value registers.
-    const RET_GP_REGS: [AsmReg; 2] = [
-        AsmReg::new(0, 0),  // RAX
-        AsmReg::new(0, 2),  // RDX
-    ];
-    
-    const RET_XMM_REGS: [AsmReg; 2] = [
-        AsmReg::new(1, 0),  // XMM0
-        AsmReg::new(1, 1),  // XMM1
-    ];
-
-    /// Create a new System V calling convention assigner.
-    pub fn new() -> Self {
+impl Default for SysVAssigner {
+    fn default() -> Self {
         // Build allocatable register set (all except RSP, RBP)
         let mut allocatable = RegBitSet::new();
         for i in 0..16 {
@@ -179,6 +145,46 @@ impl SysVAssigner {
             ret_gp_cnt: 0,
             ret_xmm_cnt: 0,
         }
+    }
+}
+
+impl SysVAssigner {
+    /// System V x86-64 GP argument registers.
+    const GP_ARG_REGS: [AsmReg; 6] = [
+        AsmReg::new(0, 7),  // RDI
+        AsmReg::new(0, 6),  // RSI  
+        AsmReg::new(0, 2),  // RDX
+        AsmReg::new(0, 1),  // RCX
+        AsmReg::new(0, 8),  // R8
+        AsmReg::new(0, 9),  // R9
+    ];
+    
+    /// System V x86-64 XMM argument registers.
+    const XMM_ARG_REGS: [AsmReg; 8] = [
+        AsmReg::new(1, 0),  // XMM0
+        AsmReg::new(1, 1),  // XMM1
+        AsmReg::new(1, 2),  // XMM2
+        AsmReg::new(1, 3),  // XMM3
+        AsmReg::new(1, 4),  // XMM4
+        AsmReg::new(1, 5),  // XMM5
+        AsmReg::new(1, 6),  // XMM6
+        AsmReg::new(1, 7),  // XMM7
+    ];
+    
+    /// Return value registers.
+    const RET_GP_REGS: [AsmReg; 2] = [
+        AsmReg::new(0, 0),  // RAX
+        AsmReg::new(0, 2),  // RDX
+    ];
+    
+    const RET_XMM_REGS: [AsmReg; 2] = [
+        AsmReg::new(1, 0),  // XMM0
+        AsmReg::new(1, 1),  // XMM1
+    ];
+
+    /// Create a new System V calling convention assigner.
+    pub fn new() -> Self {
+        Self::default()
     }
     
     /// Force remaining arguments to be assigned to stack (for varargs).
@@ -281,9 +287,8 @@ pub struct FunctionFrame {
     pub ret_assignments: Vec<CCAssignment>,
 }
 
-impl FunctionFrame {
-    /// Create a new function frame.
-    pub fn new() -> Self {
+impl Default for FunctionFrame {
+    fn default() -> Self {
         Self {
             saved_registers: Vec::new(),
             frame_size: 0,
@@ -293,6 +298,13 @@ impl FunctionFrame {
             arg_assignments: Vec::new(),
             ret_assignments: Vec::new(),
         }
+    }
+}
+
+impl FunctionFrame {
+    /// Create a new function frame.
+    pub fn new() -> Self {
+        Self::default()
     }
     
     /// Add a callee-saved register that needs preservation.

@@ -2223,7 +2223,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
     /// This implements the C++ LLVMCompilerX64::compile_br pattern:
     /// - Load condition value to register
     /// - Generate TEST instruction to set processor flags
-    
+    ///
     /// Compile conditional branch with explicit true/false targets.
     ///
     /// This implements the C++ pattern for LLVM BranchInst with condition:

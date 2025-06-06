@@ -6,6 +6,9 @@
 
 use crate::value_assignment::ValLocalIdx;
 
+/// Type alias for register spill callback function.
+type SpillCallback = Box<dyn Fn(AsmReg, &Assignment) -> Result<(), String>>;
+
 /// Maximum number of register banks supported (GP, FP, etc.).
 pub const MAX_REGISTER_BANKS: usize = 4;
 
@@ -200,7 +203,7 @@ pub struct RegisterFile {
     lock_counts: Vec<u8>,
     
     /// Callback for spilling register contents.
-    spill_callback: Option<Box<dyn Fn(AsmReg, &Assignment) -> Result<(), String>>>,
+    spill_callback: Option<SpillCallback>,
 }
 
 impl RegisterFile {
