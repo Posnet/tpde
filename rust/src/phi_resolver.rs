@@ -53,6 +53,8 @@ pub struct PhiResolver<'ctx, 'arena> {
     move_count: usize,
     
     /// Temporary scratch space for cycle breaking.
+    /// TODO: Implement cycle detection and breaking using temp registers
+    #[allow(dead_code)]
     temp_regs: &'arena mut [Option<AsmReg>],
 }
 

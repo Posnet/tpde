@@ -376,36 +376,6 @@ where
         }
     }
     
-    /// Analyze blocks and create labels for all blocks upfront.
-    fn analyze_and_layout_blocks(
-        &mut self,
-        function: inkwell::values::FunctionValue<'ctx>
-    ) -> Result<(), LlvmCompilerError> {
-        // Create labels for all blocks upfront (like C++ does)
-        let blocks = function.get_basic_blocks();
-        
-        for (idx, block) in blocks.iter().enumerate() {
-            if let Some(name) = block.get_name().to_str().ok() {
-                println!("📊 Block layout: {} → index {}", name, idx);
-            }
-        }
-        
-        Ok(())
-    }
-    
-    /// Compile the function body by processing basic blocks and instructions.
-    fn compile_function_body(
-        &mut self, 
-        function: inkwell::values::FunctionValue<'ctx>
-    ) -> Result<(), LlvmCompilerError> {
-        // Iterate through basic blocks
-        for basic_block in function.get_basic_blocks() {
-            self.compile_basic_block(basic_block)?;
-        }
-        
-        Ok(())
-    }
-    
     /// Compile the function body using analysis results.
     fn compile_function_body_with_analysis(
         &mut self, 

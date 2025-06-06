@@ -211,8 +211,6 @@ pub struct AssignmentAllocator {
     free_lists: [Vec<usize>; 5],
     /// Free list for assignments with >4 parts.
     large_free_list: Vec<usize>,
-    /// Index of next assignment to allocate.
-    next_alloc: usize,
 }
 
 impl AssignmentAllocator {
@@ -222,7 +220,6 @@ impl AssignmentAllocator {
             assignments: Vec::new(),
             free_lists: Default::default(),
             large_free_list: Vec::new(),
-            next_alloc: 0,
         }
     }
 
