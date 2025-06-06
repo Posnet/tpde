@@ -1,4 +1,4 @@
-use crate::adaptor::IrAdaptor;
+use super::adaptor::IrAdaptor;
 use core::marker::PhantomData;
 use std::collections::{HashMap, HashSet};
 

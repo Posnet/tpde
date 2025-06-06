@@ -35,24 +35,22 @@ pub mod x64;
 pub mod legacy;
 pub mod experimental;
 
-// Framework modules (to be moved later)
-pub mod overview;
-pub mod guide;
-pub mod adaptor;
-pub mod analyzer;
-pub mod compiler;
-pub mod value_ref;
-pub mod function_codegen;
+// Other modules
+pub mod docs;
 pub mod encodegen;
 
 // Re-export common types from organized modules
-pub use compiler::{Backend, CompilerBase};
 pub use core::{
+    // Framework traits
+    Backend, CompilerBase, IrAdaptor, Analyzer,
+    // Value management
     ValueAssignment, ValueAssignmentManager, ValLocalIdx,
+    ValueRef, ValuePartRef, ValueRefBuilder, ValueRefError, CompilerContext,
+    // Register allocation
     RegisterFile, AsmReg, RegBitSet, RegAllocError,
+    // Session management
     CompilationSession, SessionStats, SessionError,
 };
-pub use value_ref::{ValueRef, ValuePartRef, ValueRefBuilder, ValueRefError, CompilerContext};
 pub use llvm::{LlvmCompiler as LlvmCompilerConcrete, CompiledFunction, LlvmCompilerError};
 
 // =============================================================================

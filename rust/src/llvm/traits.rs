@@ -25,12 +25,12 @@ pub enum InstructionCategory {
 ///
 /// This trait extends the basic IrAdaptor functionality with LLVM-specific
 /// methods needed for proper instruction selection.
-pub trait LlvmAdaptorInterface: crate::adaptor::IrAdaptor {
+pub trait LlvmAdaptorInterface: crate::core::IrAdaptor {
     /// Get instruction opcode information for classification.
-    fn get_instruction_category(&self, inst: Self::InstRef) -> InstructionCategory;
+    fn get_instruction_category(&self, inst: <Self as crate::core::IrAdaptor>::InstRef) -> InstructionCategory;
     
     /// Get comparison predicate for ICMP instructions.
-    fn get_icmp_predicate(&self, inst: Self::InstRef) -> Option<String>;
+    fn get_icmp_predicate(&self, inst: <Self as crate::core::IrAdaptor>::InstRef) -> Option<String>;
     
     /// Check if the current function makes calls.
     fn makes_calls(&self) -> bool;

@@ -4,15 +4,13 @@
 //! infrastructure with the x64_encoder. It demonstrates end-to-end compilation
 //! from SSA IR through register allocation to machine code generation.
 
-use crate::{
-    adaptor::IrAdaptor,
-    core::{
-        assembler::ElfAssembler,
-        register_file::{RegisterFile, RegAllocError, RegBitSet},
-        value_assignment::ValueAssignmentManager,
-    },
-    compiler::{Backend, CompilerBase},
-    value_ref::{CompilerContext, ValuePartRef, ValueRefError},
+use crate::core::{
+    IrAdaptor,
+    assembler::ElfAssembler,
+    register_file::{RegisterFile, RegAllocError, RegBitSet},
+    value_assignment::ValueAssignmentManager,
+    Backend, CompilerBase,
+    CompilerContext, ValuePartRef, ValueRefError,
 };
 use super::encoder::{InstructionSelector, EncodingError};
 
@@ -236,7 +234,7 @@ pub fn create_x64_compiler<A: IrAdaptor>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adaptor::IrAdaptor;
+    use crate::core::IrAdaptor;
     use std::collections::HashMap;
 
     /// Minimal test IR adaptor for demonstrating the backend.

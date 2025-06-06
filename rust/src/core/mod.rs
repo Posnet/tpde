@@ -12,6 +12,10 @@ pub mod register_file;
 pub mod value_assignment;
 pub mod error;
 pub mod assembler;
+pub mod value_ref;
+pub mod adaptor;
+pub mod analyzer;
+pub mod compiler;
 
 // Re-export core components
 pub use session::{
@@ -48,3 +52,15 @@ pub use assembler::{
     Assembler,
     ElfAssembler,
 };
+
+pub use value_ref::{
+    ValueRef,
+    ValuePartRef,
+    ValueRefBuilder,
+    ValueRefError,
+    CompilerContext,
+};
+
+pub use adaptor::IrAdaptor;
+pub use analyzer::Analyzer;
+pub use compiler::{Backend, CompilerBase};

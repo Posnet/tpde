@@ -1,4 +1,4 @@
-use tpde::adaptor::IrAdaptor;
+use tpde::core::IrAdaptor;
 use tpde::core::{Assembler, ElfAssembler};
 use object::{File, Object};
 

@@ -7,19 +7,19 @@
 #![allow(dead_code)] // Many methods are part of the architecture but not used yet
 
 use crate::{
-    adaptor::IrAdaptor,
-    analyzer::Analyzer,
     core::{
+        IrAdaptor,
+        Analyzer,
         assembler::{Assembler, ElfAssembler},
         register_file::{AsmReg, RegisterFile, RegAllocError, RegBitSet},
         value_assignment::ValueAssignmentManager,
+        value_ref::{CompilerContext, ValuePartRef, ValueRefError},
     },
     x64::{
         calling_convention::{CCAssigner, SysVAssigner, CCAssignment, RegBank},
         encoder::EncodingError,
+        function_codegen::{FunctionCodegen, FunctionCodegenError, ArgInfo},
     },
-    function_codegen::{FunctionCodegen, FunctionCodegenError, ArgInfo},
-    value_ref::{CompilerContext, ValuePartRef, ValueRefError},
     llvm::InstructionCategory,
 };
 

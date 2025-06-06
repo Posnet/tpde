@@ -6,8 +6,8 @@
 //! access to registers while abstracting the complexity of the underlying
 //! ValueAssignment and RegisterFile systems.
 
-use crate::core::value_assignment::{ValLocalIdx, ValueAssignmentManager};
-use crate::core::register_file::{RegisterFile, AsmReg, RegAllocError};
+use super::value_assignment::{ValLocalIdx, ValueAssignmentManager};
+use super::register_file::{RegisterFile, AsmReg, RegAllocError};
 
 /// Error types for value reference operations.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -1,4 +1,4 @@
-use crate::adaptor::IrAdaptor;
+use super::adaptor::IrAdaptor;
 
 /// Trait implemented by architecture specific assemblers.
 ///

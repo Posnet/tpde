@@ -11,7 +11,7 @@ use inkwell::llvm_sys::prelude::LLVMValueRef;
 use inkwell::values::{AnyValue, AsValueRef};
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use crate::{adaptor::IrAdaptor, core::assembler::{Assembler, ElfAssembler}, compiler::{CompilerBase, Backend}};
+use crate::{core::{IrAdaptor, assembler::{Assembler, ElfAssembler}, CompilerBase, Backend}};
 
 /// Adaptor walking an LLVM [`Module`] using `inkwell`.
 ///

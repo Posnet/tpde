@@ -8,6 +8,7 @@
 pub mod encoder;
 pub mod backend;
 pub mod calling_convention;
+pub mod function_codegen;
 
 // Re-export x64 components
 pub use encoder::{
@@ -27,4 +28,9 @@ pub use calling_convention::{
     CCAssignment,
     RegBank,
     FunctionFrame,
+};
+
+pub use function_codegen::{
+    FunctionCodegen,
+    FunctionCodegenError,
 };

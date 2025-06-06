@@ -10,8 +10,8 @@ use crate::{
         value_assignment::ValueAssignmentManager,
         register_file::{RegisterFile, AsmReg, RegBitSet},
     },
-    function_codegen::FunctionCodegen,
-    value_ref::{ValuePartRef, CompilerContext},
+    x64::function_codegen::FunctionCodegen,
+    core::{ValuePartRef, CompilerContext},
 };
 use super::{
     function_analysis::{FunctionAnalyzer, FunctionAnalysis},
@@ -367,9 +367,9 @@ where
     fn llvm_type_to_arg_info(
         &self,
         llvm_type: inkwell::types::BasicMetadataTypeEnum<'ctx>
-    ) -> Result<crate::function_codegen::ArgInfo, LlvmCompilerError> {
+    ) -> Result<crate::x64::function_codegen::ArgInfo, LlvmCompilerError> {
         use inkwell::types::BasicMetadataTypeEnum;
-        use crate::function_codegen::ArgInfo;
+        use crate::x64::function_codegen::ArgInfo;
         
         match llvm_type {
             BasicMetadataTypeEnum::IntType(int_type) => {
