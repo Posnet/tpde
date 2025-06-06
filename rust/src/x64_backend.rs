@@ -140,6 +140,7 @@ impl X64Backend {
     }
 
     /// Compile a store to memory.
+    #[allow(dead_code)]
     fn compile_store<A: IrAdaptor>(
         &mut self,
         _base: &mut CompilerBase<A, ElfAssembler, Self>,
@@ -164,6 +165,7 @@ impl X64Backend {
 
 /// Binary operation types supported by the backend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 enum BinaryOpType {
     Add,
     Sub,

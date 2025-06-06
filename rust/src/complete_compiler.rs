@@ -4,6 +4,8 @@
 //! to compile functions from IR to executable machine code. It demonstrates the 
 //! complete compilation pipeline equivalent to the C++ implementation.
 
+#![allow(dead_code)] // Many methods are part of the architecture but not used yet
+
 use crate::{
     adaptor::IrAdaptor,
     analyzer::Analyzer,
@@ -3048,7 +3050,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
     ///
     /// This method uses std::any::Any to dynamically cast the adaptor and access
     /// enhanced categorization when available.
-    fn try_get_enhanced_category(&self, inst: A::InstRef) -> Option<InstructionCategory> {
+    fn try_get_enhanced_category(&self, _inst: A::InstRef) -> Option<InstructionCategory> {
         // This is a simplified approach that just falls back for now
         // In a full implementation, this would use dynamic casting or trait objects
         None

@@ -1,8 +1,8 @@
 use inkwell::context::Context;
 use inkwell::types::BasicTypeEnum;
 use inkwell::values::BasicValueEnum;
-use tpde_core::complete_compiler::CompleteCompiler;
-use tpde_llvm::enhanced_adaptor::EnhancedLlvmAdaptor;
+use tpde::complete_compiler::CompleteCompiler;
+use tpde::llvm_adaptor::enhanced::EnhancedLlvmAdaptor;
 
 /// Test GEP instruction compilation with various addressing patterns.
 ///
@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn create_gep_test_module(context: &Context) -> inkwell::module::Module {
     let module = context.create_module("gep_test");
     let i32_type = context.i32_type();
-    let ptr_type = i32_type.ptr_type(inkwell::AddressSpace::default());
+    let ptr_type = context.ptr_type(inkwell::AddressSpace::default());
     
     // Function: i32* array_index(i32* arr, i32 idx) { return &arr[idx]; }
     let array_index_fn_type = ptr_type.fn_type(&[ptr_type.into(), i32_type.into()], false);

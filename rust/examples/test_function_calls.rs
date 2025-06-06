@@ -1,6 +1,6 @@
 use inkwell::context::Context;
-use tpde_core::complete_compiler::CompleteCompiler;
-use tpde_llvm::enhanced_adaptor::EnhancedLlvmAdaptor;
+use tpde::complete_compiler::CompleteCompiler;
+use tpde::llvm_adaptor::enhanced::EnhancedLlvmAdaptor;
 
 /// Test complete function call instruction generation.
 ///

@@ -8,8 +8,7 @@ use bumpalo::Bump;
 use std::fmt;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use inkwell::values::{FunctionValue, BasicValueEnum, InstructionValue};
-use inkwell::basic_block::BasicBlock;
+// LLVM types not needed for the arena-based session management
 
 /// Value location information stored in the session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

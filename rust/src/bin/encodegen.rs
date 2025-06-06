@@ -6,7 +6,7 @@ use inkwell::context::Context;
 use std::env;
 use std::fs;
 use std::io::{self, Read};
-use tpde_core::encodegen;
+use tpde::encodegen;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();

@@ -11,10 +11,9 @@ use crate::{
     function_codegen::FunctionCodegen,
     value_ref::{ValuePartRef, CompilerContext},
 };
-use bumpalo::Bump;
 use std::collections::HashMap;
 use inkwell::basic_block::BasicBlock;
-use inkwell::values::{InstructionValue, BasicValueEnum, FunctionValue, IntValue};
+use inkwell::values::BasicValueEnum;
 use inkwell::IntPredicate;
 
 /// Addressing modes for x86-64 memory operations.
@@ -770,7 +769,7 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
         
         // MUL uses RAX for one operand and result
         let rax = AsmReg::new(0, 0); // RAX
-        let rdx = AsmReg::new(0, 2); // RDX (for upper bits)
+        let _rdx = AsmReg::new(0, 2); // RDX (for upper bits)
         
         let encoder = self.codegen.encoder_mut();
         

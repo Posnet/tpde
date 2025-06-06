@@ -1,5 +1,5 @@
-use tpde_core::x64_encoder::{X64Encoder, EncodingError};
-use tpde_core::register_file::AsmReg;
+use tpde::x64_encoder::{X64Encoder, EncodingError};
+use tpde::register_file::AsmReg;
 
 /// Test function call instruction generation.
 ///

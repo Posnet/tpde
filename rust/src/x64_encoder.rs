@@ -182,6 +182,7 @@ impl X64Encoder {
     }
 
     /// Convert AsmReg to iced-x86 Register for XMM registers.
+    #[allow(dead_code)]
     fn to_xmm_register(&self, reg: AsmReg) -> Result<AsmRegisterXmm, EncodingError> {
         if reg.bank != 1 {
             return Err(EncodingError::InvalidRegister);

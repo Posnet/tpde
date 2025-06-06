@@ -226,6 +226,7 @@ impl<'ctx> IrAdaptor for LlvmIrAdaptor<'ctx> {
 }
 
 /// Simple x86-64 backend implementation.
+#[allow(dead_code)]
 pub struct X64Backend {
     reg_usage: u64,
 }
@@ -235,6 +236,7 @@ impl X64Backend {
         Self { reg_usage: 0 }
     }
 
+    #[allow(dead_code)]
     fn emit_mov_imm32(&mut self, asm: &mut ElfAssembler, reg: u8, imm: u32) {
         // MOV r32, imm32: B8+r id
         let mut code = vec![0xB8 + reg];
@@ -242,11 +244,13 @@ impl X64Backend {
         asm.append(&code, 1);
     }
 
+    #[allow(dead_code)]
     fn emit_ret(&mut self, asm: &mut ElfAssembler) {
         // RET: C3
         asm.append(&[0xC3], 1);
     }
 
+    #[allow(dead_code)]
     fn compile_return(&mut self, asm: &mut ElfAssembler, _inst: InstructionValue) -> bool {
         self.emit_ret(asm);
         true
