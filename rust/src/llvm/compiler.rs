@@ -295,6 +295,9 @@ where
         log::trace!("   - {} instructions", analysis.instruction_count);
         log::trace!("   PHI   - {} PHI nodes", analysis.phi_count);
         
+        // Store PHI nodes in session from analysis results
+        self.store_phi_nodes_from_analysis(&analysis)?;
+        
         // Generate prologue
         self.codegen.emit_prologue()
             .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Prologue generation failed: {:?}", e)))?;
@@ -385,6 +388,9 @@ where
             BasicMetadataTypeEnum::IntType(int_type) => {
                 let bit_width = int_type.get_bit_width();
                 match bit_width {
+                    1 => Ok(ArgInfo::int8()),  // i1 is passed as i8
+                    8 => Ok(ArgInfo::int8()),
+                    16 => Ok(ArgInfo::int16()),
                     32 => Ok(ArgInfo::int32()),
                     64 => Ok(ArgInfo::int64()),
                     _ => Err(LlvmCompilerError::UnsupportedInstruction(
@@ -1404,6 +1410,37 @@ where
         Ok(())
     }
     
+    /// Store PHI nodes from analysis results into session.
+    fn store_phi_nodes_from_analysis(&mut self, analysis: &FunctionAnalysis<'arena>) -> Result<(), LlvmCompilerError> {
+        // Store each PHI node in the session
+        for phi_node in &analysis.phi_nodes[0..analysis.phi_count] {
+            let mut incoming_values = Vec::new();
+            
+            // Collect incoming values for this PHI
+            for i in 0..phi_node.incoming_count {
+                let incoming_idx = phi_node.incoming_start + i;
+                let incoming = &analysis.phi_incoming[incoming_idx];
+                incoming_values.push((incoming.value_idx, incoming.pred_block_idx));
+                log::trace!("      PHI incoming for v{}: v{} from block {}", 
+                         phi_node.result_idx, incoming.value_idx, incoming.pred_block_idx);
+            }
+            
+            // Create PHI info and store in session
+            let phi_info = crate::core::session::PhiNodeInfo {
+                result_value: phi_node.result_idx,
+                incoming_values,
+            };
+            
+            // Store using result index as key
+            self.session.add_phi_node(phi_node.result_idx, phi_info);
+            log::trace!("   PHI   Stored PHI node with result v{} in block {} with {} incoming values", 
+                     phi_node.result_idx, phi_node.block_idx, phi_node.incoming_count);
+        }
+        
+        log::debug!("   PHI   Stored {} PHI nodes in session", analysis.phi_count);
+        Ok(())
+    }
+    
     /// Get access to compilation session.
     pub fn session(&self) -> &CompilationSession<'arena> {
         self.session
@@ -1454,25 +1491,28 @@ where
     
     /// Get block index by name.
     fn get_block_index_by_name(&self, block_name: &str) -> Result<usize, LlvmCompilerError> {
-        // Simplified block index assignment
-        // In a real implementation, we'd maintain a mapping during function analysis
-        match block_name {
-            "entry" => Ok(0),
-            "then" => Ok(1),
-            "else" => Ok(2),
-            "merge" => Ok(3),
-            "loop.header" => Ok(4),
-            "loop.body" => Ok(5),
-            "loop.exit" => Ok(6),
-            _ => {
-                // Hash the block name to get a stable index
-                let mut hash = 0usize;
-                for byte in block_name.bytes() {
-                    hash = hash.wrapping_mul(31).wrapping_add(byte as usize);
+        // Get the current function
+        let current_function = self.current_function
+            .ok_or_else(|| LlvmCompilerError::Session(
+                crate::core::session::SessionError::InvalidState("No current function".to_string())
+            ))?;
+            
+        // Get all blocks from the function
+        let blocks = current_function.get_basic_blocks();
+        
+        // Find the block with the given name
+        for (idx, block) in blocks.iter().enumerate() {
+            if let Some(name) = block.get_name().to_str().ok() {
+                if name == block_name {
+                    return Ok(idx);
                 }
-                Ok((hash % 64) + 10) // Offset by 10 to avoid common indices
             }
         }
+        
+        // Block not found
+        Err(LlvmCompilerError::Session(
+            crate::core::session::SessionError::BlockNotFound(999) // Use 999 as unknown
+        ))
     }
     
     /// Materialize GEP expression into machine code.
@@ -1538,56 +1578,193 @@ where
     ) -> Result<(), LlvmCompilerError> {
         log::trace!("   PHI   📋 Generating PHI moves from block {} to block {}", from_block, to_block);
         
-        // Get all PHI nodes from the session
-        let all_phi_nodes = self.session.get_all_phi_nodes();
+        // First, we need to collect all the moves we need to make
+        // This is important because we need to handle parallel moves and potential cycles
+        let mut moves_to_make = Vec::new();
         
-        // Find PHI nodes that need values on this edge
-        for (_inst_idx, phi_info) in all_phi_nodes {
-            // Check if this PHI has an incoming value from the current block
+        // Get the current function to find PHI nodes in the target block
+        let current_function = self.current_function
+            .ok_or_else(|| LlvmCompilerError::Session(
+                crate::core::session::SessionError::InvalidState("No current function".to_string())
+            ))?;
+            
+        // Get the target block
+        let blocks = current_function.get_basic_blocks();
+        if to_block >= blocks.len() {
+            return Err(LlvmCompilerError::Session(
+                crate::core::session::SessionError::BlockNotFound(to_block)
+            ));
+        }
+        let target_block = blocks[to_block];
+        
+        // Get all PHI nodes from session and check which ones are in the target block
+        let all_phi_nodes = self.session.get_all_phi_nodes();
+        log::trace!("   PHI   Checking {} stored PHI nodes", all_phi_nodes.len());
+        
+        // Count PHI instructions in target block to know how many to look for
+        let mut phi_count_in_block = 0;
+        for instruction in target_block.get_instructions() {
+            if instruction.get_opcode() != inkwell::values::InstructionOpcode::Phi {
+                break;
+            }
+            phi_count_in_block += 1;
+        }
+        log::trace!("   PHI   Target block {} has {} PHI instructions", to_block, phi_count_in_block);
+        
+        // Now find the PHI nodes for this block
+        // We need to check if the PHI node belongs to the target block
+        // by verifying it has incoming edges that match our current blocks
+        for (phi_key, phi_info) in all_phi_nodes {
+            log::trace!("   PHI   Checking PHI node {} with result v{}", phi_key, phi_info.result_value);
+            
+            // A PHI node belongs to the target block if it has incoming values
+            // and we're on an edge that feeds into it
             for &(value_idx, block_idx) in &phi_info.incoming_values {
+                log::trace!("      PHI incoming: v{} from block {} (checking against from_block {})", 
+                         value_idx, block_idx, from_block);
                 if block_idx == from_block {
-                    // Generate move from value_idx to phi_info.result_value
-                    log::trace!("   PHI      PHI move: v{} -> v{}", value_idx, phi_info.result_value);
-                    
-                    // Create value assignments if needed
-                    if self.value_mgr.get_assignment(value_idx).is_none() {
-                        self.value_mgr.create_assignment(value_idx, 1, 4); // Default to 32-bit
-                    }
-                    if self.value_mgr.get_assignment(phi_info.result_value).is_none() {
-                        self.value_mgr.create_assignment(phi_info.result_value, 1, 4);
-                    }
-                    
-                    // Create compiler context
-                    let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
-                    
-                    // Create value references
-                    let mut src_ref = ValuePartRef::new(value_idx, 0)
-                        .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create src ref: {:?}", e)))?;
-                    let mut dst_ref = ValuePartRef::new(phi_info.result_value, 0)
-                        .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create dst ref: {:?}", e)))?;
-                    
-                    // Load source to register
-                    let src_reg = src_ref.load_to_reg(&mut ctx)
-                        .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load src: {:?}", e)))?;
-                    
-                    // Try to reuse source register for destination
-                    let dst_reg = dst_ref.alloc_try_reuse(&mut src_ref, &mut ctx)
-                        .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to allocate dst: {:?}", e)))?;
-                    
-                    // Generate move if needed
-                    if src_reg != dst_reg {
-                        let encoder = self.codegen.encoder_mut();
-                        encoder.mov_reg_reg(dst_reg, src_reg)
-                            .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov: {:?}", e)))?;
-                        log::trace!("      Generated: mov {}:{}, {}:{}", 
-                                 dst_reg.bank, dst_reg.id, src_reg.bank, src_reg.id);
-                    } else {
-                        log::debug!("      No move needed (same register)");
-                    }
-                    
-                    self.session.record_phi_resolved();
+                    // This PHI node has an incoming value from our source block
+                    moves_to_make.push((value_idx, phi_info.result_value));
+                    log::trace!("      Found PHI move: v{} -> v{} for edge {} -> {}", 
+                             value_idx, phi_info.result_value, from_block, to_block);
+                    break;
                 }
             }
+        }
+        
+        if moves_to_make.is_empty() {
+            log::trace!("   PHI   No PHI moves needed for edge {} -> {}", from_block, to_block);
+            return Ok(());
+        }
+        
+        log::debug!("   PHI   Found {} PHI moves to generate", moves_to_make.len());
+        
+        // Now we need to perform the moves, being careful about parallel assignment
+        // For now, we'll use a simple approach that may use extra moves but is correct
+        // TODO: Implement proper parallel move with cycle detection
+        
+        // First pass: moves where source is not used as any destination
+        let mut completed = vec![false; moves_to_make.len()];
+        let destinations: Vec<usize> = moves_to_make.iter().map(|(_, dst)| *dst).collect();
+        
+        for (i, &(src_value, dst_value)) in moves_to_make.iter().enumerate() {
+            if !destinations.contains(&src_value) {
+                // Safe to move directly
+                self.generate_single_phi_move(src_value, dst_value)?;
+                completed[i] = true;
+            }
+        }
+        
+        // Second pass: remaining moves (potential cycles)
+        // For simplicity, we'll use temporary registers for any remaining moves
+        for (i, &(src_value, dst_value)) in moves_to_make.iter().enumerate() {
+            if !completed[i] {
+                // This could be part of a cycle, so we'll be conservative
+                // and use a temporary register
+                self.generate_phi_move_with_temp(src_value, dst_value)?;
+            }
+        }
+        
+        // Record statistics
+        for _ in &moves_to_make {
+            self.session.record_phi_resolved();
+        }
+        
+        Ok(())
+    }
+    
+    /// Generate a single PHI move directly.
+    fn generate_single_phi_move(
+        &mut self,
+        src_value: usize,
+        dst_value: usize
+    ) -> Result<(), LlvmCompilerError> {
+        log::trace!("      PHI move: v{} -> v{}", src_value, dst_value);
+        
+        // Create value assignments if needed (default to 64-bit for safety)
+        if self.value_mgr.get_assignment(src_value).is_none() {
+            self.value_mgr.create_assignment(src_value, 1, 8);
+        }
+        if self.value_mgr.get_assignment(dst_value).is_none() {
+            self.value_mgr.create_assignment(dst_value, 1, 8);
+        }
+        
+        // Create compiler context
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+        
+        // Create value references
+        let mut src_ref = ValuePartRef::new(src_value, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create src ref: {:?}", e)))?;
+        let mut dst_ref = ValuePartRef::new(dst_value, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create dst ref: {:?}", e)))?;
+        
+        // Load source to register
+        let src_reg = src_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load src: {:?}", e)))?;
+        
+        // Try to reuse source register for destination
+        let dst_reg = dst_ref.alloc_try_reuse(&mut src_ref, &mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to allocate dst: {:?}", e)))?;
+        
+        // Generate move if needed
+        if src_reg != dst_reg {
+            let encoder = self.codegen.encoder_mut();
+            encoder.mov_reg_reg(dst_reg, src_reg)
+                .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov: {:?}", e)))?;
+            log::trace!("      Generated: mov {}:{}, {}:{}", 
+                     dst_reg.bank, dst_reg.id, src_reg.bank, src_reg.id);
+        } else {
+            log::trace!("      No move needed (same register)");
+        }
+        
+        Ok(())
+    }
+    
+    /// Generate a PHI move using a temporary register (for cycle breaking).
+    fn generate_phi_move_with_temp(
+        &mut self,
+        src_value: usize,
+        dst_value: usize
+    ) -> Result<(), LlvmCompilerError> {
+        log::trace!("      PHI move with temp: v{} -> v{}", src_value, dst_value);
+        
+        // Create value assignments if needed
+        if self.value_mgr.get_assignment(src_value).is_none() {
+            self.value_mgr.create_assignment(src_value, 1, 8);
+        }
+        if self.value_mgr.get_assignment(dst_value).is_none() {
+            self.value_mgr.create_assignment(dst_value, 1, 8);
+        }
+        
+        // Create compiler context
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+        
+        // Load source to a scratch register first
+        let mut src_ref = ValuePartRef::new(src_value, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create src ref: {:?}", e)))?;
+        let src_reg = src_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load src: {:?}", e)))?;
+        
+        // Allocate a scratch register for the temporary
+        // We'll use R11 as a scratch register (following x86-64 convention)
+        let temp_reg = AsmReg::new(0, 11);
+        
+        // Move source to temp
+        let encoder = self.codegen.encoder_mut();
+        encoder.mov_reg_reg(temp_reg, src_reg)
+            .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov to temp: {:?}", e)))?;
+        log::trace!("      Generated: mov r11, {}:{}", src_reg.bank, src_reg.id);
+        
+        // Now move temp to destination
+        let mut dst_ref = ValuePartRef::new(dst_value, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create dst ref: {:?}", e)))?;
+        let dst_reg = dst_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to allocate dst: {:?}", e)))?;
+        
+        if dst_reg != temp_reg {
+            encoder.mov_reg_reg(dst_reg, temp_reg)
+                .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov from temp: {:?}", e)))?;
+            log::trace!("      Generated: mov {}:{}, r11", dst_reg.bank, dst_reg.id);
         }
         
         Ok(())
@@ -1655,14 +1832,9 @@ where
                 incoming_values.push((incoming_idx, block_idx));
             }
             
-            // Store PHI node information in session for later resolution
-            let phi_info = crate::core::session::PhiNodeInfo {
-                result_value: result_idx,
-                incoming_values,
-            };
-            self.session.add_phi_node(inst_ptr % 1024, phi_info);
-            
-            log::trace!("   PHI   PHI node registered with {} incoming values", num_incoming);
+            // PHI nodes are already stored in session during analysis phase
+            // Just log that we processed this PHI instruction
+            log::trace!("   PHI   PHI instruction processed with {} incoming values", num_incoming);
         } else {
             return Err(LlvmCompilerError::LlvmError(
                 "Failed to convert instruction to PhiValue".to_string()

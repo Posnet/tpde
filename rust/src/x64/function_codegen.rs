@@ -268,6 +268,24 @@ impl ArgInfo {
         }
     }
     
+    /// Create argument info for a 16-bit integer.
+    pub fn int16() -> Self {
+        Self {
+            bank: RegBank::GeneralPurpose,
+            size: 2,
+            align: 2,
+        }
+    }
+    
+    /// Create argument info for an 8-bit integer.
+    pub fn int8() -> Self {
+        Self {
+            bank: RegBank::GeneralPurpose,
+            size: 1,
+            align: 1,
+        }
+    }
+    
     /// Create argument info for a 64-bit float.
     pub fn float64() -> Self {
         Self {

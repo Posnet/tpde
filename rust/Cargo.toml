@@ -1,19 +1,19 @@
-// This Cargo.toml defines the Rust implementation of TPDE (Turbo-Powered Direct Execution),
-// a fast LLVM IR compiler targeting 10-20x speedup over LLVM -O0. The package uses Rust
-// edition 2024 for latest language features. Key dependencies include: inkwell for safe
-// LLVM bindings (using custom fork for LLVM 19.1 support), iced-x86 for x86-64 instruction
-// encoding with code_asm feature for high-level assembly, bumpalo for arena allocation
-// critical to compiler performance, object crate for ELF object file generation, thiserror
-// for ergonomic error handling, and log/env_logger for debugging support. The package exposes
-// a library at src/lib.rs and includes an encodegen binary tool. LLVM dependencies use
-// prefer-dynamic linking to reduce binary size and link time. This configuration enables
-// building a complete LLVM IR to native code compiler with minimal dependencies while
-// maintaining compatibility with the C++ TPDE implementation's performance goals.
+# This Cargo.toml defines the Rust implementation of TPDE (Turbo-Powered Direct Execution),
+# a fast LLVM IR compiler targeting 10-20x speedup over LLVM -O0. The package uses Rust
+# edition 2024 for latest language features. Key dependencies include: inkwell for safe
+# LLVM bindings (using custom fork for LLVM 19.1 support), iced-x86 for x86-64 instruction
+# encoding with code_asm feature for high-level assembly, bumpalo for arena allocation
+# critical to compiler performance, object crate for ELF object file generation, thiserror
+# for ergonomic error handling, and log/env_logger for debugging support. The package exposes
+# a library at src/lib.rs and includes an encodegen binary tool. LLVM dependencies use
+# prefer-dynamic linking to reduce binary size and link time. This configuration enables
+# building a complete LLVM IR to native code compiler with minimal dependencies while
+# maintaining compatibility with the C++ TPDE implementation's performance goals.
 
 [package]
 name = "tpde"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [lib]
 path = "src/lib.rs"

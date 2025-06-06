@@ -223,28 +223,54 @@ impl<'ctx, 'arena> FunctionAnalyzer<'ctx, 'arena> {
         let incoming_start = self.phi_incoming_count;
         let mut incoming_count = 0;
         
-        // Process incoming values
-        let num_operands = phi.get_num_operands();
-        for i in (0..num_operands).step_by(2) {
-            if let (Some(value), Some(block)) = (
-                phi.get_operand(i).and_then(|op| op.left()),
-                phi.get_operand(i + 1).and_then(|op| op.right())
-            ) {
-                if self.phi_incoming_count >= Self::MAX_PHI_INCOMING {
-                    return Err(CompileError::BlockLayout {
-                        reason: "Too many PHI incoming values".to_string(),
+        // Process incoming values using PhiValue methods
+        use inkwell::values::PhiValue;
+        if let Ok(phi_value) = PhiValue::try_from(phi) {
+            let num_incoming = phi_value.count_incoming();
+            
+            for i in 0..num_incoming {
+                if let Some((value, block)) = phi_value.get_incoming(i) {
+                    if self.phi_incoming_count >= Self::MAX_PHI_INCOMING {
+                        return Err(CompileError::BlockLayout {
+                            reason: "Too many PHI incoming values".to_string(),
+                        });
+                    }
+                    
+                    let value_idx = value.as_value_ref() as usize % 1024;
+                    let pred_idx = self.find_block_index(block)?;
+                    
+                    self.phi_incoming.push(PhiIncoming {
+                        value_idx,
+                        pred_block_idx: pred_idx,
                     });
+                    self.phi_incoming_count += 1;
+                    incoming_count += 1;
                 }
-                
-                let value_idx = value.as_value_ref() as usize % 1024;
-                let pred_idx = self.find_block_index(block)?;
-                
-                self.phi_incoming.push(PhiIncoming {
-                    value_idx,
-                    pred_block_idx: pred_idx,
-                });
-                self.phi_incoming_count += 1;
-                incoming_count += 1;
+            }
+        } else {
+            // Fallback to operand-based extraction
+            let num_operands = phi.get_num_operands();
+            for i in (0..num_operands).step_by(2) {
+                if let (Some(value), Some(block)) = (
+                    phi.get_operand(i).and_then(|op| op.left()),
+                    phi.get_operand(i + 1).and_then(|op| op.right())
+                ) {
+                    if self.phi_incoming_count >= Self::MAX_PHI_INCOMING {
+                        return Err(CompileError::BlockLayout {
+                            reason: "Too many PHI incoming values".to_string(),
+                        });
+                    }
+                    
+                    let value_idx = value.as_value_ref() as usize % 1024;
+                    let pred_idx = self.find_block_index(block)?;
+                    
+                    self.phi_incoming.push(PhiIncoming {
+                        value_idx,
+                        pred_block_idx: pred_idx,
+                    });
+                    self.phi_incoming_count += 1;
+                    incoming_count += 1;
+                }
             }
         }
         
