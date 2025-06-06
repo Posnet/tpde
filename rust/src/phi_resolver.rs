@@ -9,6 +9,7 @@ use crate::function_analyzer::FunctionAnalyzer;
 use crate::llvm_compiler_concrete::LlvmCompiler;
 use crate::register_file::AsmReg;
 
+
 /// PHI resolution state for tracking cycles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PhiState {
@@ -257,7 +258,7 @@ impl<'ctx, 'arena> PhiResolver<'ctx, 'arena> {
         // 3. Update value tracking
         
         // For now, just log the move
-        println!("   PHI move: v{} -> v{} {}", 
+        log::trace!("   PHI   PHI move: v{} -> v{} {}", 
                  mv.src_value, 
                  mv.dst_value,
                  if mv.in_cycle { "(in cycle)" } else { "" });
@@ -276,7 +277,7 @@ impl<'ctx, 'arena> PhiResolver<'ctx, 'arena> {
         let temp_reg = self.allocate_temp_reg()?;
         
         // Save the start value to temp
-        println!("   Breaking cycle: saving v{} to temp", 
+        log::debug!("{}   Breaking cycle: saving v{} to temp", 
                  self.moves[start_idx].src_value);
         
         // Emit moves in cycle order
@@ -288,7 +289,7 @@ impl<'ctx, 'arena> PhiResolver<'ctx, 'arena> {
             let next_idx = self.find_next_in_cycle(current_idx);
             if next_idx == start_idx {
                 // Cycle complete - restore from temp
-                println!("   Cycle complete: restoring from temp to v{}", 
+                log::debug!("{}   Cycle complete: restoring from temp to v{}", 
                          self.moves[current_idx].dst_value);
                 break;
             }

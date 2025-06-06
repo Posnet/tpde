@@ -17,3 +17,5 @@ bumpalo = { version = "3.16", features = ["allocator-api2"] }
 inkwell = { git = "https://github.com/stevefan1999-personal/inkwell.git", features = ["llvm19-1-prefer-dynamic"] }
 llvm-sys = { version = "191", features = ["prefer-dynamic"] }
 thiserror = "2.0"
+log = "0.4"
+env_logger = "0.11"

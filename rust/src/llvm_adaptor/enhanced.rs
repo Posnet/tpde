@@ -6,6 +6,7 @@
 //! factorial, fibonacci, and other common patterns.
 
 use inkwell::{
+
     basic_block::BasicBlock,
     module::Module,
     values::{BasicValueEnum, FunctionValue, InstructionValue, BasicValue},
@@ -489,7 +490,7 @@ impl<'ctx> EnhancedLlvmAdaptor<'ctx> {
     fn debug_print_successors(&self) {
         if let Some(func) = self.current_function {
             let func_name = func.get_name().to_str().unwrap_or("unknown");
-            println!("Block successors for function '{}':", func_name);
+            log::debug!("{}Block successors for function '{}':", func_name);
             
             let blocks: Vec<_> = func.get_basic_blocks();
             for (i, block) in blocks.iter().enumerate() {
@@ -519,8 +520,8 @@ impl<'ctx> EnhancedLlvmAdaptor<'ctx> {
                     "None".to_string()
                 };
                 
-                println!("  {} -> {:?}", block_name, successor_names);
-                println!("    terminator: {}", terminator_info);
+                log::debug!("{}  {} -> {:?}", block_name, successor_names);
+                log::debug!("{}    terminator: {}", terminator_info);
             }
         }
     }
@@ -965,7 +966,7 @@ mod tests {
         
         let param_idx = adaptor.val_local_idx(Some(params[0]));
         // Parameters are indexed after globals, but could start at 0 if no globals
-        println!("Parameter index: {}", param_idx);
+        log::debug!("{}Parameter index: {}", param_idx);
         
         // Check that instructions get different indices
         let mut indices = std::collections::HashSet::new();
@@ -1009,17 +1010,17 @@ mod tests {
                 let block_name = block.get_name().to_str().unwrap_or(&default_name);
                 
                 // Verify we get some form of successor information
-                println!("Block '{}' has {} successors", block_name, successors.len());
+                log::debug!("{}Block '{}' has {} successors", block_name, successors.len());
                 
                 // Check terminator types
                 if let Some(terminator) = block.get_terminator() {
-                    println!("  Terminator: {:?} ({} operands)", 
+                    log::debug!("{}  Terminator: {:?} ({} operands)", 
                              terminator.get_opcode(), terminator.get_num_operands());
                 }
             }
         }
         
-        println!("✅ Block successor extraction test completed!");
+        log::debug!("{}✅ Block successor extraction test completed!");
     }
 
     #[test]
@@ -1041,7 +1042,7 @@ mod tests {
                     let block_name = block.get_name().to_str().unwrap_or("unnamed");
                     terminator_types.insert(block_name.to_string(), opcode);
                     
-                    println!("Block '{}' terminator: {:?} ({} operands)", 
+                    log::debug!("{}Block '{}' terminator: {:?} ({} operands)", 
                              block_name, opcode, terminator.get_num_operands());
                 }
             }
@@ -1061,6 +1062,6 @@ mod tests {
             assert_eq!(*return_terminator, InstructionOpcode::Return);
         }
         
-        println!("✅ Terminator instruction analysis test passed!");
+        log::debug!("{}✅ Terminator instruction analysis test passed!");
     }
 }

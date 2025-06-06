@@ -8,6 +8,7 @@ use crate::register_file::AsmReg;
 use iced_x86::code_asm::*;
 use std::collections::HashMap;
 
+
 /// Error types for instruction encoding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EncodingError {
@@ -1141,7 +1142,7 @@ mod tests {
         // The code should contain real x86-64 instructions for factorial-like control flow
         // This verifies that our enhanced encoder can handle the complex patterns
         // needed for real C function compilation
-        println!("Generated {} bytes of machine code for factorial pattern", code.len());
+        log::trace!("{}Generated {} bytes of machine code for factorial pattern", code.len());
     }
 
     #[test]

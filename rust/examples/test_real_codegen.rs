@@ -7,6 +7,9 @@ use tpde::llvm_adaptor::enhanced::EnhancedLlvmAdaptor;
 /// This test verifies that the instruction selection improvements actually
 /// generate machine code instead of just placeholders.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize logger for debugging
+    env_logger::init();
+    
     println!("🧪 Testing Real Machine Code Generation...");
     
     let context = Context::create();

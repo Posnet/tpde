@@ -7,6 +7,9 @@ use tpde::register_file::AsmReg;
 /// in our x86-64 encoder, completing a critical piece of the
 /// function call implementation.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize logger for debugging
+    env_logger::init();
+    
     println!("🚀 Testing Function Call Instruction Generation...");
     
     test_call_instruction_encoding()?;

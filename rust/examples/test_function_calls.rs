@@ -11,6 +11,9 @@ use tpde::llvm_adaptor::enhanced::EnhancedLlvmAdaptor;
 /// 4. Generate actual CALL instructions
 /// 5. Handle return values properly
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize logger for debugging
+    env_logger::init();
+    
     println!("🚀 Testing Complete Function Call Instruction Generation...");
     
     let context = Context::create();

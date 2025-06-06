@@ -9,6 +9,9 @@ use tpde::llvm_adaptor::enhanced::EnhancedLlvmAdaptor;
 /// This test creates LLVM IR with GEP instructions and verifies that the
 /// Rust TPDE implementation can compile them correctly.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize logger for debugging
+    env_logger::init();
+    
     println!("🧪 Testing GEP instruction compilation...");
     
     let context = Context::create();

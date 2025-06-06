@@ -7,6 +7,7 @@
 #![allow(dead_code)] // Many methods are part of the architecture but not used yet
 
 use crate::{
+
     adaptor::IrAdaptor,
     analyzer::Analyzer,
     assembler::{Assembler, ElfAssembler},
@@ -277,9 +278,9 @@ impl<'a, A: IrAdaptor> RetBuilder<'a, A> {
         // Move to return register if needed
         if src_reg != return_reg {
             self.compiler.codegen.encoder_mut().mov_reg_reg(return_reg, src_reg)?;
-            println!("Generated return value move: {:?} -> {:?}", src_reg, return_reg);
+            log::trace!("{}Generated return value move: {:?} -> {:?}", src_reg, return_reg);
         } else {
-            println!("Return value already in correct register: {:?}", return_reg);
+            log::debug!("{}Return value already in correct register: {:?}", return_reg);
         }
         
         Ok(())
@@ -296,13 +297,13 @@ impl<'a, A: IrAdaptor> RetBuilder<'a, A> {
         for return_reg in &self.return_registers {
             // Note: In a complete implementation, we'd call register_file.unmark_fixed()
             // For now, we just document that return registers are being released
-            println!("Released return register {:?} from allocation tracking", return_reg);
+            log::debug!("{}Released return register {:?} from allocation tracking", return_reg);
         }
         
         // Generate function epilogue (this will emit stack cleanup, register restoration, and RET)
         self.compiler.codegen.emit_epilogue()?;
         
-        println!("✅ Complete return sequence generated with epilogue");
+        log::debug!("{}✅ Complete return sequence generated with epilogue");
         Ok(())
     }
 }
@@ -456,7 +457,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         self.analyzer.switch_func(&mut self.adaptor, func);
         
         let func_name = self.adaptor.func_link_name(func).to_string();
-        println!("Compiling function: {}", func_name);
+        log::info!("{}Compiling function: {}", func_name);
         
         // Reset compilation state
         self.cc_assigner.reset();
@@ -503,19 +504,19 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         let arg_assignments = self.codegen.process_arguments(&args)?;
         let ret_assignments = self.codegen.process_return_values(&rets)?;
         
-        println!("Function arguments assigned to:");
+        log::debug!("{}Function arguments assigned to:");
         for (i, assignment) in arg_assignments.iter().enumerate() {
             if let Some(reg) = assignment.reg {
-                println!("  arg{}: register bank={} id={}", i, reg.bank, reg.id);
+                log::debug!("{}  arg{}: register bank={} id={}", i, reg.bank, reg.id);
             } else if let Some(offset) = assignment.stack_off {
-                println!("  arg{}: stack offset {}", i, offset);
+                log::debug!("{}  arg{}: stack offset {}", i, offset);
             }
         }
         
-        println!("Return values assigned to:");
+        log::debug!("{}Return values assigned to:");
         for (i, assignment) in ret_assignments.iter().enumerate() {
             if let Some(reg) = assignment.reg {
-                println!("  ret{}: register bank={} id={}", i, reg.bank, reg.id);
+                log::debug!("{}  ret{}: register bank={} id={}", i, reg.bank, reg.id);
             }
         }
         
@@ -531,7 +532,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         // Generate standard prologue
         self.codegen.emit_prologue()?;
         
-        println!("Generated function prologue");
+        log::trace!("{}Generated function prologue");
         Ok(())
     }
     
@@ -549,7 +550,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
     
     /// Compile a single basic block.
     fn compile_block(&mut self, block: A::BlockRef) -> Result<(), CompilerError> {
-        println!("Compiling block");
+        log::info!("{}Compiling block");
         
         // Get instructions in the block
         let instructions: Vec<_> = self.adaptor.block_insts(block).collect();
@@ -571,7 +572,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         let category = self.get_instruction_category_if_llvm(inst)
             .unwrap_or_else(|| self.classify_by_operand_count(operands.len(), results.len()));
         
-        println!("Compiling instruction with {} operands, {} results using category: {:?}", 
+        log::info!("{}Compiling instruction with {} operands, {} results using category: {:?}", 
                  operands.len(), results.len(), category);
         
         // Dispatch based on category
@@ -677,7 +678,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         operands: &[A::ValueRef],
         results: &[A::ValueRef],
     ) -> Result<(), CompilerError> {
-        println!("Compiling arithmetic instruction using real opcode-based selection");
+        log::info!("{}Compiling arithmetic instruction using real opcode-based selection");
         
         if operands.len() == 2 && results.len() == 1 {
             // Binary arithmetic operation - get operands and result
@@ -711,7 +712,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         operands: &[A::ValueRef],
         results: &[A::ValueRef],
     ) -> Result<(), CompilerError> {
-        println!("Compiling comparison instruction using real opcode-based selection");
+        log::info!("{}Compiling comparison instruction using real opcode-based selection");
         
         if operands.len() == 2 && results.len() == 1 {
             // Binary comparison operation (icmp, fcmp)
@@ -735,7 +736,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         operands: &[A::ValueRef],
         results: &[A::ValueRef],
     ) -> Result<(), CompilerError> {
-        println!("Compiling memory instruction using real opcode-based selection");
+        log::info!("{}Compiling memory instruction using real opcode-based selection");
         
         // Determine memory operation type based on operands/results pattern
         match (operands.len(), results.len()) {
@@ -782,7 +783,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         operands: &[A::ValueRef],
         results: &[A::ValueRef],
     ) -> Result<(), CompilerError> {
-        println!("🔄 Compiling PHI instruction using real resolution");
+        log::trace!("{}🔄 Compiling PHI instruction using real resolution");
         
         if results.len() != 1 {
             return Err(CompilerError::UnsupportedInstruction(
@@ -798,7 +799,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
             self.value_mgr.create_assignment(phi_result_idx, 1, 8);
         }
         
-        println!("📋 PHI node with {} incoming values detected", operands.len());
+        log::trace!("   PHI📋 PHI node with {} incoming values detected", operands.len());
         
         // Create PHI node info structure following C++ PHIRef pattern
         let mut phi_info = PhiNodeInfo::new(phi_result_idx);
@@ -817,12 +818,12 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
             // Add to PHI info - in real implementation, we'd extract actual block indices
             phi_info.add_incoming(incoming_idx, i);
             
-            println!("  📥 Incoming value {} from predecessor block {}", incoming_idx, i);
+            log::trace!("{}  📥 Incoming value {} from predecessor block {}", incoming_idx, i);
             
             // Check for self-reference (PHI cycles)
             if incoming_idx == phi_result_idx {
                 phi_info.has_dependencies = true;
-                println!("  ⚠️  Self-reference detected in PHI node");
+                log::warn!("{}  ⚠️  Self-reference detected in PHI node");
             }
         }
         
@@ -831,21 +832,21 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         
         match resolution_plan {
             PhiResolutionPlan::NoCycles => {
-                println!("✅ No PHI cycles detected - simple resolution");
+                log::debug!("{}✅ No PHI cycles detected - simple resolution");
             }
             PhiResolutionPlan::SimpleCycle { ref cycle_nodes, ref temp_strategy } => {
-                println!("⚠️  Simple PHI cycle detected with {} nodes, using {:?}", 
+                log::warn!("{}⚠️  Simple PHI cycle detected with {} nodes, using {:?}", 
                          cycle_nodes.len(), temp_strategy);
             }
             PhiResolutionPlan::ComplexCycles { ref cycles } => {
-                println!("🔴 Complex PHI cycles detected: {} cycles", cycles.len());
+                log::trace!("   PHI🔴 Complex PHI cycles detected: {} cycles", cycles.len());
             }
         }
         
         // Generate value movement instructions for PHI resolution
         self.generate_phi_value_movement(resolution_plan)?;
         
-        println!("✅ PHI node compiled with proper resolution");
+        log::debug!("{}✅ PHI node compiled with proper resolution");
         Ok(())
     }
     
@@ -857,7 +858,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
     /// - Handles register allocation and temporary storage for cycles
     /// - Ensures correct PHI value placement before control flow transfer
     fn move_to_phi_nodes(&mut self, target_block: usize) -> Result<(), CompilerError> {
-        println!("🔄 Moving values to PHI nodes for target block {}", target_block);
+        log::trace!("{}🔄 Moving values to PHI nodes for target block {}", target_block);
         
         // In a complete implementation, this would:
         // 1. Identify all PHI nodes in the target block
@@ -866,7 +867,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         // 4. Generate mov instructions to place values correctly
         
         // For now, implement a simplified version for basic PHI resolution
-        println!("✅ PHI value movement completed (simplified implementation)");
+        log::debug!("{}✅ PHI value movement completed (simplified implementation)");
         Ok(())
     }
     
@@ -891,7 +892,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 // Check for self-reference (simplest cycle)
                 for incoming_value in &phi_node.incoming_values {
                     if *incoming_value == phi_node.phi_result {
-                        println!("🔍 Self-reference cycle detected in PHI node {}", phi_node.phi_result);
+                        log::trace!("{}🔍 Self-reference cycle detected in PHI node {}", phi_node.phi_result);
                     }
                 }
             }
@@ -930,60 +931,60 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
     fn generate_phi_value_movement(&mut self, plan: PhiResolutionPlan) -> Result<(), CompilerError> {
         match plan {
             PhiResolutionPlan::NoCycles => {
-                println!("🎯 No cycles - generating simple value movements");
+                log::debug!("{}🎯 No cycles - generating simple value movements");
                 // For no cycles, values can be moved directly
                 // In a complete implementation, this would generate MOV instructions
                 // to move incoming values to their PHI destinations
             }
             
             PhiResolutionPlan::SimpleCycle { cycle_nodes, temp_strategy } => {
-                println!("🎯 Generating cycle resolution with temp storage");
+                log::debug!("{}🎯 Generating cycle resolution with temp storage");
                 match temp_strategy {
                     TempStrategy::ScratchRegister(scratch_reg) => {
-                        println!("  💾 Using scratch register {:?} for cycle breaking", scratch_reg);
+                        log::debug!("{}  💾 Using scratch register {:?} for cycle breaking", scratch_reg);
                         // Generate sequence:
                         // 1. MOV temp_reg, cycle_value
                         // 2. MOV cycle_dest, other_values...
                         // 3. MOV final_dest, temp_reg
                     }
                     TempStrategy::StackSlot(offset) => {
-                        println!("  💾 Using stack slot at offset {} for cycle breaking", offset);
+                        log::debug!("{}  💾 Using stack slot at offset {} for cycle breaking", offset);
                         // Generate sequence with stack temporary:
                         // 1. MOV [rbp + offset], cycle_value
                         // 2. MOV cycle_dest, other_values...
                         // 3. MOV final_dest, [rbp + offset]
                     }
                     _ => {
-                        println!("  💾 Using complex temporary storage strategy");
+                        log::debug!("{}  💾 Using complex temporary storage strategy");
                     }
                 }
                 
                 for &cycle_node in &cycle_nodes {
-                    println!("  🔄 Resolving cycle node {}", cycle_node);
+                    log::trace!("{}  🔄 Resolving cycle node {}", cycle_node);
                 }
             }
             
             PhiResolutionPlan::ComplexCycles { cycles } => {
-                println!("🎯 Generating complex cycle resolution for {} cycles", cycles.len());
+                log::debug!("{}🎯 Generating complex cycle resolution for {} cycles", cycles.len());
                 for (i, cycle) in cycles.iter().enumerate() {
-                    println!("  🔄 Resolving cycle {} with {} nodes", i, cycle.nodes.len());
+                    log::trace!("{}  🔄 Resolving cycle {} with {} nodes", i, cycle.nodes.len());
                     // Each cycle is resolved independently using its temp strategy
                     match &cycle.temp_strategy {
                         TempStrategy::ScratchRegister(reg) => {
-                            println!("    💾 Cycle {} using scratch register {:?}", i, reg);
+                            log::debug!("{}    💾 Cycle {} using scratch register {:?}", i, reg);
                         }
                         TempStrategy::StackSlot(offset) => {
-                            println!("    💾 Cycle {} using stack slot at offset {}", i, offset);
+                            log::debug!("{}    💾 Cycle {} using stack slot at offset {}", i, offset);
                         }
                         _ => {
-                            println!("    💾 Cycle {} using complex strategy", i);
+                            log::debug!("{}    💾 Cycle {} using complex strategy", i);
                         }
                     }
                 }
             }
         }
         
-        println!("✅ PHI value movement instructions generated");
+        log::debug!("{}✅ PHI value movement instructions generated");
         Ok(())
     }
     
@@ -999,13 +1000,13 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         operands: &[A::ValueRef],
         results: &[A::ValueRef],
     ) -> Result<(), CompilerError> {
-        println!("Compiling control flow instruction using opcode-based selection");
+        log::info!("{}Compiling control flow instruction using opcode-based selection");
         
         // For enhanced LLVM adaptors, use instruction categorization
         if self.supports_enhanced_llvm() {
             // TODO: Connect to real opcode-based instruction selection
             // This is where we would use A::get_instruction_category() if A implements LlvmAdaptorInterface
-            println!("🔄 Using enhanced LLVM adaptor - opcode-based selection not yet connected");
+            log::trace!("{}🔄 Using enhanced LLVM adaptor - opcode-based selection not yet connected");
         }
         
         // Fallback to pattern matching for non-LLVM adaptors
@@ -1027,7 +1028,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 self.compile_unconditional_jump()
             }
             _ => {
-                println!("Unsupported control flow pattern: {} operands, {} results", operands.len(), results.len());
+                log::warn!("{}Unsupported control flow pattern: {} operands, {} results", operands.len(), results.len());
                 Ok(())
             }
         }
@@ -1077,7 +1078,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         operands: &[A::ValueRef],
         results: &[A::ValueRef],
     ) -> Result<(), CompilerError> {
-        println!("Compiling conversion instruction (opcode-based placeholder)");
+        log::info!("{}Compiling conversion instruction (opcode-based placeholder)");
         // For now, treat as unary operation
         if operands.len() == 1 && results.len() == 1 {
             self.compile_unary_operation(operands, results)
@@ -1141,7 +1142,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
             encoder.lea(result_reg, left_reg, Some(right_reg), 1, 0)?;
         }
         
-        println!("Generated add instruction: dst={}:{}, left={}:{}, right={}:{}", 
+        log::trace!("{}Generated add instruction: dst={}:{}, left={}:{}, right={}:{}", 
                 result_reg.bank, result_reg.id, left_reg.bank, left_reg.id, right_reg.bank, right_reg.id);
         
         Ok(())
@@ -1153,7 +1154,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         operands: &[A::ValueRef],
         results: &[A::ValueRef],
     ) -> Result<(), CompilerError> {
-        println!("Compiling unary operation (placeholder - assuming load)");
+        log::info!("{}Compiling unary operation (placeholder - assuming load)");
         
         let src_val = operands[0];
         let dst_val = results[0];
@@ -1189,7 +1190,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         &mut self,
         operands: &[A::ValueRef],
     ) -> Result<(), CompilerError> {
-        println!("Compiling store operation (placeholder)");
+        log::info!("{}Compiling store operation (placeholder)");
         
         let _value = operands[0];
         let _address = operands[1];
@@ -1214,7 +1215,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         &mut self,
         results: &[A::ValueRef],
     ) -> Result<(), CompilerError> {
-        println!("Compiling constant or alloca (placeholder)");
+        log::info!("{}Compiling constant or alloca (placeholder)");
         
         let result_val = results[0];
         let result_idx = self.adaptor.val_local_idx(result_val);
@@ -1239,7 +1240,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         operands: &[A::ValueRef],
         results: &[A::ValueRef],
     ) -> Result<(), CompilerError> {
-        println!("Compiling complex instruction with {} operands, {} results (placeholder)", 
+        log::info!("{}Compiling complex instruction with {} operands, {} results (placeholder)", 
                 operands.len(), results.len());
         
         // TODO: Implement proper handling for:
@@ -1262,21 +1263,21 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         &mut self,
         operands: &[A::ValueRef],
     ) -> Result<(), CompilerError> {
-        println!("🔄 Compiling return instruction with {} return values", operands.len());
+        log::trace!("{}🔄 Compiling return instruction with {} return values", operands.len());
         
         // Create RetBuilder for ABI-compliant return handling
         let mut ret_builder = RetBuilder::new(self);
         
         // Add each return value to the builder
         for (i, &return_val) in operands.iter().enumerate() {
-            println!("  📤 Processing return value {}", i);
+            log::trace!("{}  📤 Processing return value {}", i);
             ret_builder.add_return_value(return_val)?;
         }
         
         // Generate complete return sequence with epilogue
         ret_builder.emit_return()?;
         
-        println!("✅ Return instruction with values compiled successfully");
+        log::debug!("{}✅ Return instruction with values compiled successfully");
         Ok(())
     }
     
@@ -1285,7 +1286,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
     /// This generates a return with no return values, but still needs proper
     /// epilogue generation for stack cleanup and register restoration.
     fn compile_simple_return(&mut self) -> Result<(), CompilerError> {
-        println!("🔄 Compiling simple return instruction (no return values)");
+        log::trace!("{}🔄 Compiling simple return instruction (no return values)");
         
         // Create RetBuilder even for simple returns to ensure proper epilogue
         let ret_builder = RetBuilder::new(self);
@@ -1293,14 +1294,14 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         // Generate complete return sequence with epilogue (no return values to add)
         ret_builder.emit_return()?;
         
-        println!("✅ Simple return instruction compiled successfully");
+        log::debug!("{}✅ Simple return instruction compiled successfully");
         Ok(())
     }
     
     /// Generate function epilogue.
     fn generate_epilogue(&mut self, _ret_assignments: &[CCAssignment]) -> Result<(), CompilerError> {
         self.codegen.emit_epilogue()?;
-        println!("Generated function epilogue");
+        log::trace!("{}Generated function epilogue");
         Ok(())
     }
     
@@ -1329,7 +1330,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         operands: &[A::ValueRef],
         results: &[A::ValueRef],
     ) -> Result<(), CompilerError> {
-        println!("🚀 Compiling function call with {} arguments, {} results", operands.len().saturating_sub(1), results.len());
+        log::info!("{}🚀 Compiling function call with {} arguments, {} results", operands.len().saturating_sub(1), results.len());
         
         if operands.is_empty() {
             return Err(CompilerError::UnsupportedInstruction("Call instruction with no operands".to_string()));
@@ -1399,15 +1400,15 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                     let src_reg = arg_ref.load_to_reg(&mut ctx)?;
                     if src_reg != reg {
                         // We'll need to generate this move after the context is dropped
-                        println!("📝 Need to move register {}:{} to {}:{}", src_reg.bank, src_reg.id, reg.bank, reg.id);
+                        log::debug!("{}📝 Need to move register {}:{} to {}:{}", src_reg.bank, src_reg.id, reg.bank, reg.id);
                     }
-                    println!("🔄 Moved argument to register {}:{}", reg.bank, reg.id);
+                    log::trace!("{}🔄 Moved argument to register {}:{}", reg.bank, reg.id);
                 } else if let Some(stack_off) = assignment.stack_off {
                     // Move argument to stack
                     let _src_reg = arg_ref.load_to_reg(&mut ctx)?;
                     // Note: In a complete implementation, we'd generate the proper stack store
                     // For now, just note the stack assignment
-                    println!("📚 Assigned argument to stack offset {}", stack_off);
+                    log::debug!("{}📚 Assigned argument to stack offset {}", stack_off);
                 }
             }
         } // ctx is dropped here
@@ -1437,13 +1438,13 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 self.codegen.encoder_mut().mov_reg_reg(result_reg, return_reg)?;
             }
             
-            println!("✅ Captured return value from RAX to {}:{}", result_reg.bank, result_reg.id);
+            log::debug!("{}✅ Captured return value from RAX to {}:{}", result_reg.bank, result_reg.id);
         }
         
         // Step 6: Restore caller-saved registers 
         self.restore_caller_saved_registers()?;
         
-        println!("✅ Function call compilation completed successfully");
+        log::debug!("{}✅ Function call compilation completed successfully");
         Ok(())
     }
     
@@ -1468,7 +1469,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         
         // Generate call instruction - Now generating real machine code!
         self.codegen.encoder_mut().call_reg(target_reg)?;
-        println!("🎯 Generated CALL instruction through register {}:{}", target_reg.bank, target_reg.id);
+        log::trace!("{}🎯 Generated CALL instruction through register {}:{}", target_reg.bank, target_reg.id);
         
         Ok(())
     }
@@ -1476,7 +1477,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
     /// Preserve caller-saved registers before function call.
     fn preserve_caller_saved_registers(&mut self) -> Result<(), CompilerError> {
         // System V ABI caller-saved registers: RAX, RCX, RDX, RSI, RDI, R8-R11
-        println!("💾 Preserving caller-saved registers (placeholder)");
+        log::debug!("{}💾 Preserving caller-saved registers (placeholder)");
         
         // In a complete implementation, this would:
         // 1. Identify which caller-saved registers are currently in use
@@ -1488,7 +1489,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
     
     /// Restore caller-saved registers after function call.
     fn restore_caller_saved_registers(&mut self) -> Result<(), CompilerError> {
-        println!("🔄 Restoring caller-saved registers (placeholder)");
+        log::trace!("{}🔄 Restoring caller-saved registers (placeholder)");
         
         // In a complete implementation, this would:
         // 1. Restore spilled registers from their stack locations
@@ -1499,7 +1500,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
     
     /// Compile conditional branch instruction.
     fn compile_conditional_branch(&mut self, operands: &[A::ValueRef]) -> Result<(), CompilerError> {
-        println!("🔀 Compiling conditional branch instruction");
+        log::info!("{}🔀 Compiling conditional branch instruction");
         
         let condition = operands[0];
         let cond_idx = self.adaptor.val_local_idx(condition);
@@ -1519,14 +1520,14 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         
         // TODO: Add conditional jump instruction to x64_encoder
         // For now, indicate what would be generated
-        println!("🎯 Generated conditional branch: TEST {}:{}, 1; JNE <target>", cond_reg.bank, cond_reg.id);
+        log::trace!("{}🎯 Generated conditional branch: TEST {}:{}, 1; JNE <target>", cond_reg.bank, cond_reg.id);
         
         Ok(())
     }
     
     /// Compile unconditional jump or return.
     fn compile_unconditional_jump(&mut self) -> Result<(), CompilerError> {
-        println!("➡️ Compiling unconditional jump/return instruction");
+        log::trace!("{}➡️ Compiling unconditional jump/return instruction");
         
         // For instructions with (0, 0) pattern, this could be:
         // 1. Unconditional branch (br label %target)
@@ -1595,17 +1596,17 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 if result_reg == left_reg {
                     // In-place addition: add result, right (32-bit)
                     encoder.add32_reg_reg(result_reg, right_reg)?;
-                    println!("Generated 32-bit ADD (in-place): add {}:{}, {}:{}", 
+                    log::trace!("{}Generated 32-bit ADD (in-place): add {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 } else if result_reg == right_reg {
                     // In-place addition: add result, left (32-bit)
                     encoder.add32_reg_reg(result_reg, left_reg)?;
-                    println!("Generated 32-bit ADD (in-place): add {}:{}, {}:{}", 
+                    log::trace!("{}Generated 32-bit ADD (in-place): add {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, left_reg.bank, left_reg.id);
                 } else {
                     // Three-address form: lea result, [left + right] (C++ optimization)
                     encoder.lea(result_reg, left_reg, Some(right_reg), 1, 0)?;
-                    println!("Generated 32-bit LEA (three-address): lea {}:{}, [{}:{} + {}:{}]", 
+                    log::trace!("{}Generated 32-bit LEA (three-address): lea {}:{}, [{}:{} + {}:{}]", 
                              result_reg.bank, result_reg.id, left_reg.bank, left_reg.id, right_reg.bank, right_reg.id);
                 }
             }
@@ -1613,17 +1614,17 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 if result_reg == left_reg {
                     // In-place addition: add result, right (64-bit)
                     encoder.add64_reg_reg(result_reg, right_reg)?;
-                    println!("Generated 64-bit ADD (in-place): add {}:{}, {}:{}", 
+                    log::trace!("{}Generated 64-bit ADD (in-place): add {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 } else if result_reg == right_reg {
                     // In-place addition: add result, left (64-bit)
                     encoder.add64_reg_reg(result_reg, left_reg)?;
-                    println!("Generated 64-bit ADD (in-place): add {}:{}, {}:{}", 
+                    log::trace!("{}Generated 64-bit ADD (in-place): add {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, left_reg.bank, left_reg.id);
                 } else {
                     // Three-address form: lea result, [left + right] (C++ optimization)
                     encoder.lea(result_reg, left_reg, Some(right_reg), 1, 0)?;
-                    println!("Generated 64-bit LEA (three-address): lea {}:{}, [{}:{} + {}:{}]", 
+                    log::trace!("{}Generated 64-bit LEA (three-address): lea {}:{}, [{}:{} + {}:{}]", 
                              result_reg.bank, result_reg.id, left_reg.bank, left_reg.id, right_reg.bank, right_reg.id);
                 }
             }
@@ -1685,13 +1686,13 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 if result_reg == left_reg {
                     // In-place subtraction: sub result, right (32-bit)
                     encoder.sub32_reg_reg(result_reg, right_reg)?;
-                    println!("Generated 32-bit SUB (in-place): sub {}:{}, {}:{}", 
+                    log::trace!("{}Generated 32-bit SUB (in-place): sub {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 } else {
                     // Move left to result, then subtract right
                     encoder.mov32_reg_reg(result_reg, left_reg)?;
                     encoder.sub32_reg_reg(result_reg, right_reg)?;
-                    println!("Generated 32-bit SUB (three-address): mov + sub {}:{}, {}:{}", 
+                    log::trace!("{}Generated 32-bit SUB (three-address): mov + sub {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 }
             }
@@ -1699,13 +1700,13 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 if result_reg == left_reg {
                     // In-place subtraction: sub result, right (64-bit)
                     encoder.sub64_reg_reg(result_reg, right_reg)?;
-                    println!("Generated 64-bit SUB (in-place): sub {}:{}, {}:{}", 
+                    log::trace!("{}Generated 64-bit SUB (in-place): sub {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 } else {
                     // Move left to result, then subtract right
                     encoder.mov_reg_reg(result_reg, left_reg)?;
                     encoder.sub64_reg_reg(result_reg, right_reg)?;
-                    println!("Generated 64-bit SUB (three-address): mov + sub {}:{}, {}:{}", 
+                    log::trace!("{}Generated 64-bit SUB (three-address): mov + sub {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 }
             }
@@ -1767,18 +1768,18 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 if result_reg == left_reg {
                     // In-place multiplication: imul result, right (32-bit)
                     encoder.imul32_reg_reg(result_reg, right_reg)?;
-                    println!("Generated 32-bit IMUL (in-place): imul {}:{}, {}:{}", 
+                    log::trace!("{}Generated 32-bit IMUL (in-place): imul {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 } else if result_reg == right_reg {
                     // In-place multiplication: imul result, left (32-bit)
                     encoder.imul32_reg_reg(result_reg, left_reg)?;
-                    println!("Generated 32-bit IMUL (in-place): imul {}:{}, {}:{}", 
+                    log::trace!("{}Generated 32-bit IMUL (in-place): imul {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, left_reg.bank, left_reg.id);
                 } else {
                     // Move left to result, then multiply by right
                     encoder.mov32_reg_reg(result_reg, left_reg)?;
                     encoder.imul32_reg_reg(result_reg, right_reg)?;
-                    println!("Generated 32-bit IMUL (three-address): mov + imul {}:{}, {}:{}", 
+                    log::trace!("{}Generated 32-bit IMUL (three-address): mov + imul {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 }
             }
@@ -1786,18 +1787,18 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 if result_reg == left_reg {
                     // In-place multiplication: imul result, right (64-bit)
                     encoder.imul_reg_reg(result_reg, right_reg)?;
-                    println!("Generated 64-bit IMUL (in-place): imul {}:{}, {}:{}", 
+                    log::trace!("{}Generated 64-bit IMUL (in-place): imul {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 } else if result_reg == right_reg {
                     // In-place multiplication: imul result, left (64-bit)
                     encoder.imul_reg_reg(result_reg, left_reg)?;
-                    println!("Generated 64-bit IMUL (in-place): imul {}:{}, {}:{}", 
+                    log::trace!("{}Generated 64-bit IMUL (in-place): imul {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, left_reg.bank, left_reg.id);
                 } else {
                     // Move left to result, then multiply by right
                     encoder.mov_reg_reg(result_reg, left_reg)?;
                     encoder.imul_reg_reg(result_reg, right_reg)?;
-                    println!("Generated 64-bit IMUL (three-address): mov + imul {}:{}, {}:{}", 
+                    log::trace!("{}Generated 64-bit IMUL (three-address): mov + imul {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 }
             }
@@ -1857,18 +1858,18 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 match addressing_mode {
                     AddressingMode::Register(addr_reg) => {
                         encoder.movzx_reg8_mem(result_reg, addr_reg, 0)?;
-                        println!("Generated 8-bit LOAD: movzx {}:{}, byte ptr [{}:{}]", 
+                        log::trace!("{}Generated 8-bit LOAD: movzx {}:{}, byte ptr [{}:{}]", 
                                  result_reg.bank, result_reg.id, addr_reg.bank, addr_reg.id);
                     }
                     AddressingMode::RegisterOffset(base_reg, offset) => {
                         encoder.movzx_reg8_mem(result_reg, base_reg, offset)?;
-                        println!("Generated 8-bit LOAD: movzx {}:{}, byte ptr [{}:{} + {}]", 
+                        log::trace!("{}Generated 8-bit LOAD: movzx {}:{}, byte ptr [{}:{} + {}]", 
                                  result_reg.bank, result_reg.id, base_reg.bank, base_reg.id, offset);
                     }
                     AddressingMode::StackOffset(offset) => {
                         let rbp = AsmReg::new(0, 5); // RBP
                         encoder.movzx_reg8_mem(result_reg, rbp, offset)?;
-                        println!("Generated 8-bit LOAD: movzx {}:{}, byte ptr [rbp + {}]", 
+                        log::trace!("{}Generated 8-bit LOAD: movzx {}:{}, byte ptr [rbp + {}]", 
                                  result_reg.bank, result_reg.id, offset);
                     }
                     _ => {
@@ -1883,18 +1884,18 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 match addressing_mode {
                     AddressingMode::Register(addr_reg) => {
                         encoder.movzx_reg16_mem(result_reg, addr_reg, 0)?;
-                        println!("Generated 16-bit LOAD: movzx {}:{}, word ptr [{}:{}]", 
+                        log::trace!("{}Generated 16-bit LOAD: movzx {}:{}, word ptr [{}:{}]", 
                                  result_reg.bank, result_reg.id, addr_reg.bank, addr_reg.id);
                     }
                     AddressingMode::RegisterOffset(base_reg, offset) => {
                         encoder.movzx_reg16_mem(result_reg, base_reg, offset)?;
-                        println!("Generated 16-bit LOAD: movzx {}:{}, word ptr [{}:{} + {}]", 
+                        log::trace!("{}Generated 16-bit LOAD: movzx {}:{}, word ptr [{}:{} + {}]", 
                                  result_reg.bank, result_reg.id, base_reg.bank, base_reg.id, offset);
                     }
                     AddressingMode::StackOffset(offset) => {
                         let rbp = AsmReg::new(0, 5); // RBP
                         encoder.movzx_reg16_mem(result_reg, rbp, offset)?;
-                        println!("Generated 16-bit LOAD: movzx {}:{}, word ptr [rbp + {}]", 
+                        log::trace!("{}Generated 16-bit LOAD: movzx {}:{}, word ptr [rbp + {}]", 
                                  result_reg.bank, result_reg.id, offset);
                     }
                     _ => {
@@ -1909,18 +1910,18 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 match addressing_mode {
                     AddressingMode::Register(addr_reg) => {
                         encoder.mov32_reg_mem(result_reg, addr_reg, 0)?;
-                        println!("Generated 32-bit LOAD: mov {}:{}, dword ptr [{}:{}]", 
+                        log::trace!("{}Generated 32-bit LOAD: mov {}:{}, dword ptr [{}:{}]", 
                                  result_reg.bank, result_reg.id, addr_reg.bank, addr_reg.id);
                     }
                     AddressingMode::RegisterOffset(base_reg, offset) => {
                         encoder.mov32_reg_mem(result_reg, base_reg, offset)?;
-                        println!("Generated 32-bit LOAD: mov {}:{}, dword ptr [{}:{} + {}]", 
+                        log::trace!("{}Generated 32-bit LOAD: mov {}:{}, dword ptr [{}:{} + {}]", 
                                  result_reg.bank, result_reg.id, base_reg.bank, base_reg.id, offset);
                     }
                     AddressingMode::StackOffset(offset) => {
                         let rbp = AsmReg::new(0, 5); // RBP
                         encoder.mov32_reg_mem(result_reg, rbp, offset)?;
-                        println!("Generated 32-bit LOAD: mov {}:{}, dword ptr [rbp + {}]", 
+                        log::trace!("{}Generated 32-bit LOAD: mov {}:{}, dword ptr [rbp + {}]", 
                                  result_reg.bank, result_reg.id, offset);
                     }
                     _ => {
@@ -1935,18 +1936,18 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 match addressing_mode {
                     AddressingMode::Register(addr_reg) => {
                         encoder.mov_reg_mem(result_reg, addr_reg, 0)?;
-                        println!("Generated 64-bit LOAD: mov {}:{}, qword ptr [{}:{}]", 
+                        log::trace!("{}Generated 64-bit LOAD: mov {}:{}, qword ptr [{}:{}]", 
                                  result_reg.bank, result_reg.id, addr_reg.bank, addr_reg.id);
                     }
                     AddressingMode::RegisterOffset(base_reg, offset) => {
                         encoder.mov_reg_mem(result_reg, base_reg, offset)?;
-                        println!("Generated 64-bit LOAD: mov {}:{}, qword ptr [{}:{} + {}]", 
+                        log::trace!("{}Generated 64-bit LOAD: mov {}:{}, qword ptr [{}:{} + {}]", 
                                  result_reg.bank, result_reg.id, base_reg.bank, base_reg.id, offset);
                     }
                     AddressingMode::StackOffset(offset) => {
                         let rbp = AsmReg::new(0, 5); // RBP
                         encoder.mov_reg_mem(result_reg, rbp, offset)?;
-                        println!("Generated 64-bit LOAD: mov {}:{}, qword ptr [rbp + {}]", 
+                        log::trace!("{}Generated 64-bit LOAD: mov {}:{}, qword ptr [rbp + {}]", 
                                  result_reg.bank, result_reg.id, offset);
                     }
                     _ => {
@@ -2011,18 +2012,18 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 match addressing_mode {
                     AddressingMode::Register(addr_reg) => {
                         encoder.mov8_mem_reg(addr_reg, 0, value_reg)?;
-                        println!("Generated 8-bit STORE: mov byte ptr [{}:{}], {}:{}", 
+                        log::trace!("{}Generated 8-bit STORE: mov byte ptr [{}:{}], {}:{}", 
                                  addr_reg.bank, addr_reg.id, value_reg.bank, value_reg.id);
                     }
                     AddressingMode::RegisterOffset(base_reg, offset) => {
                         encoder.mov8_mem_reg(base_reg, offset, value_reg)?;
-                        println!("Generated 8-bit STORE: mov byte ptr [{}:{} + {}], {}:{}", 
+                        log::trace!("{}Generated 8-bit STORE: mov byte ptr [{}:{} + {}], {}:{}", 
                                  base_reg.bank, base_reg.id, offset, value_reg.bank, value_reg.id);
                     }
                     AddressingMode::StackOffset(offset) => {
                         let rbp = AsmReg::new(0, 5); // RBP
                         encoder.mov8_mem_reg(rbp, offset, value_reg)?;
-                        println!("Generated 8-bit STORE: mov byte ptr [rbp + {}], {}:{}", 
+                        log::trace!("{}Generated 8-bit STORE: mov byte ptr [rbp + {}], {}:{}", 
                                  offset, value_reg.bank, value_reg.id);
                     }
                     _ => {
@@ -2037,18 +2038,18 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 match addressing_mode {
                     AddressingMode::Register(addr_reg) => {
                         encoder.mov16_mem_reg(addr_reg, 0, value_reg)?;
-                        println!("Generated 16-bit STORE: mov word ptr [{}:{}], {}:{}", 
+                        log::trace!("{}Generated 16-bit STORE: mov word ptr [{}:{}], {}:{}", 
                                  addr_reg.bank, addr_reg.id, value_reg.bank, value_reg.id);
                     }
                     AddressingMode::RegisterOffset(base_reg, offset) => {
                         encoder.mov16_mem_reg(base_reg, offset, value_reg)?;
-                        println!("Generated 16-bit STORE: mov word ptr [{}:{} + {}], {}:{}", 
+                        log::trace!("{}Generated 16-bit STORE: mov word ptr [{}:{} + {}], {}:{}", 
                                  base_reg.bank, base_reg.id, offset, value_reg.bank, value_reg.id);
                     }
                     AddressingMode::StackOffset(offset) => {
                         let rbp = AsmReg::new(0, 5); // RBP
                         encoder.mov16_mem_reg(rbp, offset, value_reg)?;
-                        println!("Generated 16-bit STORE: mov word ptr [rbp + {}], {}:{}", 
+                        log::trace!("{}Generated 16-bit STORE: mov word ptr [rbp + {}], {}:{}", 
                                  offset, value_reg.bank, value_reg.id);
                     }
                     _ => {
@@ -2063,18 +2064,18 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 match addressing_mode {
                     AddressingMode::Register(addr_reg) => {
                         encoder.mov32_mem_reg(addr_reg, 0, value_reg)?;
-                        println!("Generated 32-bit STORE: mov dword ptr [{}:{}], {}:{}", 
+                        log::trace!("{}Generated 32-bit STORE: mov dword ptr [{}:{}], {}:{}", 
                                  addr_reg.bank, addr_reg.id, value_reg.bank, value_reg.id);
                     }
                     AddressingMode::RegisterOffset(base_reg, offset) => {
                         encoder.mov32_mem_reg(base_reg, offset, value_reg)?;
-                        println!("Generated 32-bit STORE: mov dword ptr [{}:{} + {}], {}:{}", 
+                        log::trace!("{}Generated 32-bit STORE: mov dword ptr [{}:{} + {}], {}:{}", 
                                  base_reg.bank, base_reg.id, offset, value_reg.bank, value_reg.id);
                     }
                     AddressingMode::StackOffset(offset) => {
                         let rbp = AsmReg::new(0, 5); // RBP
                         encoder.mov32_mem_reg(rbp, offset, value_reg)?;
-                        println!("Generated 32-bit STORE: mov dword ptr [rbp + {}], {}:{}", 
+                        log::trace!("{}Generated 32-bit STORE: mov dword ptr [rbp + {}], {}:{}", 
                                  offset, value_reg.bank, value_reg.id);
                     }
                     _ => {
@@ -2089,18 +2090,18 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 match addressing_mode {
                     AddressingMode::Register(addr_reg) => {
                         encoder.mov_mem_reg(addr_reg, 0, value_reg)?;
-                        println!("Generated 64-bit STORE: mov qword ptr [{}:{}], {}:{}", 
+                        log::trace!("{}Generated 64-bit STORE: mov qword ptr [{}:{}], {}:{}", 
                                  addr_reg.bank, addr_reg.id, value_reg.bank, value_reg.id);
                     }
                     AddressingMode::RegisterOffset(base_reg, offset) => {
                         encoder.mov_mem_reg(base_reg, offset, value_reg)?;
-                        println!("Generated 64-bit STORE: mov qword ptr [{}:{} + {}], {}:{}", 
+                        log::trace!("{}Generated 64-bit STORE: mov qword ptr [{}:{} + {}], {}:{}", 
                                  base_reg.bank, base_reg.id, offset, value_reg.bank, value_reg.id);
                     }
                     AddressingMode::StackOffset(offset) => {
                         let rbp = AsmReg::new(0, 5); // RBP
                         encoder.mov_mem_reg(rbp, offset, value_reg)?;
-                        println!("Generated 64-bit STORE: mov qword ptr [rbp + {}], {}:{}", 
+                        log::trace!("{}Generated 64-bit STORE: mov qword ptr [rbp + {}], {}:{}", 
                                  offset, value_reg.bank, value_reg.id);
                     }
                     _ => {
@@ -2179,7 +2180,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         // Return stack pointer: mov result, rsp
         encoder.mov_reg_reg(result_reg, rsp)?;
         
-        println!("Generated ALLOCA: allocated {} bytes, {}-byte aligned, result in {}:{}", 
+        log::trace!("{}Generated ALLOCA: allocated {} bytes, {}-byte aligned, result in {}:{}", 
                  total_size, effective_alignment, result_reg.bank, result_reg.id);
         
         Ok(())
@@ -2236,7 +2237,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         _true_target: A::ValueRef,
         _false_target: A::ValueRef,
     ) -> Result<(), CompilerError> {
-        println!("Compiling conditional branch with true/false targets");
+        log::info!("{}Compiling conditional branch with true/false targets");
         
         // Use the single-target version for now
         self.compile_conditional_branch(&[condition])
@@ -2255,7 +2256,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         arguments: &[A::ValueRef],
         result: Option<A::ValueRef>,
     ) -> Result<(), CompilerError> {
-        println!("Compiling function call instruction");
+        log::info!("{}Compiling function call instruction");
         
         let target_idx = self.adaptor.val_local_idx(target);
         
@@ -2272,7 +2273,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         
         // TODO: Process arguments using calling convention
         for (i, _arg) in arguments.iter().enumerate() {
-            println!("Processing call argument {}", i);
+            log::info!("{}Processing call argument {}", i);
             // TODO: Load argument and assign to appropriate register/stack location
         }
         
@@ -2301,11 +2302,11 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 encoder.mov_reg_reg(result_reg, rax)?;
             }
             
-            println!("Processed call return value in register {}:{}", 
+            log::debug!("{}Processed call return value in register {}:{}", 
                      result_reg.bank, result_reg.id);
         }
         
-        println!("Generated function call to register {}:{}", target_reg.bank, target_reg.id);
+        log::trace!("{}Generated function call to register {}:{}", target_reg.bank, target_reg.id);
         Ok(())
     }
     
@@ -2315,7 +2316,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         operands: &[A::ValueRef],
         results: &[A::ValueRef],
     ) -> Result<(), CompilerError> {
-        println!("Compiling complex control flow with {} operands, {} results", 
+        log::info!("{}Compiling complex control flow with {} operands, {} results", 
                  operands.len(), results.len());
         
         // Determine if this is a function call with multiple arguments
@@ -2334,7 +2335,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         }
         
         // Fall back to placeholder for other complex patterns
-        println!("Complex control flow instruction (placeholder)");
+        log::trace!("{}Complex control flow instruction (placeholder)");
         Ok(())
     }
     
@@ -2348,7 +2349,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         &mut self,
         operands: &[A::ValueRef],
     ) -> Result<(), CompilerError> {
-        println!("Compiling switch instruction with {} cases", operands.len() - 1);
+        log::info!("{}Compiling switch instruction with {} cases", operands.len() - 1);
         
         let switch_value = operands[0];
         let cases = &operands[1..]; // Remaining operands are case targets
@@ -2374,11 +2375,11 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
             // Generate: cmp switch_reg, case_value
             encoder.cmp32_reg_imm(switch_reg, i as i32)?;
             // TODO: Generate conditional jump to case target
-            println!("Generated switch case {}: cmp {}:{}, {}", 
+            log::trace!("{}Generated switch case {}: cmp {}:{}, {}", 
                      i, switch_reg.bank, switch_reg.id, i);
         }
         
-        println!("Generated switch statement with {} cases", cases.len());
+        log::trace!("{}Generated switch statement with {} cases", cases.len());
         Ok(())
     }
     
@@ -2403,7 +2404,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         result: A::ValueRef,
         predicate: &str,
     ) -> Result<(), CompilerError> {
-        println!("Compiling ICMP instruction with predicate '{}'", predicate);
+        log::info!("{}Compiling ICMP instruction with predicate '{}'", predicate);
         
         let left_idx = self.adaptor.val_local_idx(left);
         let right_idx = self.adaptor.val_local_idx(right);
@@ -2441,61 +2442,61 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         match predicate {
             "eq" => {
                 encoder.sete_reg(result_reg)?;
-                println!("Generated ICMP EQ: cmp {}:{}, {}:{}; sete {}:{}", 
+                log::trace!("{}Generated ICMP EQ: cmp {}:{}, {}:{}; sete {}:{}", 
                          left_reg.bank, left_reg.id, right_reg.bank, right_reg.id,
                          result_reg.bank, result_reg.id);
             }
             "ne" => {
                 encoder.setne_reg(result_reg)?;
-                println!("Generated ICMP NE: cmp {}:{}, {}:{}; setne {}:{}", 
+                log::trace!("{}Generated ICMP NE: cmp {}:{}, {}:{}; setne {}:{}", 
                          left_reg.bank, left_reg.id, right_reg.bank, right_reg.id,
                          result_reg.bank, result_reg.id);
             }
             "sgt" => {
                 encoder.setg_reg(result_reg)?;
-                println!("Generated ICMP SGT: cmp {}:{}, {}:{}; setg {}:{}", 
+                log::trace!("{}Generated ICMP SGT: cmp {}:{}, {}:{}; setg {}:{}", 
                          left_reg.bank, left_reg.id, right_reg.bank, right_reg.id,
                          result_reg.bank, result_reg.id);
             }
             "sge" => {
                 encoder.setge_reg(result_reg)?;
-                println!("Generated ICMP SGE: cmp {}:{}, {}:{}; setge {}:{}", 
+                log::trace!("{}Generated ICMP SGE: cmp {}:{}, {}:{}; setge {}:{}", 
                          left_reg.bank, left_reg.id, right_reg.bank, right_reg.id,
                          result_reg.bank, result_reg.id);
             }
             "slt" => {
                 encoder.setl_reg(result_reg)?;
-                println!("Generated ICMP SLT: cmp {}:{}, {}:{}; setl {}:{}", 
+                log::trace!("{}Generated ICMP SLT: cmp {}:{}, {}:{}; setl {}:{}", 
                          left_reg.bank, left_reg.id, right_reg.bank, right_reg.id,
                          result_reg.bank, result_reg.id);
             }
             "sle" => {
                 encoder.setle_reg(result_reg)?;
-                println!("Generated ICMP SLE: cmp {}:{}, {}:{}; setle {}:{}", 
+                log::trace!("{}Generated ICMP SLE: cmp {}:{}, {}:{}; setle {}:{}", 
                          left_reg.bank, left_reg.id, right_reg.bank, right_reg.id,
                          result_reg.bank, result_reg.id);
             }
             "ugt" => {
                 encoder.seta_reg(result_reg)?;
-                println!("Generated ICMP UGT: cmp {}:{}, {}:{}; seta {}:{}", 
+                log::trace!("{}Generated ICMP UGT: cmp {}:{}, {}:{}; seta {}:{}", 
                          left_reg.bank, left_reg.id, right_reg.bank, right_reg.id,
                          result_reg.bank, result_reg.id);
             }
             "uge" => {
                 encoder.setae_reg(result_reg)?;
-                println!("Generated ICMP UGE: cmp {}:{}, {}:{}; setae {}:{}", 
+                log::trace!("{}Generated ICMP UGE: cmp {}:{}, {}:{}; setae {}:{}", 
                          left_reg.bank, left_reg.id, right_reg.bank, right_reg.id,
                          result_reg.bank, result_reg.id);
             }
             "ult" => {
                 encoder.setb_reg(result_reg)?;
-                println!("Generated ICMP ULT: cmp {}:{}, {}:{}; setb {}:{}", 
+                log::trace!("{}Generated ICMP ULT: cmp {}:{}, {}:{}; setb {}:{}", 
                          left_reg.bank, left_reg.id, right_reg.bank, right_reg.id,
                          result_reg.bank, result_reg.id);
             }
             "ule" => {
                 encoder.setbe_reg(result_reg)?;
-                println!("Generated ICMP ULE: cmp {}:{}, {}:{}; setbe {}:{}", 
+                log::trace!("{}Generated ICMP ULE: cmp {}:{}, {}:{}; setbe {}:{}", 
                          left_reg.bank, left_reg.id, right_reg.bank, right_reg.id,
                          result_reg.bank, result_reg.id);
             }
@@ -2523,7 +2524,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         result: A::ValueRef,
         opcode: &str,
     ) -> Result<(), CompilerError> {
-        println!("Compiling {} instruction with real machine code generation", opcode.to_uppercase());
+        log::info!("{}Compiling {} instruction with real machine code generation", opcode.to_uppercase());
         
         let left_idx = self.adaptor.val_local_idx(left);
         let right_idx = self.adaptor.val_local_idx(right);
@@ -2561,18 +2562,18 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 if result_reg == left_reg {
                     // In-place addition: add result_reg, right_reg
                     encoder.add_reg_reg(result_reg, right_reg)?;
-                    println!("Generated ADD: add {}:{}, {}:{} (in-place)", 
+                    log::trace!("{}Generated ADD: add {}:{}, {}:{} (in-place)", 
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 } else if result_reg == right_reg {
                     // In-place addition: add result_reg, left_reg (commutative)
                     encoder.add_reg_reg(result_reg, left_reg)?;
-                    println!("Generated ADD: add {}:{}, {}:{} (commutative)", 
+                    log::trace!("{}Generated ADD: add {}:{}, {}:{} (commutative)", 
                              result_reg.bank, result_reg.id, left_reg.bank, left_reg.id);
                 } else {
                     // Three-address form: mov result, left; add result, right
                     encoder.mov_reg_reg(result_reg, left_reg)?;
                     encoder.add_reg_reg(result_reg, right_reg)?;
-                    println!("Generated ADD: mov {}:{}, {}:{}; add {}:{}, {}:{}", 
+                    log::trace!("{}Generated ADD: mov {}:{}, {}:{}; add {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, left_reg.bank, left_reg.id,
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 }
@@ -2581,13 +2582,13 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 if result_reg == left_reg {
                     // In-place subtraction: sub result_reg, right_reg
                     encoder.sub_reg_reg(result_reg, right_reg)?;
-                    println!("Generated SUB: sub {}:{}, {}:{} (in-place)", 
+                    log::trace!("{}Generated SUB: sub {}:{}, {}:{} (in-place)", 
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 } else {
                     // Three-address form: mov result, left; sub result, right
                     encoder.mov_reg_reg(result_reg, left_reg)?;
                     encoder.sub_reg_reg(result_reg, right_reg)?;
-                    println!("Generated SUB: mov {}:{}, {}:{}; sub {}:{}, {}:{}", 
+                    log::trace!("{}Generated SUB: mov {}:{}, {}:{}; sub {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, left_reg.bank, left_reg.id,
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 }
@@ -2597,18 +2598,18 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 if result_reg == left_reg {
                     // In-place multiplication: imul result_reg, right_reg  
                     encoder.imul_reg_reg(result_reg, right_reg)?;
-                    println!("Generated MUL: imul {}:{}, {}:{} (in-place)", 
+                    log::trace!("{}Generated MUL: imul {}:{}, {}:{} (in-place)", 
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 } else if result_reg == right_reg {
                     // In-place multiplication: imul result_reg, left_reg (commutative)
                     encoder.imul_reg_reg(result_reg, left_reg)?;
-                    println!("Generated MUL: imul {}:{}, {}:{} (commutative)", 
+                    log::trace!("{}Generated MUL: imul {}:{}, {}:{} (commutative)", 
                              result_reg.bank, result_reg.id, left_reg.bank, left_reg.id);
                 } else {
                     // Three-address form: mov result, left; imul result, right
                     encoder.mov_reg_reg(result_reg, left_reg)?;
                     encoder.imul_reg_reg(result_reg, right_reg)?;
-                    println!("Generated MUL: mov {}:{}, {}:{}; imul {}:{}, {}:{}", 
+                    log::trace!("{}Generated MUL: mov {}:{}, {}:{}; imul {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, left_reg.bank, left_reg.id,
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 }
@@ -2636,7 +2637,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         operands: &[A::ValueRef],
         result: A::ValueRef,
     ) -> Result<(), CompilerError> {
-        println!("Compiling GEP instruction with {} operands", operands.len());
+        log::info!("{}Compiling GEP instruction with {} operands", operands.len());
         
         if operands.is_empty() {
             return Err(CompilerError::UnsupportedInstruction(
@@ -2698,7 +2699,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 // Constant index: fold into displacement
                 let offset = element_size as i64 * constant_value;
                 gep_expr.add_displacement(offset);
-                println!("GEP: Folded constant index {} -> displacement {}", constant_value, offset);
+                log::debug!("{}GEP: Folded constant index {} -> displacement {}", constant_value, offset);
             } else {
                 // Dynamic index: use index register with scale
                 let mut index_ref = ValuePartRef::new(index_idx, 0)?;
@@ -2707,11 +2708,11 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                 if idx_num == 0 {
                     // First index: set as primary index with scale
                     gep_expr.set_index(index_reg, element_size);
-                    println!("GEP: Set dynamic index with scale {}", element_size);
+                    log::debug!("{}GEP: Set dynamic index with scale {}", element_size);
                 } else {
                     // Multiple dynamic indices require materialization
                     gep_expr.needs_materialization = true;
-                    println!("GEP: Complex dynamic index (requires materialization)");
+                    log::debug!("{}GEP: Complex dynamic index (requires materialization)");
                 }
             }
         }
@@ -2722,7 +2723,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         // Generate final address calculation
         self.materialize_gep_expression(gep_expr, result_reg)?;
         
-        println!("Generated GEP instruction: complex address calculation complete");
+        log::trace!("{}Generated GEP instruction: complex address calculation complete");
         Ok(())
     }
     
@@ -2749,7 +2750,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
             // Constant index: fold into displacement
             let offset = element_size as i64 * constant_value;
             gep_expr.add_displacement(offset);
-            println!("GEP: Folded constant index {} -> displacement {}", constant_value, offset);
+            log::debug!("{}GEP: Folded constant index {} -> displacement {}", constant_value, offset);
         } else {
             // Dynamic index: use index register with scale
             if self.value_mgr.get_assignment(index_idx).is_none() {
@@ -2762,12 +2763,12 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
             if idx_num == 0 {
                 // First index: set as primary index with scale
                 gep_expr.set_index(index_reg, element_size);
-                println!("GEP: Set dynamic index with scale {}", element_size);
+                log::debug!("{}GEP: Set dynamic index with scale {}", element_size);
             } else {
                 // Multiple dynamic indices require complex materialization
                 gep_expr.needs_materialization = true;
                 self.materialize_dynamic_index(gep_expr, index_reg, element_size, ctx)?;
-                println!("GEP: Materialized complex dynamic index");
+                log::debug!("{}GEP: Materialized complex dynamic index");
             }
         }
         
@@ -2804,7 +2805,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
             // Constant index: fold into displacement
             let offset = element_size as i64 * constant_value;
             gep_expr.add_displacement(offset);
-            println!("GEP: Folded constant index {} -> displacement {}", constant_value, offset);
+            log::debug!("{}GEP: Folded constant index {} -> displacement {}", constant_value, offset);
         } else {
             // Dynamic index: use index register with scale
             let mut index_ref = ValuePartRef::new(index_idx, 0)?;
@@ -2813,11 +2814,11 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
             if idx_num == 0 {
                 // First index: set as primary index with scale
                 gep_expr.set_index(index_reg, element_size);
-                println!("GEP: Set dynamic index with scale {}", element_size);
+                log::debug!("{}GEP: Set dynamic index with scale {}", element_size);
             } else {
                 // Multiple dynamic indices require materialization
                 gep_expr.needs_materialization = true;
-                println!("GEP: Complex dynamic index (requires materialization)");
+                log::debug!("{}GEP: Complex dynamic index (requires materialization)");
             }
         }
         
@@ -2888,19 +2889,19 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
         if element_size == 1 {
             // No scaling needed, just add to displacement via a temp register
             // This would require additional register allocation in practice
-            println!("GEP: Materializing unscaled index");
+            log::debug!("{}GEP: Materializing unscaled index");
         } else if element_size.is_power_of_two() && element_size <= 8 {
             // Can use LEA or scaled addressing
             if let Some(base) = gep_expr.base {
                 // Use LEA to compute base + index*scale
                 encoder.lea(base, base, Some(index_reg), element_size as u32, gep_expr.displacement as i32)?;
                 gep_expr.displacement = 0; // Folded into LEA
-                println!("GEP: Used LEA for complex index materialization");
+                log::debug!("{}GEP: Used LEA for complex index materialization");
             }
         } else {
             // General case: multiply index by element_size then add
             // This requires temporary register allocation
-            println!("GEP: Complex multiplication materialization (placeholder)");
+            log::debug!("{}GEP: Complex multiplication materialization (placeholder)");
         }
         
         Ok(())
@@ -2924,25 +2925,25 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
                     if result_reg != base {
                         encoder.mov_reg_reg(result_reg, base)?;
                     }
-                    println!("GEP: Direct register copy");
+                    log::debug!("{}GEP: Direct register copy");
                 }
                 AddressingMode::RegisterOffset(base, offset) => {
                     encoder.lea(result_reg, base, None, 1, offset)?;
-                    println!("GEP: LEA with displacement {} from {}", offset, base.id);
+                    log::debug!("{}GEP: LEA with displacement {} from {}", offset, base.id);
                 }
                 AddressingMode::RegisterIndexScale(base, index, scale) => {
                     encoder.lea(result_reg, base, Some(index), scale as u32, 0)?;
-                    println!("GEP: LEA with index scale {}", scale);
+                    log::debug!("{}GEP: LEA with index scale {}", scale);
                 }
                 AddressingMode::RegisterIndexScaleOffset(base, index, scale, offset) => {
                     encoder.lea(result_reg, base, Some(index), scale as u32, offset)?;
-                    println!("GEP: LEA with full addressing [{}:{} + {}:{}*{} + {}]", 
+                    log::debug!("{}GEP: LEA with full addressing [{}:{} + {}:{}*{} + {}]", 
                              base.bank, base.id, index.bank, index.id, scale, offset);
                 }
                 AddressingMode::StackOffset(offset) => {
                     let rbp = AsmReg::new(0, 5); // RBP
                     encoder.lea(result_reg, rbp, None, 1, offset)?;
-                    println!("GEP: LEA from stack offset {}", offset);
+                    log::debug!("{}GEP: LEA from stack offset {}", offset);
                 }
             }
         } else {
@@ -2982,11 +2983,11 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
             if gep_expr.scale == 1 {
                 // Simple addition: add result, index
                 encoder.add64_reg_reg(result_reg, index)?;
-                println!("GEP: Added index register (scale 1)");
+                log::debug!("{}GEP: Added index register (scale 1)");
             } else if gep_expr.scale <= 8 && (gep_expr.scale & (gep_expr.scale - 1)) == 0 {
                 // Power-of-2 scale: use LEA or shift+add
                 encoder.lea(result_reg, result_reg, Some(index), gep_expr.scale as u32, 0)?;
-                println!("GEP: Added index with power-of-2 scale {}", gep_expr.scale);
+                log::debug!("{}GEP: Added index with power-of-2 scale {}", gep_expr.scale);
             } else {
                 // Arbitrary scale: multiply then add
                 // TODO: Implement more sophisticated multiplication
@@ -3001,7 +3002,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
             if gep_expr.displacement as i32 as i64 == gep_expr.displacement {
                 // Add displacement to base register
                 encoder.add_reg_imm(result_reg, gep_expr.displacement as i32)?;
-                println!("GEP: Added displacement {}", gep_expr.displacement);
+                log::debug!("{}GEP: Added displacement {}", gep_expr.displacement);
             } else {
                 return Err(CompilerError::UnsupportedInstruction(
                     format!("GEP displacement {} too large", gep_expr.displacement)
@@ -3407,7 +3408,7 @@ mod tests {
         assert_eq!(compiled[0].name, "add");
         assert!(!compiled[0].code.is_empty());
         
-        println!("Successfully compiled function '{}' to {} bytes of machine code", 
+        log::info!("{}Successfully compiled function '{}' to {} bytes of machine code", 
                 compiled[0].name, compiled[0].code.len());
     }
 

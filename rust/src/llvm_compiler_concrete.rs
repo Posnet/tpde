@@ -5,6 +5,7 @@
 //! trait bound complexity while preserving all excellent functionality.
 
 use crate::{
+
     compilation_session::CompilationSession,
     value_assignment::ValueAssignmentManager,
     register_file::{RegisterFile, AsmReg},
@@ -254,7 +255,7 @@ where
         
         self.current_function = Some(function);
         
-        println!("🔧 Compiling LLVM function: {}", function_name);
+        log::info!("{}🔧 Compiling LLVM function: {}", function_name);
         
         // Reset compiler state for new function
         self.value_mgr = ValueAssignmentManager::new();
@@ -276,10 +277,10 @@ where
         let analysis = analyzer.analyze()
             .map_err(|e| LlvmCompilerError::LlvmError(format!("Function analysis failed: {:?}", e)))?;
         
-        println!("📊 Function analysis complete:");
-        println!("   - {} blocks", analysis.num_blocks);
-        println!("   - {} instructions", analysis.instruction_count);
-        println!("   - {} PHI nodes", analysis.phi_count);
+        log::debug!("{}📊 Function analysis complete:");
+        log::debug!("{}   - {} blocks", analysis.num_blocks);
+        log::trace!("{}   - {} instructions", analysis.instruction_count);
+        log::trace!("   PHI   - {} PHI nodes", analysis.phi_count);
         
         // Generate prologue
         self.codegen.emit_prologue()
@@ -401,7 +402,7 @@ where
             // Check if this block has PHI nodes
             let phi_nodes = analysis.get_block_phi_nodes(block_idx);
             if !phi_nodes.is_empty() {
-                println!("📍 Block {} has {} PHI nodes", block_idx, phi_nodes.len());
+                log::debug!("{}📍 Block {} has {} PHI nodes", block_idx, phi_nodes.len());
             }
             
             self.compile_basic_block(block)?;
@@ -430,9 +431,9 @@ where
             encoder.place_label_for_block(block_idx)
                 .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to place label: {:?}", e)))?;
             
-            println!("📦 Compiling basic block: {} (index {})", name, block_idx);
+            log::trace!("{}📦 Compiling basic block: {} (index {})", name, block_idx);
         } else {
-            println!("📦 Compiling basic block");
+            log::trace!("{}📦 Compiling basic block");
         }
         
         // Iterate through instructions in the block
@@ -470,7 +471,7 @@ where
             InstructionOpcode::Phi => self.compile_phi_instruction(instruction),
             
             _ => {
-                println!("⚠️  Unsupported instruction: {:?}", instruction.get_opcode());
+                log::warn!("{}⚠️  Unsupported instruction: {:?}", instruction.get_opcode());
                 // For now, just skip unsupported instructions
                 Ok(())
             }
@@ -559,7 +560,7 @@ where
         &mut self,
         instruction: inkwell::values::InstructionValue<'ctx>
     ) -> Result<(), LlvmCompilerError> {
-        println!("➕ Compiling ADD instruction");
+        log::trace!("{}➕ Compiling ADD instruction");
         
         let context = self.setup_binary_operation(instruction)?;
         let (left_reg, right_reg, result_reg) = self.allocate_binary_op_registers(&context, true)?;
@@ -573,13 +574,13 @@ where
                     // In-place addition
                     encoder.add32_reg_reg(result_reg, right_reg)
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit add32: {:?}", e)))?;
-                    println!("   Generated: add32 {}:{}, {}:{}", 
+                    log::trace!("   Generated:   Generated: add32 {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 } else {
                     // LEA optimization for non-destructive add
                     encoder.lea(result_reg, left_reg, Some(right_reg), 1, 0)
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit lea32: {:?}", e)))?;
-                    println!("   Generated: lea32 {}:{}, [{}:{} + {}:{}]", 
+                    log::trace!("   Generated:   Generated: lea32 {}:{}, [{}:{} + {}:{}]", 
                              result_reg.bank, result_reg.id, left_reg.bank, left_reg.id, 
                              right_reg.bank, right_reg.id);
                 }
@@ -589,13 +590,13 @@ where
                     // In-place addition
                     encoder.add64_reg_reg(result_reg, right_reg)
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit add64: {:?}", e)))?;
-                    println!("   Generated: add64 {}:{}, {}:{}", 
+                    log::trace!("   Generated:   Generated: add64 {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 } else {
                     // LEA optimization for non-destructive add
                     encoder.lea(result_reg, left_reg, Some(right_reg), 1, 0)
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit lea: {:?}", e)))?;
-                    println!("   Generated: lea {}:{}, [{}:{} + {}:{}]", 
+                    log::trace!("   Generated:   Generated: lea {}:{}, [{}:{} + {}:{}]", 
                              result_reg.bank, result_reg.id, left_reg.bank, left_reg.id, 
                              right_reg.bank, right_reg.id);
                 }
@@ -615,13 +616,13 @@ where
         &mut self,
         instruction: inkwell::values::InstructionValue<'ctx>
     ) -> Result<(), LlvmCompilerError> {
-        println!("🔍 Compiling ICMP instruction");
+        log::trace!("{}🔍 Compiling ICMP instruction");
         
         // Direct predicate extraction - no trait bounds!
         let predicate = instruction.get_icmp_predicate()
             .ok_or_else(|| LlvmCompilerError::LlvmError("ICMP instruction missing predicate".to_string()))?;
         
-        println!("   Real predicate extracted: {:?}", predicate);
+        log::debug!("{}   Real predicate extracted: {:?}", predicate);
         
         // Get operands
         let operand0 = instruction.get_operand(0).unwrap().left().unwrap();
@@ -695,7 +696,7 @@ where
             IntPredicate::ULE => encoder.setbe_reg(result_reg),
         }.map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit setcc: {:?}", e)))?;
         
-        println!("   Generated: CMP {}:{}, {}:{}; SET{:?} {}:{}", 
+        log::trace!("   Generated:   Generated: CMP {}:{}, {}:{}; SET{:?} {}:{}", 
                  left_reg.bank, left_reg.id, right_reg.bank, right_reg.id,
                  predicate, result_reg.bank, result_reg.id);
         
@@ -707,15 +708,15 @@ where
         &mut self,
         instruction: inkwell::values::InstructionValue<'ctx>
     ) -> Result<(), LlvmCompilerError> {
-        println!("🔙 Compiling RETURN instruction");
+        log::trace!("{}🔙 Compiling RETURN instruction");
         
         let operand_count = instruction.get_num_operands();
         if operand_count > 0 {
             // Return with value
-            println!("   Return with value");
+            log::debug!("{}   Return with value");
         } else {
             // Void return
-            println!("   Void return");
+            log::debug!("{}   Void return");
         }
         
         // The epilogue will be generated separately
@@ -724,7 +725,7 @@ where
     
     /// Compile SUB instruction with real machine code generation.
     fn compile_sub_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
-        println!("➖ Compiling SUB instruction");
+        log::trace!("{}➖ Compiling SUB instruction");
         
         let context = self.setup_binary_operation(instruction)?;
         let (left_reg, right_reg, result_reg) = self.allocate_binary_op_registers(&context, true)?;
@@ -736,7 +737,7 @@ where
                 if result_reg == left_reg {
                     encoder.sub32_reg_reg(result_reg, right_reg)
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit sub32: {:?}", e)))?;
-                    println!("   Generated: sub32 {}:{}, {}:{}", 
+                    log::trace!("   Generated:   Generated: sub32 {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 } else {
                     // Move left to result first
@@ -744,7 +745,7 @@ where
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov32: {:?}", e)))?;
                     encoder.sub32_reg_reg(result_reg, right_reg)
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit sub32: {:?}", e)))?;
-                    println!("   Generated: mov32 {}:{}, {}:{}; sub32 {}:{}, {}:{}", 
+                    log::trace!("   Generated:   Generated: mov32 {}:{}, {}:{}; sub32 {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, left_reg.bank, left_reg.id,
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 }
@@ -753,7 +754,7 @@ where
                 if result_reg == left_reg {
                     encoder.sub64_reg_reg(result_reg, right_reg)
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit sub64: {:?}", e)))?;
-                    println!("   Generated: sub64 {}:{}, {}:{}", 
+                    log::trace!("   Generated:   Generated: sub64 {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 } else {
                     // Move left to result first
@@ -761,7 +762,7 @@ where
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov: {:?}", e)))?;
                     encoder.sub64_reg_reg(result_reg, right_reg)
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit sub64: {:?}", e)))?;
-                    println!("   Generated: mov {}:{}, {}:{}; sub64 {}:{}, {}:{}", 
+                    log::trace!("   Generated:   Generated: mov {}:{}, {}:{}; sub64 {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, left_reg.bank, left_reg.id,
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 }
@@ -777,7 +778,7 @@ where
     }
     
     fn compile_mul_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
-        println!("✖️  Compiling MUL instruction");
+        log::trace!("{}✖️  Compiling MUL instruction");
         
         let context = self.setup_binary_operation(instruction)?;
         // MUL doesn't reuse left register because it uses RAX
@@ -801,13 +802,13 @@ where
                 // Use two-operand IMUL: rax = rax * right_reg
                 encoder.imul32_reg_reg(rax, right_reg)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit imul32: {:?}", e)))?;
-                println!("   Generated: imul32 eax, {}:{}", right_reg.bank, right_reg.id);
+                log::trace!("   Generated:   Generated: imul32 eax, {}:{}", right_reg.bank, right_reg.id);
             }
             64 => {
                 // Use two-operand IMUL: rax = rax * right_reg
                 encoder.imul_reg_reg(rax, right_reg)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit imul64: {:?}", e)))?;
-                println!("   Generated: imul64 rax, {}:{}", right_reg.bank, right_reg.id);
+                log::trace!("   Generated:   Generated: imul64 rax, {}:{}", right_reg.bank, right_reg.id);
             }
             _ => {
                 return Err(LlvmCompilerError::UnsupportedInstruction(
@@ -827,14 +828,14 @@ where
         if result_reg != rax {
             encoder.mov_reg_reg(result_reg, rax)
                 .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to mov from rax: {:?}", e)))?;
-            println!("   Generated: mov {}:{}, rax", result_reg.bank, result_reg.id);
+            log::trace!("   Generated:   Generated: mov {}:{}, rax", result_reg.bank, result_reg.id);
         }
         
         Ok(())
     }
     
     fn compile_load_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
-        println!("📥 Compiling LOAD instruction");
+        log::trace!("{}📥 Compiling LOAD instruction");
         
         // Load instruction format: %result = load <type>, <type>* <pointer>
         // Get the pointer operand (source address)
@@ -890,25 +891,25 @@ where
             8 => {
                 encoder.mov8_reg_mem(result_reg, ptr_reg, 0)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov8: {:?}", e)))?;
-                println!("   Generated: movb {}:{}, [{}:{}]", 
+                log::trace!("   Generated:   Generated: movb {}:{}, [{}:{}]", 
                          result_reg.bank, result_reg.id, ptr_reg.bank, ptr_reg.id);
             }
             16 => {
                 encoder.mov16_reg_mem(result_reg, ptr_reg, 0)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov16: {:?}", e)))?;
-                println!("   Generated: movw {}:{}, [{}:{}]", 
+                log::trace!("   Generated:   Generated: movw {}:{}, [{}:{}]", 
                          result_reg.bank, result_reg.id, ptr_reg.bank, ptr_reg.id);
             }
             32 => {
                 encoder.mov32_reg_mem(result_reg, ptr_reg, 0)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov32: {:?}", e)))?;
-                println!("   Generated: movl {}:{}, [{}:{}]", 
+                log::trace!("   Generated:   Generated: movl {}:{}, [{}:{}]", 
                          result_reg.bank, result_reg.id, ptr_reg.bank, ptr_reg.id);
             }
             64 => {
                 encoder.mov64_reg_mem(result_reg, ptr_reg, 0)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov64: {:?}", e)))?;
-                println!("   Generated: movq {}:{}, [{}:{}]", 
+                log::trace!("   Generated:   Generated: movq {}:{}, [{}:{}]", 
                          result_reg.bank, result_reg.id, ptr_reg.bank, ptr_reg.id);
             }
             _ => {
@@ -922,7 +923,7 @@ where
     }
     
     fn compile_store_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
-        println!("📤 Compiling STORE instruction");
+        log::trace!("{}📤 Compiling STORE instruction");
         
         // Store instruction format: store <type> <value>, <type>* <pointer>
         // Get the value to store (first operand)
@@ -975,25 +976,25 @@ where
             8 => {
                 encoder.mov8_mem_reg(ptr_reg, 0, value_reg)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov8: {:?}", e)))?;
-                println!("   Generated: movb [{}:{}], {}:{}", 
+                log::trace!("   Generated:   Generated: movb [{}:{}], {}:{}", 
                          ptr_reg.bank, ptr_reg.id, value_reg.bank, value_reg.id);
             }
             16 => {
                 encoder.mov16_mem_reg(ptr_reg, 0, value_reg)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov16: {:?}", e)))?;
-                println!("   Generated: movw [{}:{}], {}:{}", 
+                log::trace!("   Generated:   Generated: movw [{}:{}], {}:{}", 
                          ptr_reg.bank, ptr_reg.id, value_reg.bank, value_reg.id);
             }
             32 => {
                 encoder.mov32_mem_reg(ptr_reg, 0, value_reg)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov32: {:?}", e)))?;
-                println!("   Generated: movl [{}:{}], {}:{}", 
+                log::trace!("   Generated:   Generated: movl [{}:{}], {}:{}", 
                          ptr_reg.bank, ptr_reg.id, value_reg.bank, value_reg.id);
             }
             64 => {
                 encoder.mov64_mem_reg(ptr_reg, 0, value_reg)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov64: {:?}", e)))?;
-                println!("   Generated: movq [{}:{}], {}:{}", 
+                log::trace!("   Generated:   Generated: movq [{}:{}], {}:{}", 
                          ptr_reg.bank, ptr_reg.id, value_reg.bank, value_reg.id);
             }
             _ => {
@@ -1007,7 +1008,7 @@ where
     }
     
     fn compile_gep_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
-        println!("🗂️  Compiling GEP instruction");
+        log::info!("{}🗂️  Compiling GEP instruction");
         
         // Get operand count
         let operand_count = instruction.get_num_operands();
@@ -1075,7 +1076,7 @@ where
                 // Fold constant into displacement
                 let offset = element_size as i64 * const_val;
                 gep_expr.add_displacement(offset);
-                println!("   GEP: Folded constant index {} -> displacement {}", const_val, offset);
+                log::debug!("{}   GEP: Folded constant index {} -> displacement {}", const_val, offset);
             } else {
                 // Dynamic index
                 let mut index_ref = ValuePartRef::new(index_idx, 0)
@@ -1086,11 +1087,11 @@ where
                 if idx_num == 0 && gep_expr.index.is_none() {
                     // First dynamic index - can use scaled addressing
                     gep_expr.set_index(index_reg, element_size);
-                    println!("   GEP: Set dynamic index with scale {}", element_size);
+                    log::debug!("{}   GEP: Set dynamic index with scale {}", element_size);
                 } else {
                     // Multiple indices need materialization
                     gep_expr.needs_materialization = true;
-                    println!("   GEP: Complex index requires materialization");
+                    log::debug!("{}   GEP: Complex index requires materialization");
                 }
             }
         }
@@ -1104,12 +1105,12 @@ where
         // Generate address calculation
         self.materialize_gep_expression(gep_expr, result_reg)?;
         
-        println!("✅ GEP instruction compiled successfully");
+        log::debug!("{}✅ GEP instruction compiled successfully");
         Ok(())
     }
     
     fn compile_branch_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
-        println!("🔀 Compiling BRANCH instruction");
+        log::info!("{}🔀 Compiling BRANCH instruction");
         
         // LLVM has two types of branch instructions:
         // - Unconditional: br label %dest
@@ -1140,7 +1141,7 @@ where
                 encoder.jmp_unconditional_to_block(target_block_idx)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit jmp: {:?}", e)))?;
                 
-                println!("   Generated: jmp block_{}", target_block_idx);
+                log::trace!("   Generated:   Generated: jmp block_{}", target_block_idx);
             }
             3 => {
                 // Conditional branch
@@ -1192,9 +1193,9 @@ where
                 encoder.jmp_unconditional_to_block(false_block_idx)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit jmp: {:?}", e)))?;
                 
-                println!("   Generated: test {}:{}, {}:{}", cond_reg.bank, cond_reg.id, cond_reg.bank, cond_reg.id);
-                println!("   Generated: jne block_{}", true_block_idx);
-                println!("   Generated: jmp block_{}", false_block_idx);
+                log::trace!("   Generated:   Generated: test {}:{}, {}:{}", cond_reg.bank, cond_reg.id, cond_reg.bank, cond_reg.id);
+                log::trace!("   Generated:   Generated: jne block_{}", true_block_idx);
+                log::trace!("   Generated:   Generated: jmp block_{}", false_block_idx);
                 
                 // Now generate a separate code sequence for the true branch PHI moves
                 // This requires placing code at a different location
@@ -1211,7 +1212,7 @@ where
     }
     
     fn compile_call_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
-        println!("📞 Compiling CALL instruction");
+        log::trace!("{}📞 Compiling CALL instruction");
         
         // Get the call instruction details
         use inkwell::values::CallSiteValue;
@@ -1231,11 +1232,11 @@ where
             ));
         };
         
-        println!("   Calling function: {}", function_name);
+        log::debug!("{}   Calling function: {}", function_name);
         
         // Get arguments
         let arg_count = call_site.count_arguments();
-        println!("   Argument count: {}", arg_count);
+        log::debug!("{}   Argument count: {}", arg_count);
         
         // Create calling convention assigner
         use crate::calling_convention::{SysVAssigner, CCAssigner, CCAssignment, RegBank};
@@ -1273,7 +1274,7 @@ where
             let mut assignment = CCAssignment::new(bank, size, size);
             cc_assigner.assign_arg(&mut assignment);
             
-            println!("   Arg {}: v{} -> {:?}", i, arg_idx, assignment);
+            log::debug!("{}   Arg {}: v{} -> {:?}", i, arg_idx, assignment);
             
             // Create value assignment if needed
             if self.value_mgr.get_assignment(arg_idx).is_none() {
@@ -1301,7 +1302,7 @@ where
                     let encoder = self.codegen.encoder_mut();
                     encoder.mov_reg_reg(reg, arg_reg)
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov: {:?}", e)))?;
-                    println!("      Generated: mov {}:{}, {}:{}", 
+                    log::trace!("   Generated:      Generated: mov {}:{}, {}:{}", 
                              reg.bank, reg.id, arg_reg.bank, arg_reg.id);
                 }
             } else if let Some(stack_offset) = assignment.stack_off {
@@ -1314,7 +1315,7 @@ where
                 let rsp = AsmReg::new(0, 4); // RSP
                 encoder.mov64_mem_reg(rsp, stack_offset, arg_reg)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit stack store: {:?}", e)))?;
-                println!("      Generated: mov [rsp+{}], {}:{}", 
+                log::trace!("   Generated:      Generated: mov [rsp+{}], {}:{}", 
                          stack_offset, arg_reg.bank, arg_reg.id);
             }
         }
@@ -1326,7 +1327,7 @@ where
         // In a real implementation, this would be resolved by the linker
         encoder.call_direct(0)
             .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit call: {:?}", e)))?;
-        println!("   Generated: call {} (offset will be resolved later)", function_name);
+        log::trace!("   Generated:   Generated: call {} (offset will be resolved later)", function_name);
         
         // Record the call site for later relocation
         self.session.record_call_site(function_name.clone());
@@ -1367,7 +1368,7 @@ where
             cc_assigner.assign_ret(&mut ret_assignment);
             
             if let Some(ret_reg) = ret_assignment.reg {
-                println!("   Return value in {}:{}", ret_reg.bank, ret_reg.id);
+                log::debug!("{}   Return value in {}:{}", ret_reg.bank, ret_reg.id);
                 
                 // Create value assignment for result
                 if self.value_mgr.get_assignment(result_idx).is_none() {
@@ -1376,7 +1377,7 @@ where
                 
                 // The return value is already in the correct register (RAX or XMM0)
                 // We'll handle this by recording it in our internal tracking
-                println!("   Return value will be in register {}:{}", ret_reg.bank, ret_reg.id);
+                log::debug!("{}   Return value will be in register {}:{}", ret_reg.bank, ret_reg.id);
                 // In a real implementation, we would need to ensure the register
                 // allocation system knows about this fixed assignment
             }
@@ -1386,7 +1387,7 @@ where
     }
     
     fn compile_alloca_instruction(&mut self, _instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
-        println!("📋 Compiling ALLOCA instruction (placeholder)");
+        log::info!("{}📋 Compiling ALLOCA instruction (placeholder)");
         Ok(())
     }
     
@@ -1477,25 +1478,25 @@ where
                         encoder.mov_reg_reg(result_reg, base)
                             .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov: {:?}", e)))?;
                     }
-                    println!("   Generated: mov {}:{}, {}:{}", result_reg.bank, result_reg.id, base.bank, base.id);
+                    log::trace!("   Generated:   Generated: mov {}:{}, {}:{}", result_reg.bank, result_reg.id, base.bank, base.id);
                 }
                 AddressingMode::RegisterOffset(base, offset) => {
                     encoder.lea(result_reg, base, None, 1, offset)
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit lea: {:?}", e)))?;
-                    println!("   Generated: lea {}:{}, [{}:{} + {}]", 
+                    log::trace!("   Generated:   Generated: lea {}:{}, [{}:{} + {}]", 
                              result_reg.bank, result_reg.id, base.bank, base.id, offset);
                 }
                 AddressingMode::RegisterIndexScale(base, index, scale) => {
                     encoder.lea(result_reg, base, Some(index), scale as u32, 0)
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit lea: {:?}", e)))?;
-                    println!("   Generated: lea {}:{}, [{}:{} + {}:{}*{}]", 
+                    log::trace!("   Generated:   Generated: lea {}:{}, [{}:{} + {}:{}*{}]", 
                              result_reg.bank, result_reg.id, base.bank, base.id, 
                              index.bank, index.id, scale);
                 }
                 AddressingMode::RegisterIndexScaleOffset(base, index, scale, offset) => {
                     encoder.lea(result_reg, base, Some(index), scale as u32, offset)
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit lea: {:?}", e)))?;
-                    println!("   Generated: lea {}:{}, [{}:{} + {}:{}*{} + {}]", 
+                    log::trace!("   Generated:   Generated: lea {}:{}, [{}:{} + {}:{}*{} + {}]", 
                              result_reg.bank, result_reg.id, base.bank, base.id, 
                              index.bank, index.id, scale, offset);
                 }
@@ -1507,7 +1508,7 @@ where
             }
         } else if gep_expr.needs_materialization {
             // Complex expression needs multiple instructions
-            println!("   GEP: Complex materialization required (not implemented)");
+            log::debug!("{}   GEP: Complex materialization required (not implemented)");
             return Err(LlvmCompilerError::UnsupportedInstruction(
                 "Complex GEP expressions not yet supported".to_string()
             ));
@@ -1522,7 +1523,7 @@ where
         from_block: usize,
         to_block: usize
     ) -> Result<(), LlvmCompilerError> {
-        println!("   📋 Generating PHI moves from block {} to block {}", from_block, to_block);
+        log::trace!("   PHI   📋 Generating PHI moves from block {} to block {}", from_block, to_block);
         
         // Get all PHI nodes from the session
         let all_phi_nodes = self.session.get_all_phi_nodes();
@@ -1533,7 +1534,7 @@ where
             for &(value_idx, block_idx) in &phi_info.incoming_values {
                 if block_idx == from_block {
                     // Generate move from value_idx to phi_info.result_value
-                    println!("      PHI move: v{} -> v{}", value_idx, phi_info.result_value);
+                    log::trace!("   PHI      PHI move: v{} -> v{}", value_idx, phi_info.result_value);
                     
                     // Create value assignments if needed
                     if self.value_mgr.get_assignment(value_idx).is_none() {
@@ -1565,10 +1566,10 @@ where
                         let encoder = self.codegen.encoder_mut();
                         encoder.mov_reg_reg(dst_reg, src_reg)
                             .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov: {:?}", e)))?;
-                        println!("      Generated: mov {}:{}, {}:{}", 
+                        log::trace!("   Generated:      Generated: mov {}:{}, {}:{}", 
                                  dst_reg.bank, dst_reg.id, src_reg.bank, src_reg.id);
                     } else {
-                        println!("      No move needed (same register)");
+                        log::debug!("{}      No move needed (same register)");
                     }
                     
                     self.session.record_phi_resolved();
@@ -1584,7 +1585,7 @@ where
         &mut self,
         instruction: inkwell::values::InstructionValue<'ctx>
     ) -> Result<(), LlvmCompilerError> {
-        println!("🔄 Compiling PHI instruction");
+        log::trace!("{}🔄 Compiling PHI instruction");
         
         // PHI nodes are special - they don't generate code directly.
         // Instead, they define values that need to be resolved at block edges.
@@ -1618,7 +1619,7 @@ where
         use inkwell::values::PhiValue;
         if let Ok(phi_value) = PhiValue::try_from(instruction) {
             let num_incoming = phi_value.count_incoming();
-            println!("   PHI has {} incoming values", num_incoming);
+            log::trace!("   PHI   PHI has {} incoming values", num_incoming);
             
             let mut incoming_values = Vec::new();
             
@@ -1637,7 +1638,7 @@ where
                     .map_err(|e| LlvmCompilerError::LlvmError(format!("Invalid block name: {:?}", e)))?;
                 let block_idx = self.get_block_index_by_name(block_name)?;
                 
-                println!("   Incoming: v{} from block {} (idx {})", incoming_idx, block_name, block_idx);
+                log::debug!("{}   Incoming: v{} from block {} (idx {})", incoming_idx, block_name, block_idx);
                 incoming_values.push((incoming_idx, block_idx));
             }
             
@@ -1648,7 +1649,7 @@ where
             };
             self.session.add_phi_node(inst_ptr % 1024, phi_info);
             
-            println!("   PHI node registered with {} incoming values", num_incoming);
+            log::trace!("   PHI   PHI node registered with {} incoming values", num_incoming);
         } else {
             return Err(LlvmCompilerError::LlvmError(
                 "Failed to convert instruction to PhiValue".to_string()

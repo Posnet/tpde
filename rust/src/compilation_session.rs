@@ -8,6 +8,7 @@ use bumpalo::Bump;
 use std::fmt;
 use std::cell::RefCell;
 use std::collections::HashMap;
+
 // LLVM types not needed for the arena-based session management
 
 /// Value location information stored in the session.
@@ -202,7 +203,7 @@ impl<'arena> CompilationSession<'arena> {
         self.stats.borrow_mut().total_calls += 1;
         // In a real implementation, we would store the call site location
         // and function name for the linker to resolve
-        println!("   Call site recorded: {}", function_name);
+        log::debug!("{}   Call site recorded: {}", function_name);
     }
 }
 
