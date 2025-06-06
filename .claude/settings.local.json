@@ -24,7 +24,8 @@
       "Bash(mkdir:*)",
       "Bash(sed:*)",
       "Bash(cargo:*)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(claude doctor)"
     ],
     "deny": []
   }

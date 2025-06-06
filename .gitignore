@@ -12,3 +12,4 @@ rust/vendor/
 target/
 rust/target/
 rust/Cargo.lock
+rust/.docs-cache
