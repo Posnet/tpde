@@ -104,6 +104,15 @@ impl GepExpression {
     }
 }
 
+/// Helper struct for binary operation compilation.
+struct BinaryOpContext {
+    left_idx: usize,
+    right_idx: usize,
+    result_idx: usize,
+    bit_width: u32,
+    value_size: u8,
+}
+
 /// Concrete LLVM compiler with arena-based memory management.
 ///
 /// This replaces the generic CompleteCompiler<A> with a focused implementation
@@ -467,13 +476,11 @@ where
         }
     }
     
-    /// Compile ADD instruction with real machine code generation.
-    fn compile_add_instruction(
+    /// Extract common binary operation setup.
+    fn setup_binary_operation(
         &mut self,
         instruction: inkwell::values::InstructionValue<'ctx>
-    ) -> Result<(), LlvmCompilerError> {
-        println!("➕ Compiling ADD instruction");
-        
+    ) -> Result<BinaryOpContext, LlvmCompilerError> {
         // Direct access to LLVM instruction operands
         let operand0 = instruction.get_operand(0).unwrap().left().unwrap();
         let operand1 = instruction.get_operand(1).unwrap().left().unwrap();
@@ -503,15 +510,29 @@ where
             self.value_mgr.create_assignment(result_idx, 1, value_size);
         }
         
-        // Create compiler context for register allocation
+        Ok(BinaryOpContext {
+            left_idx,
+            right_idx,
+            result_idx,
+            bit_width,
+            value_size,
+        })
+    }
+
+    /// Allocate registers for binary operation.
+    fn allocate_binary_op_registers(
+        &mut self,
+        context: &BinaryOpContext,
+        reuse_left: bool,
+    ) -> Result<(AsmReg, AsmReg, AsmReg), LlvmCompilerError> {
         let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
         
         // Create value references
-        let mut left_ref = ValuePartRef::new(left_idx, 0)
+        let mut left_ref = ValuePartRef::new(context.left_idx, 0)
             .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create left ref: {:?}", e)))?;
-        let mut right_ref = ValuePartRef::new(right_idx, 0)
+        let mut right_ref = ValuePartRef::new(context.right_idx, 0)
             .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create right ref: {:?}", e)))?;
-        let mut result_ref = ValuePartRef::new(result_idx, 0)
+        let mut result_ref = ValuePartRef::new(context.result_idx, 0)
             .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create result ref: {:?}", e)))?;
         
         // Load operands to registers
@@ -520,14 +541,32 @@ where
         let right_reg = right_ref.load_to_reg(&mut ctx)
             .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load right operand: {:?}", e)))?;
         
-        // Try to reuse left operand register for result (optimization)
-        let result_reg = result_ref.alloc_try_reuse(&mut left_ref, &mut ctx)
-            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to allocate result: {:?}", e)))?;
+        // Try to reuse left operand register for result if requested
+        let result_reg = if reuse_left {
+            result_ref.alloc_try_reuse(&mut left_ref, &mut ctx)
+                .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to allocate result: {:?}", e)))?
+        } else {
+            result_ref.load_to_reg(&mut ctx)
+                .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to allocate result: {:?}", e)))?
+        };
+        
+        Ok((left_reg, right_reg, result_reg))
+    }
+
+    /// Compile ADD instruction with real machine code generation.
+    fn compile_add_instruction(
+        &mut self,
+        instruction: inkwell::values::InstructionValue<'ctx>
+    ) -> Result<(), LlvmCompilerError> {
+        println!("➕ Compiling ADD instruction");
+        
+        let context = self.setup_binary_operation(instruction)?;
+        let (left_reg, right_reg, result_reg) = self.allocate_binary_op_registers(&context, true)?;
         
         // Generate optimized ADD instruction
         let encoder = self.codegen.encoder_mut();
         
-        match bit_width {
+        match context.bit_width {
             32 => {
                 if result_reg == left_reg {
                     // In-place addition
@@ -562,7 +601,7 @@ where
             }
             _ => {
                 return Err(LlvmCompilerError::UnsupportedInstruction(
-                    format!("ADD instruction with {}-bit width not supported", bit_width)
+                    format!("ADD instruction with {}-bit width not supported", context.bit_width)
                 ));
             }
         }
@@ -686,49 +725,12 @@ where
     fn compile_sub_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
         println!("➖ Compiling SUB instruction");
         
-        // Similar to ADD but with subtraction
-        let operand0 = instruction.get_operand(0).unwrap().left().unwrap();
-        let operand1 = instruction.get_operand(1).unwrap().left().unwrap();
-        let bit_width = instruction.get_type().into_int_type().get_bit_width();
-        
-        let left_idx = self.get_or_create_value_index(operand0)?;
-        let right_idx = self.get_or_create_value_index(operand1)?;
-        
-        // SUB result value
-        use inkwell::values::AsValueRef;
-        let inst_ptr = instruction.as_value_ref() as usize;
-        let result_idx = inst_ptr % 1024;
-        
-        let value_size = (bit_width / 8) as u8;
-        if self.value_mgr.get_assignment(left_idx).is_none() {
-            self.value_mgr.create_assignment(left_idx, 1, value_size);
-        }
-        if self.value_mgr.get_assignment(right_idx).is_none() {
-            self.value_mgr.create_assignment(right_idx, 1, value_size);
-        }
-        if self.value_mgr.get_assignment(result_idx).is_none() {
-            self.value_mgr.create_assignment(result_idx, 1, value_size);
-        }
-        
-        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
-        
-        let mut left_ref = ValuePartRef::new(left_idx, 0)
-            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create left ref: {:?}", e)))?;
-        let mut right_ref = ValuePartRef::new(right_idx, 0)
-            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create right ref: {:?}", e)))?;
-        let mut result_ref = ValuePartRef::new(result_idx, 0)
-            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create result ref: {:?}", e)))?;
-        
-        let left_reg = left_ref.load_to_reg(&mut ctx)
-            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load left: {:?}", e)))?;
-        let right_reg = right_ref.load_to_reg(&mut ctx)
-            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load right: {:?}", e)))?;
-        let result_reg = result_ref.alloc_try_reuse(&mut left_ref, &mut ctx)
-            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to allocate result: {:?}", e)))?;
+        let context = self.setup_binary_operation(instruction)?;
+        let (left_reg, right_reg, result_reg) = self.allocate_binary_op_registers(&context, true)?;
         
         let encoder = self.codegen.encoder_mut();
         
-        match bit_width {
+        match context.bit_width {
             32 => {
                 if result_reg == left_reg {
                     encoder.sub32_reg_reg(result_reg, right_reg)
@@ -765,7 +767,7 @@ where
             }
             _ => {
                 return Err(LlvmCompilerError::UnsupportedInstruction(
-                    format!("SUB instruction with {}-bit width not supported", bit_width)
+                    format!("SUB instruction with {}-bit width not supported", context.bit_width)
                 ));
             }
         }
@@ -776,42 +778,9 @@ where
     fn compile_mul_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
         println!("✖️  Compiling MUL instruction");
         
-        let operand0 = instruction.get_operand(0).unwrap().left().unwrap();
-        let operand1 = instruction.get_operand(1).unwrap().left().unwrap();
-        let bit_width = instruction.get_type().into_int_type().get_bit_width();
-        
-        let left_idx = self.get_or_create_value_index(operand0)?;
-        let right_idx = self.get_or_create_value_index(operand1)?;
-        
-        // MUL result value
-        use inkwell::values::AsValueRef;
-        let inst_ptr = instruction.as_value_ref() as usize;
-        let result_idx = inst_ptr % 1024;
-        
-        let value_size = (bit_width / 8) as u8;
-        if self.value_mgr.get_assignment(left_idx).is_none() {
-            self.value_mgr.create_assignment(left_idx, 1, value_size);
-        }
-        if self.value_mgr.get_assignment(right_idx).is_none() {
-            self.value_mgr.create_assignment(right_idx, 1, value_size);
-        }
-        if self.value_mgr.get_assignment(result_idx).is_none() {
-            self.value_mgr.create_assignment(result_idx, 1, value_size);
-        }
-        
-        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
-        
-        let mut left_ref = ValuePartRef::new(left_idx, 0)
-            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create left ref: {:?}", e)))?;
-        let mut right_ref = ValuePartRef::new(right_idx, 0)
-            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create right ref: {:?}", e)))?;
-        let mut result_ref = ValuePartRef::new(result_idx, 0)
-            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create result ref: {:?}", e)))?;
-        
-        let left_reg = left_ref.load_to_reg(&mut ctx)
-            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load left: {:?}", e)))?;
-        let right_reg = right_ref.load_to_reg(&mut ctx)
-            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load right: {:?}", e)))?;
+        let context = self.setup_binary_operation(instruction)?;
+        // MUL doesn't reuse left register because it uses RAX
+        let (left_reg, right_reg, _) = self.allocate_binary_op_registers(&context, false)?;
         
         // MUL uses RAX for one operand and result
         let rax = AsmReg::new(0, 0); // RAX
@@ -826,7 +795,7 @@ where
         }
         
         // Generate IMUL instruction
-        match bit_width {
+        match context.bit_width {
             32 => {
                 // Use two-operand IMUL: rax = rax * right_reg
                 encoder.imul32_reg_reg(rax, right_reg)
@@ -841,12 +810,16 @@ where
             }
             _ => {
                 return Err(LlvmCompilerError::UnsupportedInstruction(
-                    format!("MUL instruction with {}-bit width not supported", bit_width)
+                    format!("MUL instruction with {}-bit width not supported", context.bit_width)
                 ));
             }
         }
         
         // Move result from RAX to result register if different
+        // Need to allocate result register properly
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+        let mut result_ref = ValuePartRef::new(context.result_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create result ref: {:?}", e)))?;
         let result_reg = result_ref.load_to_reg(&mut ctx)
             .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to allocate result: {:?}", e)))?;
         
