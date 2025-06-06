@@ -1,8 +1,7 @@
 //! Primary LLVM compilation implementation.
 //!
 //! This module contains the main LLVM IR compiler for TPDE. It provides
-//! direct LLVM integration without generic trait bounds, following the
-//! Phase 2B architectural redesign.
+//! direct LLVM integration without generic trait bounds.
 //!
 //! # Example
 //! ```ignore
@@ -18,7 +17,7 @@
 
 pub mod adaptor;
 pub mod compiler;
-// pub mod phi_resolution; // TODO: Update to use new FunctionAnalyzer API
+// pub mod phi_resolution; // Not yet implemented - needs FunctionAnalyzer API updates
 pub mod function_analysis;
 pub mod analysis_result;
 pub mod traits;

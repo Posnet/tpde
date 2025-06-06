@@ -1121,7 +1121,7 @@ mod tests {
         encoder.sub32_reg_imm(rax, 1).unwrap();
         
         // Simulate recursive call setup (would normally be more complex)
-        encoder.call_direct(0).unwrap(); // Placeholder offset
+        encoder.call_direct(0).unwrap(); // Offset will be resolved during linking
         
         // Multiply result by original n (stored in rcx)
         encoder.imul32_reg_reg(rax, rcx).unwrap();

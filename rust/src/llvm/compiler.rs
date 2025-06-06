@@ -1,8 +1,7 @@
-//! Concrete LLVM compiler implementation.
+//! LLVM compiler implementation.
 //!
-//! This module provides a simplified, arena-based LLVM compiler that replaces
-//! the generic CompleteCompiler with direct LLVM integration. It eliminates
-//! trait bound complexity while preserving all excellent functionality.
+//! This module provides an arena-based LLVM compiler with direct LLVM integration,
+//! eliminating trait bound complexity while providing full functionality.
 
 use crate::{
     core::{
@@ -118,11 +117,10 @@ struct BinaryOpContext {
     value_size: u8,  // Kept for consistency with value assignment creation
 }
 
-/// Concrete LLVM compiler with arena-based memory management.
+/// LLVM compiler with arena-based memory management.
 ///
-/// This replaces the generic CompleteCompiler<A> with a focused implementation
-/// for LLVM IR compilation. It uses arena allocation to simplify lifetimes
-/// and provides direct access to LLVM functionality without trait bounds.
+/// This implementation provides direct LLVM IR compilation using arena allocation
+/// to simplify lifetimes and direct access to LLVM functionality.
 pub struct LlvmCompiler<'ctx, 'arena> {
     /// LLVM module being compiled.
     module: inkwell::module::Module<'ctx>,
@@ -577,13 +575,13 @@ where
                     // In-place addition
                     encoder.add32_reg_reg(result_reg, right_reg)
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit add32: {:?}", e)))?;
-                    log::trace!("   Generated:   Generated: add32 {}:{}, {}:{}", 
+                    log::trace!("   Generated: add32 {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 } else {
                     // LEA optimization for non-destructive add
                     encoder.lea(result_reg, left_reg, Some(right_reg), 1, 0)
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit lea32: {:?}", e)))?;
-                    log::trace!("   Generated:   Generated: lea32 {}:{}, [{}:{} + {}:{}]", 
+                    log::trace!("   Generated: lea32 {}:{}, [{}:{} + {}:{}]", 
                              result_reg.bank, result_reg.id, left_reg.bank, left_reg.id, 
                              right_reg.bank, right_reg.id);
                 }
@@ -593,13 +591,13 @@ where
                     // In-place addition
                     encoder.add64_reg_reg(result_reg, right_reg)
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit add64: {:?}", e)))?;
-                    log::trace!("   Generated:   Generated: add64 {}:{}, {}:{}", 
+                    log::trace!("   Generated: add64 {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 } else {
                     // LEA optimization for non-destructive add
                     encoder.lea(result_reg, left_reg, Some(right_reg), 1, 0)
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit lea: {:?}", e)))?;
-                    log::trace!("   Generated:   Generated: lea {}:{}, [{}:{} + {}:{}]", 
+                    log::trace!("   Generated: lea {}:{}, [{}:{} + {}:{}]", 
                              result_reg.bank, result_reg.id, left_reg.bank, left_reg.id, 
                              right_reg.bank, right_reg.id);
                 }
@@ -699,7 +697,7 @@ where
             IntPredicate::ULE => encoder.setbe_reg(result_reg),
         }.map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit setcc: {:?}", e)))?;
         
-        log::trace!("   Generated:   Generated: CMP {}:{}, {}:{}; SET{:?} {}:{}", 
+        log::trace!("   Generated: CMP {}:{}, {}:{}; SET{:?} {}:{}", 
                  left_reg.bank, left_reg.id, right_reg.bank, right_reg.id,
                  predicate, result_reg.bank, result_reg.id);
         
@@ -740,7 +738,7 @@ where
                 if result_reg == left_reg {
                     encoder.sub32_reg_reg(result_reg, right_reg)
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit sub32: {:?}", e)))?;
-                    log::trace!("   Generated:   Generated: sub32 {}:{}, {}:{}", 
+                    log::trace!("   Generated: sub32 {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 } else {
                     // Move left to result first
@@ -748,7 +746,7 @@ where
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov32: {:?}", e)))?;
                     encoder.sub32_reg_reg(result_reg, right_reg)
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit sub32: {:?}", e)))?;
-                    log::trace!("   Generated:   Generated: mov32 {}:{}, {}:{}; sub32 {}:{}, {}:{}", 
+                    log::trace!("   Generated: mov32 {}:{}, {}:{}; sub32 {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, left_reg.bank, left_reg.id,
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 }
@@ -757,7 +755,7 @@ where
                 if result_reg == left_reg {
                     encoder.sub64_reg_reg(result_reg, right_reg)
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit sub64: {:?}", e)))?;
-                    log::trace!("   Generated:   Generated: sub64 {}:{}, {}:{}", 
+                    log::trace!("   Generated: sub64 {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 } else {
                     // Move left to result first
@@ -765,7 +763,7 @@ where
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov: {:?}", e)))?;
                     encoder.sub64_reg_reg(result_reg, right_reg)
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit sub64: {:?}", e)))?;
-                    log::trace!("   Generated:   Generated: mov {}:{}, {}:{}; sub64 {}:{}, {}:{}", 
+                    log::trace!("   Generated: mov {}:{}, {}:{}; sub64 {}:{}, {}:{}", 
                              result_reg.bank, result_reg.id, left_reg.bank, left_reg.id,
                              result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
                 }
@@ -805,13 +803,13 @@ where
                 // Use two-operand IMUL: rax = rax * right_reg
                 encoder.imul32_reg_reg(rax, right_reg)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit imul32: {:?}", e)))?;
-                log::trace!("   Generated:   Generated: imul32 eax, {}:{}", right_reg.bank, right_reg.id);
+                log::trace!("   Generated: imul32 eax, {}:{}", right_reg.bank, right_reg.id);
             }
             64 => {
                 // Use two-operand IMUL: rax = rax * right_reg
                 encoder.imul_reg_reg(rax, right_reg)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit imul64: {:?}", e)))?;
-                log::trace!("   Generated:   Generated: imul64 rax, {}:{}", right_reg.bank, right_reg.id);
+                log::trace!("   Generated: imul64 rax, {}:{}", right_reg.bank, right_reg.id);
             }
             _ => {
                 return Err(LlvmCompilerError::UnsupportedInstruction(
@@ -831,7 +829,7 @@ where
         if result_reg != rax {
             encoder.mov_reg_reg(result_reg, rax)
                 .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to mov from rax: {:?}", e)))?;
-            log::trace!("   Generated:   Generated: mov {}:{}, rax", result_reg.bank, result_reg.id);
+            log::trace!("   Generated: mov {}:{}, rax", result_reg.bank, result_reg.id);
         }
         
         Ok(())
@@ -894,25 +892,25 @@ where
             8 => {
                 encoder.mov8_reg_mem(result_reg, ptr_reg, 0)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov8: {:?}", e)))?;
-                log::trace!("   Generated:   Generated: movb {}:{}, [{}:{}]", 
+                log::trace!("   Generated: movb {}:{}, [{}:{}]", 
                          result_reg.bank, result_reg.id, ptr_reg.bank, ptr_reg.id);
             }
             16 => {
                 encoder.mov16_reg_mem(result_reg, ptr_reg, 0)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov16: {:?}", e)))?;
-                log::trace!("   Generated:   Generated: movw {}:{}, [{}:{}]", 
+                log::trace!("   Generated: movw {}:{}, [{}:{}]", 
                          result_reg.bank, result_reg.id, ptr_reg.bank, ptr_reg.id);
             }
             32 => {
                 encoder.mov32_reg_mem(result_reg, ptr_reg, 0)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov32: {:?}", e)))?;
-                log::trace!("   Generated:   Generated: movl {}:{}, [{}:{}]", 
+                log::trace!("   Generated: movl {}:{}, [{}:{}]", 
                          result_reg.bank, result_reg.id, ptr_reg.bank, ptr_reg.id);
             }
             64 => {
                 encoder.mov64_reg_mem(result_reg, ptr_reg, 0)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov64: {:?}", e)))?;
-                log::trace!("   Generated:   Generated: movq {}:{}, [{}:{}]", 
+                log::trace!("   Generated: movq {}:{}, [{}:{}]", 
                          result_reg.bank, result_reg.id, ptr_reg.bank, ptr_reg.id);
             }
             _ => {
@@ -979,25 +977,25 @@ where
             8 => {
                 encoder.mov8_mem_reg(ptr_reg, 0, value_reg)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov8: {:?}", e)))?;
-                log::trace!("   Generated:   Generated: movb [{}:{}], {}:{}", 
+                log::trace!("   Generated: movb [{}:{}], {}:{}", 
                          ptr_reg.bank, ptr_reg.id, value_reg.bank, value_reg.id);
             }
             16 => {
                 encoder.mov16_mem_reg(ptr_reg, 0, value_reg)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov16: {:?}", e)))?;
-                log::trace!("   Generated:   Generated: movw [{}:{}], {}:{}", 
+                log::trace!("   Generated: movw [{}:{}], {}:{}", 
                          ptr_reg.bank, ptr_reg.id, value_reg.bank, value_reg.id);
             }
             32 => {
                 encoder.mov32_mem_reg(ptr_reg, 0, value_reg)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov32: {:?}", e)))?;
-                log::trace!("   Generated:   Generated: movl [{}:{}], {}:{}", 
+                log::trace!("   Generated: movl [{}:{}], {}:{}", 
                          ptr_reg.bank, ptr_reg.id, value_reg.bank, value_reg.id);
             }
             64 => {
                 encoder.mov64_mem_reg(ptr_reg, 0, value_reg)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov64: {:?}", e)))?;
-                log::trace!("   Generated:   Generated: movq [{}:{}], {}:{}", 
+                log::trace!("   Generated: movq [{}:{}], {}:{}", 
                          ptr_reg.bank, ptr_reg.id, value_reg.bank, value_reg.id);
             }
             _ => {
@@ -1079,7 +1077,7 @@ where
                 // Fold constant into displacement
                 let offset = element_size as i64 * const_val;
                 gep_expr.add_displacement(offset);
-                log::debug!("   GEP: Folded constant index {} -> displacement {}", const_val, offset);
+                log::debug!("GEP: Folded constant index {} -> displacement {}", const_val, offset);
             } else {
                 // Dynamic index
                 let mut index_ref = ValuePartRef::new(index_idx, 0)
@@ -1144,7 +1142,7 @@ where
                 encoder.jmp_unconditional_to_block(target_block_idx)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit jmp: {:?}", e)))?;
                 
-                log::trace!("   Generated:   Generated: jmp block_{}", target_block_idx);
+                log::trace!("   Generated: jmp block_{}", target_block_idx);
             }
             3 => {
                 // Conditional branch
@@ -1196,9 +1194,9 @@ where
                 encoder.jmp_unconditional_to_block(false_block_idx)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit jmp: {:?}", e)))?;
                 
-                log::trace!("   Generated:   Generated: test {}:{}, {}:{}", cond_reg.bank, cond_reg.id, cond_reg.bank, cond_reg.id);
-                log::trace!("   Generated:   Generated: jne block_{}", true_block_idx);
-                log::trace!("   Generated:   Generated: jmp block_{}", false_block_idx);
+                log::trace!("   Generated: test {}:{}, {}:{}", cond_reg.bank, cond_reg.id, cond_reg.bank, cond_reg.id);
+                log::trace!("   Generated: jne block_{}", true_block_idx);
+                log::trace!("   Generated: jmp block_{}", false_block_idx);
                 
                 // Now generate a separate code sequence for the true branch PHI moves
                 // This requires placing code at a different location
@@ -1305,7 +1303,7 @@ where
                     let encoder = self.codegen.encoder_mut();
                     encoder.mov_reg_reg(reg, arg_reg)
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov: {:?}", e)))?;
-                    log::trace!("   Generated:      Generated: mov {}:{}, {}:{}", 
+                    log::trace!("      Generated: mov {}:{}, {}:{}", 
                              reg.bank, reg.id, arg_reg.bank, arg_reg.id);
                 }
             } else if let Some(stack_offset) = assignment.stack_off {
@@ -1318,7 +1316,7 @@ where
                 let rsp = AsmReg::new(0, 4); // RSP
                 encoder.mov64_mem_reg(rsp, stack_offset, arg_reg)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit stack store: {:?}", e)))?;
-                log::trace!("   Generated:      Generated: mov [rsp+{}], {}:{}", 
+                log::trace!("      Generated: mov [rsp+{}], {}:{}", 
                          stack_offset, arg_reg.bank, arg_reg.id);
             }
         }
@@ -1326,11 +1324,11 @@ where
         // Emit the actual call instruction
         let encoder = self.codegen.encoder_mut();
         
-        // For now, use a placeholder offset (0) for direct calls
+        // Use offset 0 for direct calls - will be resolved during linking
         // In a real implementation, this would be resolved by the linker
         encoder.call_direct(0)
             .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit call: {:?}", e)))?;
-        log::trace!("   Generated:   Generated: call {} (offset will be resolved later)", function_name);
+        log::trace!("   Generated: call {} (offset will be resolved later)", function_name);
         
         // Record the call site for later relocation
         self.session.record_call_site(function_name.clone());
@@ -1390,7 +1388,7 @@ where
     }
     
     fn compile_alloca_instruction(&mut self, _instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
-        log::info!("📋 Compiling ALLOCA instruction (placeholder)");
+        log::info!("📋 Compiling ALLOCA instruction (not yet implemented)");
         Ok(())
     }
     
@@ -1481,25 +1479,25 @@ where
                         encoder.mov_reg_reg(result_reg, base)
                             .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov: {:?}", e)))?;
                     }
-                    log::trace!("   Generated:   Generated: mov {}:{}, {}:{}", result_reg.bank, result_reg.id, base.bank, base.id);
+                    log::trace!("   Generated: mov {}:{}, {}:{}", result_reg.bank, result_reg.id, base.bank, base.id);
                 }
                 AddressingMode::RegisterOffset(base, offset) => {
                     encoder.lea(result_reg, base, None, 1, offset)
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit lea: {:?}", e)))?;
-                    log::trace!("   Generated:   Generated: lea {}:{}, [{}:{} + {}]", 
+                    log::trace!("   Generated: lea {}:{}, [{}:{} + {}]", 
                              result_reg.bank, result_reg.id, base.bank, base.id, offset);
                 }
                 AddressingMode::RegisterIndexScale(base, index, scale) => {
                     encoder.lea(result_reg, base, Some(index), scale as u32, 0)
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit lea: {:?}", e)))?;
-                    log::trace!("   Generated:   Generated: lea {}:{}, [{}:{} + {}:{}*{}]", 
+                    log::trace!("   Generated: lea {}:{}, [{}:{} + {}:{}*{}]", 
                              result_reg.bank, result_reg.id, base.bank, base.id, 
                              index.bank, index.id, scale);
                 }
                 AddressingMode::RegisterIndexScaleOffset(base, index, scale, offset) => {
                     encoder.lea(result_reg, base, Some(index), scale as u32, offset)
                         .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit lea: {:?}", e)))?;
-                    log::trace!("   Generated:   Generated: lea {}:{}, [{}:{} + {}:{}*{} + {}]", 
+                    log::trace!("   Generated: lea {}:{}, [{}:{} + {}:{}*{} + {}]", 
                              result_reg.bank, result_reg.id, base.bank, base.id, 
                              index.bank, index.id, scale, offset);
                 }
@@ -1569,7 +1567,7 @@ where
                         let encoder = self.codegen.encoder_mut();
                         encoder.mov_reg_reg(dst_reg, src_reg)
                             .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov: {:?}", e)))?;
-                        log::trace!("   Generated:      Generated: mov {}:{}, {}:{}", 
+                        log::trace!("      Generated: mov {}:{}, {}:{}", 
                                  dst_reg.bank, dst_reg.id, src_reg.bank, src_reg.id);
                     } else {
                         log::debug!("      No move needed (same register)");

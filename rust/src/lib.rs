@@ -25,7 +25,6 @@
 //! - [`llvm`] - Primary LLVM compilation implementation
 //! - [`core`] - Shared infrastructure (session, registers, values)
 //! - [`x64`] - x86-64 specific code (encoder, calling convention)
-//! - [`legacy`] - Deprecated implementations for reference
 //! - [`experimental`] - Work in progress features
 //!
 //! # Documentation
@@ -58,7 +57,3 @@ pub use core::{
 };
 pub use llvm::{LlvmCompiler as LlvmCompilerConcrete, CompiledFunction, LlvmCompilerError};
 
-/// Temporary hello world to prove the crate builds.
-pub fn hello() -> &'static str {
-    "Hello from tpde"
-}

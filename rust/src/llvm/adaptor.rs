@@ -526,25 +526,6 @@ impl<'ctx> EnhancedLlvmAdaptor<'ctx> {
         }
     }
     
-    /// Legacy method - kept for compatibility during transition.
-    #[allow(dead_code)]
-    fn legacy_build_block_successors(&mut self) {
-        if let Some(func) = self.current_function {
-            let blocks: Vec<_> = func.get_basic_blocks();
-            
-            // Build successor lists - simplified implementation for now
-            // TODO: Implement proper successor extraction from terminator instructions
-            for (i, _block) in blocks.iter().enumerate() {
-                let mut successors = Vec::new();
-                
-                // For now, just create a simple linear successor relationship for testing
-                if i + 1 < blocks.len() {
-                    successors.push(i + 1);
-                }
-                
-            }
-        }
-    }
     
     /// Check if this value should be ignored in liveness analysis.
     fn should_ignore_in_liveness(&self, val: BasicValueEnum<'ctx>) -> bool {
