@@ -1,3 +1,4 @@
 - remember to regularly list all files so you know what the project layout is
 - when writing rust tests, always strive to leverage rust native testing facilities such as [test] annotations, integration tests, and benchmarks
 - prefer stack allocation, then arena/scoped based allocation with borrows, and only after that heap based, and even then prefer containers over boxes
+- use the cursor rust tool to interact with cargo

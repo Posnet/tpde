@@ -26,7 +26,8 @@
       "Bash(cargo:*)",
       "Bash(rm:*)",
       "Bash(claude doctor)",
-      "mcp__cursor_rust_tools__cargo_check"
+      "mcp__cursor_rust_tools__cargo_check",
+      "mcp__cursor_rust_tools__cargo_test"
     ],
     "deny": []
   }

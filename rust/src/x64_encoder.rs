@@ -479,6 +479,16 @@ impl X64Encoder {
         Ok(())
     }
     
+    /// Emit TEST instruction - register to register (64-bit default).
+    pub fn test_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp_register(dst)?;
+        let src_reg = self.to_gp_register(src)?;
+        
+        self.assembler.test(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
     // SETcc instructions for condition code to boolean conversion
     
     /// Emit SETE instruction - set byte on equal.
@@ -845,6 +855,13 @@ impl X64Encoder {
         Ok(())
     }
 
+    /// Emit a NOP instruction.
+    pub fn nop(&mut self) -> Result<(), EncodingError> {
+        self.assembler.nop()
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
     /// Generate the final machine code bytes.
     pub fn finalize(&mut self) -> Result<Vec<u8>, EncodingError> {
         // Ensure all block labels have been placed
