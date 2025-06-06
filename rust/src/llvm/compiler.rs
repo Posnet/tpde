@@ -2132,10 +2132,12 @@ where
         
         // Get the called function
         let called_value = call_site.get_called_fn_value();
-        let function_name = if let Some(func) = called_value {
-            func.get_name().to_str()
+        let (function_name, is_varargs) = if let Some(func) = called_value {
+            let name = func.get_name().to_str()
                 .map_err(|e| LlvmCompilerError::LlvmError(format!("Invalid function name: {:?}", e)))?
-                .to_string()
+                .to_string();
+            let varargs = func.get_type().is_var_arg();
+            (name, varargs)
         } else {
             // For now, only support direct function calls
             return Err(LlvmCompilerError::UnsupportedInstruction(
@@ -2143,35 +2145,61 @@ where
             ));
         };
         
-        log::debug!("   Calling function: {}", function_name);
+        log::debug!("   Calling function: {} (varargs: {})", function_name, is_varargs);
         
         // Get arguments
         let arg_count = call_site.count_arguments();
         log::debug!("   Argument count: {}", arg_count);
         
         // Create calling convention assigner
-        use crate::x64::calling_convention::{SysVAssigner, CCAssigner, CCAssignment, RegBank};
+        use crate::x64::calling_convention::{SysVAssigner, CCAssigner, CCAssignment, RegBank, ArgAttribute};
+        use crate::llvm::call_support::{get_param_attributes, get_byval_size};
         let mut cc_assigner = SysVAssigner::new();
+        
+        // For varargs functions, we need to know where fixed args end
+        let fixed_arg_count = if is_varargs {
+            // Get the function type to determine fixed argument count
+            if let Some(func) = called_value {
+                func.get_type().count_param_types()
+            } else {
+                0
+            }
+        } else {
+            arg_count
+        };
         
         // Process arguments and assign them according to System V ABI
         let mut arg_assignments = Vec::new();
+        let mut xmm_count_for_varargs = 0u8;
+        
         for i in 0..arg_count {
             let arg_value = instruction.get_operand(i).unwrap().left().unwrap();
             let arg_idx = self.get_or_create_value_index(arg_value)?;
             
+            // Get parameter attributes
+            let param_attr = get_param_attributes(call_site, i);
+            
+            // Handle varargs - after fixed args, must go to stack
+            if is_varargs && i >= fixed_arg_count {
+                cc_assigner.set_must_assign_stack();
+            }
+            
             // Determine argument type and size
             let arg_type = arg_value.get_type();
-            let (bank, size) = match arg_type {
+            let (bank, size, align) = match arg_type {
                 inkwell::types::BasicTypeEnum::IntType(int_type) => {
-                    (RegBank::GeneralPurpose, (int_type.get_bit_width() / 8) as u32)
+                    let bit_width = int_type.get_bit_width();
+                    let byte_size = (bit_width / 8) as u32;
+                    let align = byte_size.min(8); // Max 8-byte alignment
+                    (RegBank::GeneralPurpose, byte_size, align)
                 }
                 inkwell::types::BasicTypeEnum::PointerType(_) => {
-                    (RegBank::GeneralPurpose, 8)
+                    (RegBank::GeneralPurpose, 8, 8)
                 }
                 inkwell::types::BasicTypeEnum::FloatType(float_type) => {
                     match float_type.get_context().f32_type() {
-                        t if t == float_type => (RegBank::Xmm, 4),
-                        _ => (RegBank::Xmm, 8), // f64
+                        t if t == float_type => (RegBank::Xmm, 4, 4),
+                        _ => (RegBank::Xmm, 8, 8), // f64
                     }
                 }
                 _ => {
@@ -2181,11 +2209,26 @@ where
                 }
             };
             
+            // Handle byval attribute specially
+            let final_attr = match param_attr {
+                ArgAttribute::ByVal { size: _, align: byval_align } => {
+                    // Get actual size for byval
+                    let byval_size = get_byval_size(call_site, i, arg_value);
+                    ArgAttribute::ByVal { size: byval_size, align: byval_align }
+                }
+                _ => param_attr,
+            };
+            
             // Create assignment for this argument
-            let mut assignment = CCAssignment::new(bank, size, size);
+            let mut assignment = CCAssignment::with_attribute(bank, size, align, final_attr);
             cc_assigner.assign_arg(&mut assignment);
             
-            log::debug!("   Arg {}: v{} -> {:?}", i, arg_idx, assignment);
+            // Track XMM register usage for varargs
+            if is_varargs && i < fixed_arg_count && bank == RegBank::Xmm && assignment.reg.is_some() {
+                xmm_count_for_varargs += 1;
+            }
+            
+            log::debug!("   Arg {}: v{} -> {:?} (attr: {:?})", i, arg_idx, assignment, final_attr);
             
             // Create value assignment if needed
             if self.value_mgr.get_assignment(arg_idx).is_none() {
@@ -2195,47 +2238,89 @@ where
             arg_assignments.push((arg_idx, assignment));
         }
         
-        // Create compiler context
-        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
-        
         // Setup arguments in their assigned locations
+        // We need to handle this without borrowing issues
         for (arg_idx, assignment) in &arg_assignments {
-            let mut arg_ref = ValuePartRef::new(*arg_idx, 0)
-                .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create arg ref: {:?}", e)))?;
-            
-            if let Some(reg) = assignment.reg {
-                // Load argument to any register first
-                let arg_reg = arg_ref.load_to_reg(&mut ctx)
-                    .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load arg: {:?}", e)))?;
-                
-                // Move to the correct argument register if needed
-                if arg_reg != reg {
+            match assignment.attribute {
+                ArgAttribute::ByVal { size, align: _ } => {
+                    // For byval, we need to copy the data to the stack
+                    // We'll handle this inline to avoid borrowing issues
+                    let mut ptr_ref = ValuePartRef::new(*arg_idx, 0)
+                        .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create ptr ref: {:?}", e)))?;
+                    
+                    let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+                    let ptr_reg = ptr_ref.load_to_reg(&mut ctx)
+                        .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load ptr: {:?}", e)))?;
+                    
+                    let stack_offset = assignment.stack_off
+                        .ok_or_else(|| LlvmCompilerError::LlvmError("byval argument not assigned to stack".to_string()))?;
+                    
+                    // Simple byte copy implementation
                     let encoder = self.codegen.encoder_mut();
-                    encoder.mov_reg_reg(reg, arg_reg)
-                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov: {:?}", e)))?;
-                    log::trace!("      Generated: mov {}:{}, {}:{}", 
-                             reg.bank, reg.id, arg_reg.bank, arg_reg.id);
+                    let rsp = AsmReg::new(0, 4); // RSP
+                    
+                    for offset in (0..size).step_by(8) {
+                        let temp_reg = self.register_file.allocate_reg(0, 
+                            crate::core::ValLocalIdx::MAX, 0, None)
+                            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to allocate temp reg: {:?}", e)))?;
+                        
+                        encoder.mov64_reg_mem(temp_reg, ptr_reg, offset as i32)
+                            .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to load from byval src: {:?}", e)))?;
+                        
+                        encoder.mov64_mem_reg(rsp, stack_offset + offset as i32, temp_reg)
+                            .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to store to byval dst: {:?}", e)))?;
+                        
+                        let _ = self.register_file.free_register(temp_reg);
+                    }
+                    
+                    log::trace!("   Copied {} bytes for byval argument to stack offset {}", size, stack_offset);
                 }
-            } else if let Some(stack_offset) = assignment.stack_off {
-                // Need to push argument to stack
-                let arg_reg = arg_ref.load_to_reg(&mut ctx)
-                    .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load arg: {:?}", e)))?;
-                
-                // Store to stack at RSP + offset
-                let encoder = self.codegen.encoder_mut();
-                let rsp = AsmReg::new(0, 4); // RSP
-                encoder.mov64_mem_reg(rsp, stack_offset, arg_reg)
-                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit stack store: {:?}", e)))?;
-                log::trace!("      Generated: mov [rsp+{}], {}:{}", 
-                         stack_offset, arg_reg.bank, arg_reg.id);
+                _ => {
+                    // For all other cases, handle normally
+                    let mut arg_ref = ValuePartRef::new(*arg_idx, 0)
+                        .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create arg ref: {:?}", e)))?;
+                    
+                    if let Some(reg) = assignment.reg {
+                        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+                        let arg_reg = arg_ref.load_to_reg(&mut ctx)
+                            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load arg: {:?}", e)))?;
+                        
+                        if arg_reg != reg {
+                            let encoder = self.codegen.encoder_mut();
+                            encoder.mov_reg_reg(reg, arg_reg)
+                                .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov: {:?}", e)))?;
+                            log::trace!("      Generated: mov {}:{}, {}:{}", 
+                                     reg.bank, reg.id, arg_reg.bank, arg_reg.id);
+                        }
+                    } else if let Some(stack_offset) = assignment.stack_off {
+                        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+                        let arg_reg = arg_ref.load_to_reg(&mut ctx)
+                            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load arg: {:?}", e)))?;
+                        
+                        let encoder = self.codegen.encoder_mut();
+                        let rsp = AsmReg::new(0, 4); // RSP
+                        encoder.mov64_mem_reg(rsp, stack_offset, arg_reg)
+                            .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit stack store: {:?}", e)))?;
+                        log::trace!("      Generated: mov [rsp+{}], {}:{}", 
+                                 stack_offset, arg_reg.bank, arg_reg.id);
+                    }
+                }
             }
+        }
+        
+        // For varargs functions, set AL register with XMM count
+        if is_varargs && xmm_count_for_varargs > 0 {
+            let encoder = self.codegen.encoder_mut();
+            let al = AsmReg::new(0, 0); // AL register
+            encoder.mov_reg_imm(al, xmm_count_for_varargs as i64)
+                .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to set AL for varargs: {:?}", e)))?;
+            log::trace!("   Set AL={} for varargs XMM count", xmm_count_for_varargs);
         }
         
         // Emit the actual call instruction
         let encoder = self.codegen.encoder_mut();
         
         // Use offset 0 for direct calls - will be resolved during linking
-        // In a real implementation, this would be resolved by the linker
         encoder.call_direct(0)
             .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit call: {:?}", e)))?;
         log::trace!("   Generated: call {} (offset will be resolved later)", function_name);
@@ -2246,13 +2331,16 @@ where
         // Handle return value if any
         if !instruction.get_type().is_void_type() {
             // Get result value index
+            // For call instructions, we need to create a unique index for the result
+            // Since we can't convert InstructionValue to BasicValueEnum directly,
+            // we'll use the pointer address
             use inkwell::values::AsValueRef;
             let inst_ptr = instruction.as_value_ref() as usize;
-            let result_idx = inst_ptr % 1024;
+            let result_idx = inst_ptr % 1024; // Simple hash for index
             
-            // Determine return type
+            // Determine return value location based on type
             let ret_type = instruction.get_type();
-            let (bank, size) = match ret_type {
+            let (ret_bank, ret_size) = match ret_type {
                 inkwell::types::AnyTypeEnum::IntType(int_type) => {
                     (RegBank::GeneralPurpose, (int_type.get_bit_width() / 8) as u32)
                 }
@@ -2260,11 +2348,9 @@ where
                     (RegBank::GeneralPurpose, 8)
                 }
                 inkwell::types::AnyTypeEnum::FloatType(float_type) => {
-                    let f32_type = float_type.get_context().f32_type();
-                    if f32_type == float_type {
-                        (RegBank::Xmm, 4)
-                    } else {
-                        (RegBank::Xmm, 8)
+                    match float_type.get_context().f32_type() {
+                        t if t == float_type => (RegBank::Xmm, 4),
+                        _ => (RegBank::Xmm, 8), // f64
                     }
                 }
                 _ => {
@@ -2274,29 +2360,34 @@ where
                 }
             };
             
-            // Create return value assignment
-            let mut ret_assignment = CCAssignment::new(bank, size, size);
-            cc_assigner.assign_ret(&mut ret_assignment);
+            // Return value is in RAX (GP) or XMM0 (FP)
+            let ret_reg = match ret_bank {
+                RegBank::GeneralPurpose => AsmReg::new(0, 0), // RAX
+                RegBank::Xmm => AsmReg::new(1, 0), // XMM0
+            };
             
-            if let Some(ret_reg) = ret_assignment.reg {
-                log::debug!("   Return value in {}:{}", ret_reg.bank, ret_reg.id);
-                
-                // Create value assignment for result
-                if self.value_mgr.get_assignment(result_idx).is_none() {
-                    self.value_mgr.create_assignment(result_idx, 1, size as u8);
-                }
-                
-                // The return value is already in the correct register (RAX or XMM0)
-                // We'll handle this by recording it in our internal tracking
-                log::debug!("   Return value will be in register {}:{}", ret_reg.bank, ret_reg.id);
-                // In a real implementation, we would need to ensure the register
-                // allocation system knows about this fixed assignment
+            // Create value assignment for result
+            if self.value_mgr.get_assignment(result_idx).is_none() {
+                self.value_mgr.create_assignment(result_idx, 1, ret_size as u8);
             }
+            
+            // Mark the return register as containing the result
+            let _result_ref = ValuePartRef::new(result_idx, 0)
+                .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create result ref: {:?}", e)))?;
+            // The return value is now in the return register
+            // In a real implementation, we would need to update the register file
+            // to track that this value is now in the return register.
+            // For now, we'll just note that the calling convention places it there.
+            log::debug!("   Result v{} is in register {}:{}", result_idx, ret_reg.bank, ret_reg.id);
         }
+        
+        // Update statistics
+        self.session.record_instruction_compiled("Call");
         
         Ok(())
     }
     
+    /// Helper function to set up an argument in its assigned location.
     fn compile_alloca_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
         log::trace!("📋 Compiling ALLOCA instruction");
         

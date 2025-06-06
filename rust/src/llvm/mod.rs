@@ -88,6 +88,7 @@ pub mod compiler;
 pub mod function_analysis;
 pub mod analysis_result;
 pub mod traits;
+pub mod call_support;
 
 // Main exports
 pub use compiler::{LlvmCompiler, CompiledFunction, LlvmCompilerError};

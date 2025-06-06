@@ -24,6 +24,21 @@ pub enum RegBank {
     Xmm = 1,
 }
 
+/// Argument attributes for calling convention.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArgAttribute {
+    /// No special attributes.
+    None,
+    /// Pass by value (copy entire struct).
+    ByVal { size: u32, align: u32 },
+    /// Struct return (hidden first parameter).
+    StructRet,
+    /// Sign extend the value.
+    SignExt,
+    /// Zero extend the value.
+    ZeroExt,
+}
+
 /// Argument assignment result from calling convention analysis.
 #[derive(Debug, Clone)]
 pub struct CCAssignment {
@@ -39,8 +54,8 @@ pub struct CCAssignment {
     pub reg: Option<AsmReg>,
     /// Stack offset (if assigned to stack).
     pub stack_off: Option<i32>,
-    /// Whether this is a pass-by-value argument.
-    pub byval: bool,
+    /// Argument attributes.
+    pub attribute: ArgAttribute,
 }
 
 impl CCAssignment {
@@ -53,7 +68,20 @@ impl CCAssignment {
             consecutive: 1,
             reg: None,
             stack_off: None,
-            byval: false,
+            attribute: ArgAttribute::None,
+        }
+    }
+    
+    /// Create a new assignment with attribute.
+    pub fn with_attribute(bank: RegBank, size: u32, align: u32, attribute: ArgAttribute) -> Self {
+        Self {
+            bank,
+            size,
+            align,
+            consecutive: 1,
+            reg: None,
+            stack_off: None,
+            attribute,
         }
     }
 }
@@ -215,6 +243,33 @@ impl CCAssigner for SysVAssigner {
     }
     
     fn assign_arg(&mut self, arg: &mut CCAssignment) {
+        // Handle special attributes
+        match arg.attribute {
+            ArgAttribute::ByVal { size, align } => {
+                // byval arguments are always passed on stack as a copy
+                let aligned_size = Self::align_up(size, 8);
+                self.stack = Self::align_up(self.stack, align.max(8));
+                arg.stack_off = Some(self.stack as i32);
+                self.stack += aligned_size;
+                return;
+            }
+            ArgAttribute::StructRet => {
+                // sret is always the first argument and goes in RDI
+                if self.gp_cnt == 0 {
+                    arg.reg = Some(Self::GP_ARG_REGS[0]);
+                    self.gp_cnt = 1;
+                } else {
+                    // This shouldn't happen - sret should be first arg
+                    log::warn!("sret argument not first - assigning to stack");
+                    self.stack = Self::align_up(self.stack, 8);
+                    arg.stack_off = Some(self.stack as i32);
+                    self.stack += 8;
+                }
+                return;
+            }
+            _ => {} // Handle normally
+        }
+        
         match arg.bank {
             RegBank::GeneralPurpose => {
                 if !self.must_assign_stack && 
