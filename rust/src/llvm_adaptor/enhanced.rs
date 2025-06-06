@@ -989,7 +989,7 @@ mod tests {
     }
 
     #[test]
-    fn test_block_successor_extraction() {
+    fn test_enhanced_block_successor_extraction() {
         let context = Context::create();
         let module = create_factorial_function(&context);
         let mut adaptor = EnhancedLlvmAdaptor::new(&module);

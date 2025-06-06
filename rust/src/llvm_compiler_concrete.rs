@@ -1736,7 +1736,7 @@ mod tests {
     }
     
     #[test]
-    fn test_session_statistics() {
+    fn test_llvm_compiler_session_statistics() {
         let context = Context::create();
         let module = create_simple_module(&context);
         let arena = Bump::new();

@@ -12,7 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🧪 Testing GEP instruction compilation...");
     
     let context = Context::create();
-    let module = create_gep_test_module(&context);
+    let module = create_example_gep_module(&context);
     
     // Create enhanced adaptor and compiler
     let mut adaptor = EnhancedLlvmAdaptor::new(&module);
@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Create test module with various GEP patterns.
-fn create_gep_test_module(context: &Context) -> inkwell::module::Module {
+fn create_example_gep_module(context: &Context) -> inkwell::module::Module {
     let module = context.create_module("gep_test");
     let i32_type = context.i32_type();
     let ptr_type = context.ptr_type(inkwell::AddressSpace::default());
