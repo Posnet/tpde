@@ -19,7 +19,7 @@
 //! to emit actual executable machine code for basic arithmetic and control flow.
 
 use crate::core::register_file::AsmReg;
-use iced_x86::code_asm::*;
+use iced_x86::code_asm::{*, registers::cl};
 use std::collections::HashMap;
 
 
@@ -262,6 +262,100 @@ impl X64Encoder {
         
         let mem = qword_ptr(base_reg + offset);
         self.assembler.mov(mem, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    // ==== MOV VARIANTS FOR DIFFERENT SIZES ====
+    
+    /// Emit MOV instruction - register to register (16-bit).
+    pub fn mov16_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp16_register(dst)?;
+        let src_reg = self.to_gp16_register(src)?;
+        
+        self.assembler.mov(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit MOV instruction - register to register (8-bit).
+    pub fn mov8_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp8_register(dst)?;
+        let src_reg = self.to_gp8_register(src)?;
+        
+        self.assembler.mov(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    // ==== SIGN/ZERO EXTENSION INSTRUCTIONS ====
+    
+    /// Emit MOVSX instruction - 8-bit to 32-bit sign extension.
+    pub fn movsx_reg8_to_reg32(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp32_register(dst)?;
+        let src_reg = self.to_gp8_register(src)?;
+        
+        self.assembler.movsx(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit MOVSX instruction - 8-bit to 64-bit sign extension.
+    pub fn movsx_reg8_to_reg64(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp_register(dst)?;
+        let src_reg = self.to_gp8_register(src)?;
+        
+        self.assembler.movsx(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit MOVSX instruction - 16-bit to 32-bit sign extension.
+    pub fn movsx_reg16_to_reg32(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp32_register(dst)?;
+        let src_reg = self.to_gp16_register(src)?;
+        
+        self.assembler.movsx(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit MOVSX instruction - 16-bit to 64-bit sign extension.
+    pub fn movsx_reg16_to_reg64(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp_register(dst)?;
+        let src_reg = self.to_gp16_register(src)?;
+        
+        self.assembler.movsx(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit MOVSXD instruction - 32-bit to 64-bit sign extension.
+    pub fn movsxd_reg32_to_reg64(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp_register(dst)?;
+        let src_reg = self.to_gp32_register(src)?;
+        
+        self.assembler.movsxd(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit MOVZX instruction - 8-bit to 32-bit zero extension.
+    pub fn movzx_reg8_to_reg32(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp32_register(dst)?;
+        let src_reg = self.to_gp8_register(src)?;
+        
+        self.assembler.movzx(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit MOVZX instruction - 16-bit to 32-bit zero extension.
+    pub fn movzx_reg16_to_reg32(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp32_register(dst)?;
+        let src_reg = self.to_gp16_register(src)?;
+        
+        self.assembler.movzx(dst_reg, src_reg)
             .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
         Ok(())
     }
@@ -619,6 +713,124 @@ impl X64Encoder {
         let dst_reg = self.to_gp_register(dst)?;
         
         self.assembler.and(dst_reg, imm)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    // ==== BITWISE OPERATIONS ====
+    
+    /// Emit AND instruction - register to register (32-bit).
+    pub fn and32_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp32_register(dst)?;
+        let src_reg = self.to_gp32_register(src)?;
+        
+        self.assembler.and(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit AND instruction - register to register (64-bit).
+    pub fn and64_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp_register(dst)?;
+        let src_reg = self.to_gp_register(src)?;
+        
+        self.assembler.and(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit OR instruction - register to register (32-bit).
+    pub fn or32_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp32_register(dst)?;
+        let src_reg = self.to_gp32_register(src)?;
+        
+        self.assembler.or(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit OR instruction - register to register (64-bit).
+    pub fn or64_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp_register(dst)?;
+        let src_reg = self.to_gp_register(src)?;
+        
+        self.assembler.or(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit XOR instruction - register to register (32-bit).
+    pub fn xor32_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp32_register(dst)?;
+        let src_reg = self.to_gp32_register(src)?;
+        
+        self.assembler.xor(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit XOR instruction - register to register (64-bit).
+    pub fn xor64_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp_register(dst)?;
+        let src_reg = self.to_gp_register(src)?;
+        
+        self.assembler.xor(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    // ==== SHIFT OPERATIONS ====
+    
+    /// Emit SHL instruction - shift left by CL (32-bit).
+    pub fn shl32_reg_cl(&mut self, dst: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp32_register(dst)?;
+        
+        self.assembler.shl(dst_reg, cl)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit SHL instruction - shift left by CL (64-bit).
+    pub fn shl64_reg_cl(&mut self, dst: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp_register(dst)?;
+        
+        self.assembler.shl(dst_reg, cl)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit SHR instruction - logical shift right by CL (32-bit).
+    pub fn shr32_reg_cl(&mut self, dst: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp32_register(dst)?;
+        
+        self.assembler.shr(dst_reg, cl)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit SHR instruction - logical shift right by CL (64-bit).
+    pub fn shr64_reg_cl(&mut self, dst: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp_register(dst)?;
+        
+        self.assembler.shr(dst_reg, cl)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit SAR instruction - arithmetic shift right by CL (32-bit).
+    pub fn sar32_reg_cl(&mut self, dst: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp32_register(dst)?;
+        
+        self.assembler.sar(dst_reg, cl)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit SAR instruction - arithmetic shift right by CL (64-bit).
+    pub fn sar64_reg_cl(&mut self, dst: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp_register(dst)?;
+        
+        self.assembler.sar(dst_reg, cl)
             .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
         Ok(())
     }

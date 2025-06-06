@@ -30,7 +30,11 @@
       "mcp__cursor_rust_tools__cargo_test",
       "Bash(chmod:*)",
       "Bash(RUST_LOG=info cargo run --example test_real_codegen 2 >& 1)",
-      "Bash(git mv:*)"
+      "Bash(git mv:*)",
+      "Bash(RUST_LOG=trace cargo test test_phi_swap_cycle --release -- --nocapture 2 >& 1)",
+      "Bash(RUST_LOG=debug cargo test test_phi_swap_cycle --release -- --nocapture 2 >& 1)",
+      "Bash(RUST_LOG=debug cargo test --test phi_resolution_test test_phi_swap_cycle -- --nocapture 2 >& 1)",
+      "Bash(RUST_LOG=trace cargo test --test phi_resolution_test test_phi_swap_cycle -- --nocapture 2 >& 1)"
     ],
     "deny": []
   }

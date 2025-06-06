@@ -190,6 +190,9 @@ pub enum LlvmCompilerError {
     /// Function not found.
     FunctionNotFound(String),
     
+    /// Invalid instruction format.
+    InvalidInstruction(String),
+    
     /// Session error.
     Session(crate::core::session::SessionError),
 }
@@ -202,6 +205,7 @@ impl std::fmt::Display for LlvmCompilerError {
             LlvmCompilerError::CodeGeneration(msg) => write!(f, "Code generation error: {}", msg),
             LlvmCompilerError::UnsupportedInstruction(msg) => write!(f, "Unsupported instruction: {}", msg),
             LlvmCompilerError::FunctionNotFound(msg) => write!(f, "Function not found: {}", msg),
+            LlvmCompilerError::InvalidInstruction(msg) => write!(f, "Invalid instruction: {}", msg),
             LlvmCompilerError::Session(err) => write!(f, "Session error: {}", err),
         }
     }
@@ -479,6 +483,12 @@ where
             InstructionOpcode::Add => self.compile_add_instruction(instruction),
             InstructionOpcode::Sub => self.compile_sub_instruction(instruction),
             InstructionOpcode::Mul => self.compile_mul_instruction(instruction),
+            InstructionOpcode::And => self.compile_and_instruction(instruction),
+            InstructionOpcode::Or => self.compile_or_instruction(instruction),
+            InstructionOpcode::Xor => self.compile_xor_instruction(instruction),
+            InstructionOpcode::Shl => self.compile_shl_instruction(instruction),
+            InstructionOpcode::LShr => self.compile_lshr_instruction(instruction),
+            InstructionOpcode::AShr => self.compile_ashr_instruction(instruction),
             InstructionOpcode::ICmp => self.compile_icmp_instruction(instruction),
             InstructionOpcode::Load => self.compile_load_instruction(instruction),
             InstructionOpcode::Store => self.compile_store_instruction(instruction),
@@ -488,6 +498,9 @@ where
             InstructionOpcode::Call => self.compile_call_instruction(instruction),
             InstructionOpcode::Alloca => self.compile_alloca_instruction(instruction),
             InstructionOpcode::Phi => self.compile_phi_instruction(instruction),
+            InstructionOpcode::SExt => self.compile_sext_instruction(instruction),
+            InstructionOpcode::ZExt => self.compile_zext_instruction(instruction),
+            InstructionOpcode::Trunc => self.compile_trunc_instruction(instruction),
             
             _ => {
                 log::warn!("⚠️  Unsupported instruction: {:?}", instruction.get_opcode());
@@ -848,6 +861,748 @@ where
             encoder.mov_reg_reg(result_reg, rax)
                 .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to mov from rax: {:?}", e)))?;
             log::trace!("   Generated: mov {}:{}, rax", result_reg.bank, result_reg.id);
+        }
+        
+        Ok(())
+    }
+    
+    /// Compile AND instruction.
+    fn compile_and_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
+        log::trace!("🔧 Compiling AND instruction");
+        
+        let context = self.setup_binary_operation(instruction)?;
+        let (left_reg, right_reg, result_reg) = self.allocate_binary_op_registers(&context, true)?;
+        
+        let encoder = self.codegen.encoder_mut();
+        
+        match context.bit_width {
+            32 => {
+                if result_reg == left_reg {
+                    encoder.and32_reg_reg(result_reg, right_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit and32: {:?}", e)))?;
+                    log::trace!("   Generated: and32 {}:{}, {}:{}", 
+                             result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
+                } else {
+                    // Move left to result first
+                    encoder.mov32_reg_reg(result_reg, left_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov32: {:?}", e)))?;
+                    encoder.and32_reg_reg(result_reg, right_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit and32: {:?}", e)))?;
+                    log::trace!("   Generated: mov32 {}:{}, {}:{}; and32 {}:{}, {}:{}", 
+                             result_reg.bank, result_reg.id, left_reg.bank, left_reg.id,
+                             result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
+                }
+            }
+            64 => {
+                if result_reg == left_reg {
+                    encoder.and64_reg_reg(result_reg, right_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit and64: {:?}", e)))?;
+                    log::trace!("   Generated: and64 {}:{}, {}:{}", 
+                             result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
+                } else {
+                    // Move left to result first
+                    encoder.mov_reg_reg(result_reg, left_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov: {:?}", e)))?;
+                    encoder.and64_reg_reg(result_reg, right_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit and64: {:?}", e)))?;
+                    log::trace!("   Generated: mov {}:{}, {}:{}; and64 {}:{}, {}:{}", 
+                             result_reg.bank, result_reg.id, left_reg.bank, left_reg.id,
+                             result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
+                }
+            }
+            _ => {
+                return Err(LlvmCompilerError::UnsupportedInstruction(
+                    format!("AND instruction with {}-bit width not supported", context.bit_width)
+                ));
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Compile OR instruction.
+    fn compile_or_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
+        log::trace!("🔧 Compiling OR instruction");
+        
+        let context = self.setup_binary_operation(instruction)?;
+        let (left_reg, right_reg, result_reg) = self.allocate_binary_op_registers(&context, true)?;
+        
+        let encoder = self.codegen.encoder_mut();
+        
+        match context.bit_width {
+            32 => {
+                if result_reg == left_reg {
+                    encoder.or32_reg_reg(result_reg, right_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit or32: {:?}", e)))?;
+                    log::trace!("   Generated: or32 {}:{}, {}:{}", 
+                             result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
+                } else {
+                    // Move left to result first
+                    encoder.mov32_reg_reg(result_reg, left_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov32: {:?}", e)))?;
+                    encoder.or32_reg_reg(result_reg, right_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit or32: {:?}", e)))?;
+                    log::trace!("   Generated: mov32 {}:{}, {}:{}; or32 {}:{}, {}:{}", 
+                             result_reg.bank, result_reg.id, left_reg.bank, left_reg.id,
+                             result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
+                }
+            }
+            64 => {
+                if result_reg == left_reg {
+                    encoder.or64_reg_reg(result_reg, right_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit or64: {:?}", e)))?;
+                    log::trace!("   Generated: or64 {}:{}, {}:{}", 
+                             result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
+                } else {
+                    // Move left to result first
+                    encoder.mov_reg_reg(result_reg, left_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov: {:?}", e)))?;
+                    encoder.or64_reg_reg(result_reg, right_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit or64: {:?}", e)))?;
+                    log::trace!("   Generated: mov {}:{}, {}:{}; or64 {}:{}, {}:{}", 
+                             result_reg.bank, result_reg.id, left_reg.bank, left_reg.id,
+                             result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
+                }
+            }
+            _ => {
+                return Err(LlvmCompilerError::UnsupportedInstruction(
+                    format!("OR instruction with {}-bit width not supported", context.bit_width)
+                ));
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Compile XOR instruction.
+    fn compile_xor_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
+        log::trace!("🔧 Compiling XOR instruction");
+        
+        let context = self.setup_binary_operation(instruction)?;
+        let (left_reg, right_reg, result_reg) = self.allocate_binary_op_registers(&context, true)?;
+        
+        let encoder = self.codegen.encoder_mut();
+        
+        match context.bit_width {
+            32 => {
+                if result_reg == left_reg {
+                    encoder.xor32_reg_reg(result_reg, right_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit xor32: {:?}", e)))?;
+                    log::trace!("   Generated: xor32 {}:{}, {}:{}", 
+                             result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
+                } else {
+                    // Move left to result first
+                    encoder.mov32_reg_reg(result_reg, left_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov32: {:?}", e)))?;
+                    encoder.xor32_reg_reg(result_reg, right_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit xor32: {:?}", e)))?;
+                    log::trace!("   Generated: mov32 {}:{}, {}:{}; xor32 {}:{}, {}:{}", 
+                             result_reg.bank, result_reg.id, left_reg.bank, left_reg.id,
+                             result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
+                }
+            }
+            64 => {
+                if result_reg == left_reg {
+                    encoder.xor64_reg_reg(result_reg, right_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit xor64: {:?}", e)))?;
+                    log::trace!("   Generated: xor64 {}:{}, {}:{}", 
+                             result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
+                } else {
+                    // Move left to result first
+                    encoder.mov_reg_reg(result_reg, left_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov: {:?}", e)))?;
+                    encoder.xor64_reg_reg(result_reg, right_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit xor64: {:?}", e)))?;
+                    log::trace!("   Generated: mov {}:{}, {}:{}; xor64 {}:{}, {}:{}", 
+                             result_reg.bank, result_reg.id, left_reg.bank, left_reg.id,
+                             result_reg.bank, result_reg.id, right_reg.bank, right_reg.id);
+                }
+            }
+            _ => {
+                return Err(LlvmCompilerError::UnsupportedInstruction(
+                    format!("XOR instruction with {}-bit width not supported", context.bit_width)
+                ));
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Compile shift left (shl) instruction.
+    fn compile_shl_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
+        log::trace!("⬅️  Compiling SHL (shift left) instruction");
+        
+        let context = self.setup_binary_operation(instruction)?;
+        let (left_reg, right_reg, result_reg) = self.allocate_binary_op_registers(&context, false)?;
+        
+        let encoder = self.codegen.encoder_mut();
+        
+        match context.bit_width {
+            32 => {
+                // For shifts, the count must be in CL (lower 8 bits of RCX)
+                let rcx = AsmReg::new(0, 1); // RCX
+                
+                // Save RCX if it's in use
+                let saved_rcx = if self.register_file.is_allocated(rcx) {
+                    // Allocate a temporary register to save RCX
+                    // Use a dummy value index for the temporary
+                    let temp_idx = 0xFFFF;
+                    let temp = self.register_file.allocate_reg(0, temp_idx, 0, None)
+                        .map_err(|_| LlvmCompilerError::RegisterAllocation(
+                            "Failed to allocate scratch register for RCX save".to_string()
+                        ))?;
+                    encoder.mov_reg_reg(temp, rcx)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to save RCX: {:?}", e)))?;
+                    Some(temp)
+                } else {
+                    None
+                };
+                
+                // Move shift count to RCX
+                encoder.mov32_reg_reg(rcx, right_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to move to RCX: {:?}", e)))?;
+                
+                // Move value to result if needed
+                if result_reg != left_reg {
+                    encoder.mov32_reg_reg(result_reg, left_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to move to result: {:?}", e)))?;
+                }
+                
+                // Emit SHL instruction
+                encoder.shl32_reg_cl(result_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit shl32: {:?}", e)))?;
+                
+                // Restore RCX if needed
+                if let Some(temp) = saved_rcx {
+                    encoder.mov_reg_reg(rcx, temp)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to restore RCX: {:?}", e)))?;
+                    self.register_file.free_register(temp)
+                        .map_err(|_| LlvmCompilerError::RegisterAllocation("Failed to free temp register".to_string()))?;
+                }
+                
+                log::trace!("   Generated: shl32 {}:{}, cl", result_reg.bank, result_reg.id);
+            }
+            64 => {
+                // Similar for 64-bit
+                let rcx = AsmReg::new(0, 1); // RCX
+                
+                let saved_rcx = if self.register_file.is_allocated(rcx) {
+                    let temp_idx = 0xFFFF;
+                    let temp = self.register_file.allocate_reg(0, temp_idx, 0, None)
+                        .map_err(|_| LlvmCompilerError::RegisterAllocation(
+                            "Failed to allocate scratch register for RCX save".to_string()
+                        ))?;
+                    encoder.mov_reg_reg(temp, rcx)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to save RCX: {:?}", e)))?;
+                    Some(temp)
+                } else {
+                    None
+                };
+                
+                encoder.mov_reg_reg(rcx, right_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to move to RCX: {:?}", e)))?;
+                
+                if result_reg != left_reg {
+                    encoder.mov_reg_reg(result_reg, left_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to move to result: {:?}", e)))?;
+                }
+                
+                encoder.shl64_reg_cl(result_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit shl64: {:?}", e)))?;
+                
+                if let Some(temp) = saved_rcx {
+                    encoder.mov_reg_reg(rcx, temp)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to restore RCX: {:?}", e)))?;
+                    self.register_file.free_register(temp)
+                        .map_err(|_| LlvmCompilerError::RegisterAllocation("Failed to free temp register".to_string()))?;
+                }
+                
+                log::trace!("   Generated: shl64 {}:{}, cl", result_reg.bank, result_reg.id);
+            }
+            _ => {
+                return Err(LlvmCompilerError::UnsupportedInstruction(
+                    format!("SHL instruction with {}-bit width not supported", context.bit_width)
+                ));
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Compile logical shift right (lshr) instruction.
+    fn compile_lshr_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
+        log::trace!("➡️  Compiling LSHR (logical shift right) instruction");
+        
+        let context = self.setup_binary_operation(instruction)?;
+        let (left_reg, right_reg, result_reg) = self.allocate_binary_op_registers(&context, false)?;
+        
+        let encoder = self.codegen.encoder_mut();
+        
+        match context.bit_width {
+            32 => {
+                let rcx = AsmReg::new(0, 1); // RCX
+                
+                let saved_rcx = if self.register_file.is_allocated(rcx) {
+                    let temp_idx = 0xFFFF;
+                    let temp = self.register_file.allocate_reg(0, temp_idx, 0, None)
+                        .map_err(|_| LlvmCompilerError::RegisterAllocation(
+                            "Failed to allocate scratch register for RCX save".to_string()
+                        ))?;
+                    encoder.mov_reg_reg(temp, rcx)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to save RCX: {:?}", e)))?;
+                    Some(temp)
+                } else {
+                    None
+                };
+                
+                encoder.mov32_reg_reg(rcx, right_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to move to RCX: {:?}", e)))?;
+                
+                if result_reg != left_reg {
+                    encoder.mov32_reg_reg(result_reg, left_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to move to result: {:?}", e)))?;
+                }
+                
+                encoder.shr32_reg_cl(result_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit shr32: {:?}", e)))?;
+                
+                if let Some(temp) = saved_rcx {
+                    encoder.mov_reg_reg(rcx, temp)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to restore RCX: {:?}", e)))?;
+                    self.register_file.free_register(temp)
+                        .map_err(|_| LlvmCompilerError::RegisterAllocation("Failed to free temp register".to_string()))?;
+                }
+                
+                log::trace!("   Generated: shr32 {}:{}, cl", result_reg.bank, result_reg.id);
+            }
+            64 => {
+                let rcx = AsmReg::new(0, 1); // RCX
+                
+                let saved_rcx = if self.register_file.is_allocated(rcx) {
+                    let temp_idx = 0xFFFF;
+                    let temp = self.register_file.allocate_reg(0, temp_idx, 0, None)
+                        .map_err(|_| LlvmCompilerError::RegisterAllocation(
+                            "Failed to allocate scratch register for RCX save".to_string()
+                        ))?;
+                    encoder.mov_reg_reg(temp, rcx)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to save RCX: {:?}", e)))?;
+                    Some(temp)
+                } else {
+                    None
+                };
+                
+                encoder.mov_reg_reg(rcx, right_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to move to RCX: {:?}", e)))?;
+                
+                if result_reg != left_reg {
+                    encoder.mov_reg_reg(result_reg, left_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to move to result: {:?}", e)))?;
+                }
+                
+                encoder.shr64_reg_cl(result_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit shr64: {:?}", e)))?;
+                
+                if let Some(temp) = saved_rcx {
+                    encoder.mov_reg_reg(rcx, temp)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to restore RCX: {:?}", e)))?;
+                    self.register_file.free_register(temp)
+                        .map_err(|_| LlvmCompilerError::RegisterAllocation("Failed to free temp register".to_string()))?;
+                }
+                
+                log::trace!("   Generated: shr64 {}:{}, cl", result_reg.bank, result_reg.id);
+            }
+            _ => {
+                return Err(LlvmCompilerError::UnsupportedInstruction(
+                    format!("LSHR instruction with {}-bit width not supported", context.bit_width)
+                ));
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Compile arithmetic shift right (ashr) instruction.
+    fn compile_ashr_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
+        log::trace!("➡️  Compiling ASHR (arithmetic shift right) instruction");
+        
+        let context = self.setup_binary_operation(instruction)?;
+        let (left_reg, right_reg, result_reg) = self.allocate_binary_op_registers(&context, false)?;
+        
+        let encoder = self.codegen.encoder_mut();
+        
+        match context.bit_width {
+            32 => {
+                let rcx = AsmReg::new(0, 1); // RCX
+                
+                let saved_rcx = if self.register_file.is_allocated(rcx) {
+                    let temp_idx = 0xFFFF;
+                    let temp = self.register_file.allocate_reg(0, temp_idx, 0, None)
+                        .map_err(|_| LlvmCompilerError::RegisterAllocation(
+                            "Failed to allocate scratch register for RCX save".to_string()
+                        ))?;
+                    encoder.mov_reg_reg(temp, rcx)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to save RCX: {:?}", e)))?;
+                    Some(temp)
+                } else {
+                    None
+                };
+                
+                encoder.mov32_reg_reg(rcx, right_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to move to RCX: {:?}", e)))?;
+                
+                if result_reg != left_reg {
+                    encoder.mov32_reg_reg(result_reg, left_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to move to result: {:?}", e)))?;
+                }
+                
+                encoder.sar32_reg_cl(result_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit sar32: {:?}", e)))?;
+                
+                if let Some(temp) = saved_rcx {
+                    encoder.mov_reg_reg(rcx, temp)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to restore RCX: {:?}", e)))?;
+                    self.register_file.free_register(temp)
+                        .map_err(|_| LlvmCompilerError::RegisterAllocation("Failed to free temp register".to_string()))?;
+                }
+                
+                log::trace!("   Generated: sar32 {}:{}, cl", result_reg.bank, result_reg.id);
+            }
+            64 => {
+                let rcx = AsmReg::new(0, 1); // RCX
+                
+                let saved_rcx = if self.register_file.is_allocated(rcx) {
+                    let temp_idx = 0xFFFF;
+                    let temp = self.register_file.allocate_reg(0, temp_idx, 0, None)
+                        .map_err(|_| LlvmCompilerError::RegisterAllocation(
+                            "Failed to allocate scratch register for RCX save".to_string()
+                        ))?;
+                    encoder.mov_reg_reg(temp, rcx)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to save RCX: {:?}", e)))?;
+                    Some(temp)
+                } else {
+                    None
+                };
+                
+                encoder.mov_reg_reg(rcx, right_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to move to RCX: {:?}", e)))?;
+                
+                if result_reg != left_reg {
+                    encoder.mov_reg_reg(result_reg, left_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to move to result: {:?}", e)))?;
+                }
+                
+                encoder.sar64_reg_cl(result_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit sar64: {:?}", e)))?;
+                
+                if let Some(temp) = saved_rcx {
+                    encoder.mov_reg_reg(rcx, temp)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to restore RCX: {:?}", e)))?;
+                    self.register_file.free_register(temp)
+                        .map_err(|_| LlvmCompilerError::RegisterAllocation("Failed to free temp register".to_string()))?;
+                }
+                
+                log::trace!("   Generated: sar64 {}:{}, cl", result_reg.bank, result_reg.id);
+            }
+            _ => {
+                return Err(LlvmCompilerError::UnsupportedInstruction(
+                    format!("ASHR instruction with {}-bit width not supported", context.bit_width)
+                ));
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Compile sign extension (sext) instruction.
+    fn compile_sext_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
+        log::trace!("📏 Compiling SEXT (sign extend) instruction");
+        
+        // SExt has one operand (source) and one result
+        let operand = instruction.get_operand(0).unwrap().left().unwrap();
+        let src_idx = self.get_or_create_value_index(operand)?;
+        
+        // Get source and destination types
+        let src_type = operand.get_type().into_int_type();
+        let dst_type = instruction.get_type().into_int_type();
+        let src_bits = src_type.get_bit_width();
+        let dst_bits = dst_type.get_bit_width();
+        
+        // Create result value
+        use inkwell::values::AsValueRef;
+        let inst_ptr = instruction.as_value_ref() as usize;
+        let result_idx = inst_ptr % 1024;
+        
+        // Create value assignments
+        let src_size = (src_bits / 8) as u8;
+        let dst_size = (dst_bits / 8) as u8;
+        if self.value_mgr.get_assignment(src_idx).is_none() {
+            self.value_mgr.create_assignment(src_idx, 1, src_size);
+        }
+        if self.value_mgr.get_assignment(result_idx).is_none() {
+            self.value_mgr.create_assignment(result_idx, 1, dst_size);
+        }
+        
+        // Load source value
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+        let mut src_ref = ValuePartRef::new(src_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create src ref: {:?}", e)))?;
+        let src_reg = src_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load source: {:?}", e)))?;
+        
+        // Allocate result register
+        let mut result_ref = ValuePartRef::new(result_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create result ref: {:?}", e)))?;
+        let result_reg = result_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to allocate result: {:?}", e)))?;
+        
+        let encoder = self.codegen.encoder_mut();
+        
+        match (src_bits, dst_bits) {
+            (8, 16) => {
+                // MOVSX from 8-bit to 16-bit - use 32-bit movsx and then move to 16-bit register
+                encoder.movsx_reg8_to_reg32(result_reg, src_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit movsx8->16: {:?}", e)))?;
+                log::trace!("   Generated: movsx {}:{}, byte {}:{} (via 32-bit)", 
+                         result_reg.bank, result_reg.id, src_reg.bank, src_reg.id);
+            }
+            (8, 32) => {
+                // MOVSX from 8-bit to 32-bit
+                encoder.movsx_reg8_to_reg32(result_reg, src_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit movsx8->32: {:?}", e)))?;
+                log::trace!("   Generated: movsx {}:{}, byte {}:{}", 
+                         result_reg.bank, result_reg.id, src_reg.bank, src_reg.id);
+            }
+            (8, 64) => {
+                // MOVSX from 8-bit to 64-bit
+                encoder.movsx_reg8_to_reg64(result_reg, src_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit movsx8->64: {:?}", e)))?;
+                log::trace!("   Generated: movsx {}:{}, byte {}:{}", 
+                         result_reg.bank, result_reg.id, src_reg.bank, src_reg.id);
+            }
+            (16, 32) => {
+                // MOVSX from 16-bit to 32-bit
+                encoder.movsx_reg16_to_reg32(result_reg, src_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit movsx16->32: {:?}", e)))?;
+                log::trace!("   Generated: movsx {}:{}, word {}:{}", 
+                         result_reg.bank, result_reg.id, src_reg.bank, src_reg.id);
+            }
+            (16, 64) => {
+                // MOVSX from 16-bit to 64-bit
+                encoder.movsx_reg16_to_reg64(result_reg, src_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit movsx16->64: {:?}", e)))?;
+                log::trace!("   Generated: movsx {}:{}, word {}:{}", 
+                         result_reg.bank, result_reg.id, src_reg.bank, src_reg.id);
+            }
+            (32, 64) => {
+                // MOVSXD from 32-bit to 64-bit
+                encoder.movsxd_reg32_to_reg64(result_reg, src_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit movsxd: {:?}", e)))?;
+                log::trace!("   Generated: movsxd {}:{}, {}:{}", 
+                         result_reg.bank, result_reg.id, src_reg.bank, src_reg.id);
+            }
+            _ => {
+                return Err(LlvmCompilerError::UnsupportedInstruction(
+                    format!("SEXT from {}-bit to {}-bit not supported", src_bits, dst_bits)
+                ));
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Compile zero extension (zext) instruction.
+    fn compile_zext_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
+        log::trace!("📏 Compiling ZEXT (zero extend) instruction");
+        
+        // ZExt has one operand (source) and one result
+        let operand = instruction.get_operand(0).unwrap().left().unwrap();
+        let src_idx = self.get_or_create_value_index(operand)?;
+        
+        // Get source and destination types
+        let src_type = operand.get_type().into_int_type();
+        let dst_type = instruction.get_type().into_int_type();
+        let src_bits = src_type.get_bit_width();
+        let dst_bits = dst_type.get_bit_width();
+        
+        // Create result value
+        use inkwell::values::AsValueRef;
+        let inst_ptr = instruction.as_value_ref() as usize;
+        let result_idx = inst_ptr % 1024;
+        
+        // Create value assignments
+        let src_size = (src_bits / 8) as u8;
+        let dst_size = (dst_bits / 8) as u8;
+        if self.value_mgr.get_assignment(src_idx).is_none() {
+            self.value_mgr.create_assignment(src_idx, 1, src_size);
+        }
+        if self.value_mgr.get_assignment(result_idx).is_none() {
+            self.value_mgr.create_assignment(result_idx, 1, dst_size);
+        }
+        
+        // Load source value
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+        let mut src_ref = ValuePartRef::new(src_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create src ref: {:?}", e)))?;
+        let src_reg = src_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load source: {:?}", e)))?;
+        
+        // Allocate result register
+        let mut result_ref = ValuePartRef::new(result_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create result ref: {:?}", e)))?;
+        let result_reg = result_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to allocate result: {:?}", e)))?;
+        
+        let encoder = self.codegen.encoder_mut();
+        
+        match (src_bits, dst_bits) {
+            (8, 32) | (16, 32) => {
+                // MOVZX to 32-bit
+                if src_bits == 8 {
+                    encoder.movzx_reg8_to_reg32(result_reg, src_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit movzx8->32: {:?}", e)))?;
+                    log::trace!("   Generated: movzx {}:{}, byte {}:{}", 
+                             result_reg.bank, result_reg.id, src_reg.bank, src_reg.id);
+                } else {
+                    encoder.movzx_reg16_to_reg32(result_reg, src_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit movzx16->32: {:?}", e)))?;
+                    log::trace!("   Generated: movzx {}:{}, word {}:{}", 
+                             result_reg.bank, result_reg.id, src_reg.bank, src_reg.id);
+                }
+            }
+            (8, 64) | (16, 64) => {
+                // MOVZX to 64-bit (actually uses 32-bit movzx which zero-extends upper 32 bits)
+                if src_bits == 8 {
+                    encoder.movzx_reg8_to_reg32(result_reg, src_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit movzx8->64: {:?}", e)))?;
+                    log::trace!("   Generated: movzx {}:{}, byte {}:{} (zero-extends to 64)", 
+                             result_reg.bank, result_reg.id, src_reg.bank, src_reg.id);
+                } else {
+                    encoder.movzx_reg16_to_reg32(result_reg, src_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit movzx16->64: {:?}", e)))?;
+                    log::trace!("   Generated: movzx {}:{}, word {}:{} (zero-extends to 64)", 
+                             result_reg.bank, result_reg.id, src_reg.bank, src_reg.id);
+                }
+            }
+            (32, 64) => {
+                // MOV 32-bit to 32-bit register automatically zero-extends to 64
+                encoder.mov32_reg_reg(result_reg, src_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov32: {:?}", e)))?;
+                log::trace!("   Generated: mov32 {}:{}, {}:{} (zero-extends to 64)", 
+                         result_reg.bank, result_reg.id, src_reg.bank, src_reg.id);
+            }
+            (1, _) => {
+                // Special case for i1 (boolean) - treat as 8-bit and zero extend
+                match dst_bits {
+                    32 => {
+                        encoder.movzx_reg8_to_reg32(result_reg, src_reg)
+                            .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit movzx1->32: {:?}", e)))?;
+                        log::trace!("   Generated: movzx {}:{}, byte {}:{} (i1 to i32)", 
+                                 result_reg.bank, result_reg.id, src_reg.bank, src_reg.id);
+                    }
+                    64 => {
+                        encoder.movzx_reg8_to_reg32(result_reg, src_reg)
+                            .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit movzx1->64: {:?}", e)))?;
+                        log::trace!("   Generated: movzx {}:{}, byte {}:{} (i1 to i64)", 
+                                 result_reg.bank, result_reg.id, src_reg.bank, src_reg.id);
+                    }
+                    _ => {
+                        return Err(LlvmCompilerError::UnsupportedInstruction(
+                            format!("ZEXT from i1 to i{} not supported", dst_bits)
+                        ));
+                    }
+                }
+            }
+            _ => {
+                return Err(LlvmCompilerError::UnsupportedInstruction(
+                    format!("ZEXT from {}-bit to {}-bit not supported", src_bits, dst_bits)
+                ));
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Compile truncation (trunc) instruction.
+    fn compile_trunc_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
+        log::trace!("✂️  Compiling TRUNC (truncate) instruction");
+        
+        // Trunc has one operand (source) and one result
+        let operand = instruction.get_operand(0).unwrap().left().unwrap();
+        let src_idx = self.get_or_create_value_index(operand)?;
+        
+        // Get source and destination types
+        let src_type = operand.get_type().into_int_type();
+        let dst_type = instruction.get_type().into_int_type();
+        let src_bits = src_type.get_bit_width();
+        let dst_bits = dst_type.get_bit_width();
+        
+        // Create result value
+        use inkwell::values::AsValueRef;
+        let inst_ptr = instruction.as_value_ref() as usize;
+        let result_idx = inst_ptr % 1024;
+        
+        // Create value assignments
+        let src_size = (src_bits / 8) as u8;
+        let dst_size = (dst_bits / 8) as u8;
+        if self.value_mgr.get_assignment(src_idx).is_none() {
+            self.value_mgr.create_assignment(src_idx, 1, src_size);
+        }
+        if self.value_mgr.get_assignment(result_idx).is_none() {
+            self.value_mgr.create_assignment(result_idx, 1, dst_size);
+        }
+        
+        // Load source value
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+        let mut src_ref = ValuePartRef::new(src_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create src ref: {:?}", e)))?;
+        let src_reg = src_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load source: {:?}", e)))?;
+        
+        // Allocate result register
+        let mut result_ref = ValuePartRef::new(result_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create result ref: {:?}", e)))?;
+        let result_reg = result_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to allocate result: {:?}", e)))?;
+        
+        let encoder = self.codegen.encoder_mut();
+        
+        // For truncation, we just move the value to the smaller register size
+        // The upper bits are naturally ignored
+        match (src_bits, dst_bits) {
+            (64, 32) | (32, 32) => {
+                // MOV to 32-bit register
+                encoder.mov32_reg_reg(result_reg, src_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov32 for trunc: {:?}", e)))?;
+                log::trace!("   Generated: mov32 {}:{}, {}:{} (truncate to 32)", 
+                         result_reg.bank, result_reg.id, src_reg.bank, src_reg.id);
+            }
+            (64, 16) | (32, 16) | (16, 16) => {
+                // MOV to 16-bit register
+                encoder.mov16_reg_reg(result_reg, src_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov16 for trunc: {:?}", e)))?;
+                log::trace!("   Generated: mov16 {}:{}, {}:{} (truncate to 16)", 
+                         result_reg.bank, result_reg.id, src_reg.bank, src_reg.id);
+            }
+            (64, 8) | (32, 8) | (16, 8) | (8, 8) => {
+                // MOV to 8-bit register
+                encoder.mov8_reg_reg(result_reg, src_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov8 for trunc: {:?}", e)))?;
+                log::trace!("   Generated: mov8 {}:{}, {}:{} (truncate to 8)", 
+                         result_reg.bank, result_reg.id, src_reg.bank, src_reg.id);
+            }
+            (_, 1) => {
+                // Special case for truncation to i1 (boolean)
+                // AND with 1 to keep only the lowest bit
+                encoder.and64_reg_imm(result_reg, 1)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit and for i1 trunc: {:?}", e)))?;
+                log::trace!("   Generated: and {}:{}, 1 (truncate to i1)", 
+                         result_reg.bank, result_reg.id);
+            }
+            _ => {
+                return Err(LlvmCompilerError::UnsupportedInstruction(
+                    format!("TRUNC from {}-bit to {}-bit not supported", src_bits, dst_bits)
+                ));
+            }
         }
         
         Ok(())
@@ -1405,8 +2160,71 @@ where
         Ok(())
     }
     
-    fn compile_alloca_instruction(&mut self, _instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
-        log::info!("📋 Compiling ALLOCA instruction (not yet implemented)");
+    fn compile_alloca_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
+        log::trace!("📋 Compiling ALLOCA instruction");
+        
+        // For now, we'll use a simplified approach to alloca
+        // We'll allocate a fixed size based on common patterns
+        // This will be improved to properly determine the allocated type
+        
+        // Default allocation size - we'll start with 8 bytes (64-bit value)
+        // In practice, we'd need to analyze the alloca instruction to determine the actual size
+        let size = 8u32;
+        let _num_elements = 1u32; // For now, assume single element
+        
+        // Check if this is an array alloca by looking at operands
+        let total_size = if instruction.get_num_operands() > 0 {
+            // Array alloca - try to get size
+            if let Some(const_val) = instruction.get_operand(0).and_then(|op| op.left()) {
+                if let inkwell::values::BasicValueEnum::IntValue(int_val) = const_val {
+                    if let Some(const_int) = int_val.get_zero_extended_constant() {
+                        size * (const_int as u32)
+                    } else {
+                        size * 10 // Default array size
+                    }
+                } else {
+                    size
+                }
+            } else {
+                size
+            }
+        } else {
+            size
+        };
+        
+        // Allocate stack space
+        let stack_offset = self.codegen.allocate_spill_slot(total_size);
+        log::debug!("   Allocated {} bytes at stack offset {}", total_size, stack_offset);
+        
+        // The result of alloca is a pointer to the allocated space
+        // We need to compute the address (rbp + offset) and store it in a register
+        use inkwell::values::AsValueRef;
+        let inst_ptr = instruction.as_value_ref() as usize;
+        let result_idx = inst_ptr % 1024;
+        
+        // Create value assignment for the pointer result
+        if self.value_mgr.get_assignment(result_idx).is_none() {
+            self.value_mgr.create_assignment(result_idx, 1, 8); // Pointer is 64-bit
+        }
+        
+        // Create compiler context
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+        
+        // Allocate register for the result pointer
+        let mut result_ref = ValuePartRef::new(result_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create result ref: {:?}", e)))?;
+        let result_reg = result_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to allocate result: {:?}", e)))?;
+        
+        // Generate LEA instruction to compute the address
+        let encoder = self.codegen.encoder_mut();
+        let rbp = AsmReg::new(0, 5); // RBP register
+        
+        encoder.lea(result_reg, rbp, None, 1, stack_offset)
+            .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit lea: {:?}", e)))?;
+        
+        log::trace!("   Generated: lea {}:{}, [rbp + {}]", result_reg.bank, result_reg.id, stack_offset);
+        
         Ok(())
     }
     
