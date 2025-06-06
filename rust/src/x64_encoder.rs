@@ -633,6 +633,34 @@ impl X64Encoder {
         Ok(())
     }
     
+    /// Emit MOV instruction - 8-bit memory to register.
+    pub fn mov8_reg_mem(&mut self, dst: AsmReg, base: AsmReg, offset: i32) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp8_register(dst)?;
+        let base_reg = self.to_gp_register(base)?;
+        
+        let mem = byte_ptr(base_reg + offset);
+        self.assembler.mov(dst_reg, mem)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit MOV instruction - 16-bit memory to register.
+    pub fn mov16_reg_mem(&mut self, dst: AsmReg, base: AsmReg, offset: i32) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp16_register(dst)?;
+        let base_reg = self.to_gp_register(base)?;
+        
+        let mem = word_ptr(base_reg + offset);
+        self.assembler.mov(dst_reg, mem)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+    
+    /// Emit MOV instruction - 64-bit memory to register.
+    pub fn mov64_reg_mem(&mut self, dst: AsmReg, base: AsmReg, offset: i32) -> Result<(), EncodingError> {
+        // Just use the existing mov_reg_mem which is already 64-bit
+        self.mov_reg_mem(dst, base, offset)
+    }
+    
     /// Emit MOV instruction - 8-bit register to memory.
     pub fn mov8_mem_reg(&mut self, base: AsmReg, offset: i32, src: AsmReg) -> Result<(), EncodingError> {
         let base_reg = self.to_gp_register(base)?;
@@ -664,6 +692,12 @@ impl X64Encoder {
         self.assembler.mov(mem, src_reg)
             .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
         Ok(())
+    }
+    
+    /// Emit MOV instruction - 64-bit register to memory.
+    pub fn mov64_mem_reg(&mut self, base: AsmReg, offset: i32, src: AsmReg) -> Result<(), EncodingError> {
+        // Just use the existing mov_mem_reg which is already 64-bit
+        self.mov_mem_reg(base, offset, src)
     }
     
     /// Emit direct CALL instruction (relative offset).

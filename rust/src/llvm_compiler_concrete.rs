@@ -813,13 +813,176 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
         Ok(())
     }
     
-    fn compile_load_instruction(&mut self, _instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
-        println!("📥 Compiling LOAD instruction (placeholder)");
+    fn compile_load_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
+        println!("📥 Compiling LOAD instruction");
+        
+        // Load instruction format: %result = load <type>, <type>* <pointer>
+        // Get the pointer operand (source address)
+        let ptr_operand = instruction.get_operand(0).unwrap().left().unwrap();
+        let ptr_idx = self.get_or_create_value_index(ptr_operand)?;
+        
+        // Get result type and size
+        let load_type = instruction.get_type();
+        let bit_width = match load_type {
+            inkwell::types::AnyTypeEnum::IntType(int_type) => int_type.get_bit_width(),
+            inkwell::types::AnyTypeEnum::FloatType(_) => 32,
+            inkwell::types::AnyTypeEnum::PointerType(_) => 64,
+            _ => return Err(LlvmCompilerError::UnsupportedInstruction(
+                format!("Unsupported load type: {:?}", load_type)
+            )),
+        };
+        let value_size = (bit_width / 8) as u8;
+        
+        // Create result value (the loaded value)
+        use inkwell::values::AsValueRef;
+        let inst_ptr = instruction.as_value_ref() as usize;
+        let result_idx = inst_ptr % 1024;
+        
+        // Create value assignments
+        if self.value_mgr.get_assignment(ptr_idx).is_none() {
+            self.value_mgr.create_assignment(ptr_idx, 1, 8); // Pointer is 64-bit
+        }
+        if self.value_mgr.get_assignment(result_idx).is_none() {
+            self.value_mgr.create_assignment(result_idx, 1, value_size);
+        }
+        
+        // Create compiler context
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+        
+        // Create value references
+        let mut ptr_ref = ValuePartRef::new(ptr_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create ptr ref: {:?}", e)))?;
+        let mut result_ref = ValuePartRef::new(result_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create result ref: {:?}", e)))?;
+        
+        // Load pointer to register
+        let ptr_reg = ptr_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load pointer: {:?}", e)))?;
+        
+        // Allocate register for result
+        let result_reg = result_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to allocate result: {:?}", e)))?;
+        
+        // Generate MOV instruction from memory to register
+        let encoder = self.codegen.encoder_mut();
+        
+        match bit_width {
+            8 => {
+                encoder.mov8_reg_mem(result_reg, ptr_reg, 0)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov8: {:?}", e)))?;
+                println!("   Generated: movb {}:{}, [{}:{}]", 
+                         result_reg.bank, result_reg.id, ptr_reg.bank, ptr_reg.id);
+            }
+            16 => {
+                encoder.mov16_reg_mem(result_reg, ptr_reg, 0)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov16: {:?}", e)))?;
+                println!("   Generated: movw {}:{}, [{}:{}]", 
+                         result_reg.bank, result_reg.id, ptr_reg.bank, ptr_reg.id);
+            }
+            32 => {
+                encoder.mov32_reg_mem(result_reg, ptr_reg, 0)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov32: {:?}", e)))?;
+                println!("   Generated: movl {}:{}, [{}:{}]", 
+                         result_reg.bank, result_reg.id, ptr_reg.bank, ptr_reg.id);
+            }
+            64 => {
+                encoder.mov64_reg_mem(result_reg, ptr_reg, 0)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov64: {:?}", e)))?;
+                println!("   Generated: movq {}:{}, [{}:{}]", 
+                         result_reg.bank, result_reg.id, ptr_reg.bank, ptr_reg.id);
+            }
+            _ => {
+                return Err(LlvmCompilerError::UnsupportedInstruction(
+                    format!("LOAD instruction with {}-bit width not supported", bit_width)
+                ));
+            }
+        }
+        
         Ok(())
     }
     
-    fn compile_store_instruction(&mut self, _instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
-        println!("📤 Compiling STORE instruction (placeholder)");
+    fn compile_store_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
+        println!("📤 Compiling STORE instruction");
+        
+        // Store instruction format: store <type> <value>, <type>* <pointer>
+        // Get the value to store (first operand)
+        let value_operand = instruction.get_operand(0).unwrap().left().unwrap();
+        let value_idx = self.get_or_create_value_index(value_operand)?;
+        
+        // Get the pointer destination (second operand)
+        let ptr_operand = instruction.get_operand(1).unwrap().left().unwrap();
+        let ptr_idx = self.get_or_create_value_index(ptr_operand)?;
+        
+        // Get value type and size from the value operand
+        let value_type = value_operand.get_type();
+        let bit_width = match value_type {
+            inkwell::types::BasicTypeEnum::IntType(int_type) => int_type.get_bit_width(),
+            inkwell::types::BasicTypeEnum::FloatType(_) => 32,
+            inkwell::types::BasicTypeEnum::PointerType(_) => 64,
+            _ => return Err(LlvmCompilerError::UnsupportedInstruction(
+                format!("Unsupported store type: {:?}", value_type)
+            )),
+        };
+        let value_size = (bit_width / 8) as u8;
+        
+        // Create value assignments
+        if self.value_mgr.get_assignment(value_idx).is_none() {
+            self.value_mgr.create_assignment(value_idx, 1, value_size);
+        }
+        if self.value_mgr.get_assignment(ptr_idx).is_none() {
+            self.value_mgr.create_assignment(ptr_idx, 1, 8); // Pointer is 64-bit
+        }
+        
+        // Create compiler context
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+        
+        // Create value references
+        let mut value_ref = ValuePartRef::new(value_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create value ref: {:?}", e)))?;
+        let mut ptr_ref = ValuePartRef::new(ptr_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create ptr ref: {:?}", e)))?;
+        
+        // Load value and pointer to registers
+        let value_reg = value_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load value: {:?}", e)))?;
+        let ptr_reg = ptr_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load pointer: {:?}", e)))?;
+        
+        // Generate MOV instruction from register to memory
+        let encoder = self.codegen.encoder_mut();
+        
+        match bit_width {
+            8 => {
+                encoder.mov8_mem_reg(ptr_reg, 0, value_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov8: {:?}", e)))?;
+                println!("   Generated: movb [{}:{}], {}:{}", 
+                         ptr_reg.bank, ptr_reg.id, value_reg.bank, value_reg.id);
+            }
+            16 => {
+                encoder.mov16_mem_reg(ptr_reg, 0, value_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov16: {:?}", e)))?;
+                println!("   Generated: movw [{}:{}], {}:{}", 
+                         ptr_reg.bank, ptr_reg.id, value_reg.bank, value_reg.id);
+            }
+            32 => {
+                encoder.mov32_mem_reg(ptr_reg, 0, value_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov32: {:?}", e)))?;
+                println!("   Generated: movl [{}:{}], {}:{}", 
+                         ptr_reg.bank, ptr_reg.id, value_reg.bank, value_reg.id);
+            }
+            64 => {
+                encoder.mov64_mem_reg(ptr_reg, 0, value_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov64: {:?}", e)))?;
+                println!("   Generated: movq [{}:{}], {}:{}", 
+                         ptr_reg.bank, ptr_reg.id, value_reg.bank, value_reg.id);
+            }
+            _ => {
+                return Err(LlvmCompilerError::UnsupportedInstruction(
+                    format!("STORE instruction with {}-bit width not supported", bit_width)
+                ));
+            }
+        }
+        
         Ok(())
     }
     
