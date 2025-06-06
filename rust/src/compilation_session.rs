@@ -196,6 +196,14 @@ impl<'arena> CompilationSession<'arena> {
     pub fn stats(&self) -> SessionStats {
         self.stats.borrow().clone()
     }
+    
+    /// Record a call site for later relocation.
+    pub fn record_call_site(&self, function_name: String) {
+        self.stats.borrow_mut().total_calls += 1;
+        // In a real implementation, we would store the call site location
+        // and function name for the linker to resolve
+        println!("   Call site recorded: {}", function_name);
+    }
 }
 
 /// Compilation session statistics.
@@ -227,6 +235,9 @@ pub struct SessionStats {
     
     /// Spills generated.
     pub spills_generated: usize,
+    
+    /// Total function calls compiled.
+    pub total_calls: usize,
 }
 
 impl fmt::Display for SessionStats {
@@ -238,6 +249,7 @@ impl fmt::Display for SessionStats {
         writeln!(f, "  PHI nodes resolved: {}", self.phi_nodes_resolved)?;
         writeln!(f, "  Registers allocated: {}", self.registers_allocated)?;
         writeln!(f, "  Spills generated: {}", self.spills_generated)?;
+        writeln!(f, "  Function calls compiled: {}", self.total_calls)?;
         
         if !self.largest_function_name.is_empty() {
             writeln!(f, "  Largest function: {} ({} bytes)", 

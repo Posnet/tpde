@@ -1266,8 +1266,178 @@ where
         Ok(())
     }
     
-    fn compile_call_instruction(&mut self, _instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
-        println!("📞 Compiling CALL instruction (placeholder)");
+    fn compile_call_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
+        println!("📞 Compiling CALL instruction");
+        
+        // Get the call instruction details
+        use inkwell::values::CallSiteValue;
+        let call_site = CallSiteValue::try_from(instruction)
+            .map_err(|_| LlvmCompilerError::LlvmError("Failed to cast instruction to CallSiteValue".to_string()))?;
+        
+        // Get the called function
+        let called_value = call_site.get_called_fn_value();
+        let function_name = if let Some(func) = called_value {
+            func.get_name().to_str()
+                .map_err(|e| LlvmCompilerError::LlvmError(format!("Invalid function name: {:?}", e)))?
+                .to_string()
+        } else {
+            // For now, only support direct function calls
+            return Err(LlvmCompilerError::UnsupportedInstruction(
+                "Indirect function calls not yet supported".to_string()
+            ));
+        };
+        
+        println!("   Calling function: {}", function_name);
+        
+        // Get arguments
+        let arg_count = call_site.count_arguments();
+        println!("   Argument count: {}", arg_count);
+        
+        // Create calling convention assigner
+        use crate::calling_convention::{SysVAssigner, CCAssigner, CCAssignment, RegBank};
+        let mut cc_assigner = SysVAssigner::new();
+        
+        // Process arguments and assign them according to System V ABI
+        let mut arg_assignments = Vec::new();
+        for i in 0..arg_count {
+            let arg_value = instruction.get_operand(i).unwrap().left().unwrap();
+            let arg_idx = self.get_or_create_value_index(arg_value)?;
+            
+            // Determine argument type and size
+            let arg_type = arg_value.get_type();
+            let (bank, size) = match arg_type {
+                inkwell::types::BasicTypeEnum::IntType(int_type) => {
+                    (RegBank::GeneralPurpose, (int_type.get_bit_width() / 8) as u32)
+                }
+                inkwell::types::BasicTypeEnum::PointerType(_) => {
+                    (RegBank::GeneralPurpose, 8)
+                }
+                inkwell::types::BasicTypeEnum::FloatType(float_type) => {
+                    match float_type.get_context().f32_type() {
+                        t if t == float_type => (RegBank::Xmm, 4),
+                        _ => (RegBank::Xmm, 8), // f64
+                    }
+                }
+                _ => {
+                    return Err(LlvmCompilerError::UnsupportedInstruction(
+                        format!("Unsupported argument type: {:?}", arg_type)
+                    ));
+                }
+            };
+            
+            // Create assignment for this argument
+            let mut assignment = CCAssignment::new(bank, size, size);
+            cc_assigner.assign_arg(&mut assignment);
+            
+            println!("   Arg {}: v{} -> {:?}", i, arg_idx, assignment);
+            
+            // Create value assignment if needed
+            if self.value_mgr.get_assignment(arg_idx).is_none() {
+                self.value_mgr.create_assignment(arg_idx, 1, size as u8);
+            }
+            
+            arg_assignments.push((arg_idx, assignment));
+        }
+        
+        // Create compiler context
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+        
+        // Setup arguments in their assigned locations
+        for (arg_idx, assignment) in &arg_assignments {
+            let mut arg_ref = ValuePartRef::new(*arg_idx, 0)
+                .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create arg ref: {:?}", e)))?;
+            
+            if let Some(reg) = assignment.reg {
+                // Load argument to any register first
+                let arg_reg = arg_ref.load_to_reg(&mut ctx)
+                    .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load arg: {:?}", e)))?;
+                
+                // Move to the correct argument register if needed
+                if arg_reg != reg {
+                    let encoder = self.codegen.encoder_mut();
+                    encoder.mov_reg_reg(reg, arg_reg)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit mov: {:?}", e)))?;
+                    println!("      Generated: mov {}:{}, {}:{}", 
+                             reg.bank, reg.id, arg_reg.bank, arg_reg.id);
+                }
+            } else if let Some(stack_offset) = assignment.stack_off {
+                // Need to push argument to stack
+                let arg_reg = arg_ref.load_to_reg(&mut ctx)
+                    .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load arg: {:?}", e)))?;
+                
+                // Store to stack at RSP + offset
+                let encoder = self.codegen.encoder_mut();
+                let rsp = AsmReg::new(0, 4); // RSP
+                encoder.mov64_mem_reg(rsp, stack_offset, arg_reg)
+                    .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit stack store: {:?}", e)))?;
+                println!("      Generated: mov [rsp+{}], {}:{}", 
+                         stack_offset, arg_reg.bank, arg_reg.id);
+            }
+        }
+        
+        // Emit the actual call instruction
+        let encoder = self.codegen.encoder_mut();
+        
+        // For now, use a placeholder offset (0) for direct calls
+        // In a real implementation, this would be resolved by the linker
+        encoder.call_direct(0)
+            .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit call: {:?}", e)))?;
+        println!("   Generated: call {} (offset will be resolved later)", function_name);
+        
+        // Record the call site for later relocation
+        self.session.record_call_site(function_name.clone());
+        
+        // Handle return value if any
+        if !instruction.get_type().is_void_type() {
+            // Get result value index
+            use inkwell::values::AsValueRef;
+            let inst_ptr = instruction.as_value_ref() as usize;
+            let result_idx = inst_ptr % 1024;
+            
+            // Determine return type
+            let ret_type = instruction.get_type();
+            let (bank, size) = match ret_type {
+                inkwell::types::AnyTypeEnum::IntType(int_type) => {
+                    (RegBank::GeneralPurpose, (int_type.get_bit_width() / 8) as u32)
+                }
+                inkwell::types::AnyTypeEnum::PointerType(_) => {
+                    (RegBank::GeneralPurpose, 8)
+                }
+                inkwell::types::AnyTypeEnum::FloatType(float_type) => {
+                    let f32_type = float_type.get_context().f32_type();
+                    if f32_type == float_type {
+                        (RegBank::Xmm, 4)
+                    } else {
+                        (RegBank::Xmm, 8)
+                    }
+                }
+                _ => {
+                    return Err(LlvmCompilerError::UnsupportedInstruction(
+                        format!("Unsupported return type: {:?}", ret_type)
+                    ));
+                }
+            };
+            
+            // Create return value assignment
+            let mut ret_assignment = CCAssignment::new(bank, size, size);
+            cc_assigner.assign_ret(&mut ret_assignment);
+            
+            if let Some(ret_reg) = ret_assignment.reg {
+                println!("   Return value in {}:{}", ret_reg.bank, ret_reg.id);
+                
+                // Create value assignment for result
+                if self.value_mgr.get_assignment(result_idx).is_none() {
+                    self.value_mgr.create_assignment(result_idx, 1, size as u8);
+                }
+                
+                // The return value is already in the correct register (RAX or XMM0)
+                // We'll handle this by recording it in our internal tracking
+                println!("   Return value will be in register {}:{}", ret_reg.bank, ret_reg.id);
+                // In a real implementation, we would need to ensure the register
+                // allocation system knows about this fixed assignment
+            }
+        }
+        
         Ok(())
     }
     
