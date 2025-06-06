@@ -96,6 +96,9 @@ pub mod experimental;
 // Utility modules
 pub mod encodegen;
 
+// Test infrastructure
+pub mod test_ir;
+
 // Re-export common types from organized modules
 pub use core::{
     // Framework traits
