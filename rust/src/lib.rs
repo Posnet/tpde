@@ -43,7 +43,6 @@ pub mod analyzer;
 pub mod compiler;
 pub mod value_ref;
 pub mod function_codegen;
-pub mod instruction_selection_test;
 pub mod encodegen;
 
 // Re-export common types from organized modules
