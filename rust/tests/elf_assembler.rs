@@ -1,5 +1,5 @@
 use tpde::adaptor::IrAdaptor;
-use tpde::assembler::{Assembler, ElfAssembler};
+use tpde::core::{Assembler, ElfAssembler};
 use object::{File, Object};
 
 struct DummyAdaptor;

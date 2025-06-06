@@ -16,28 +16,14 @@
 //! compiler.compile_function("main")?;
 //! ```
 
-// Temporary re-export during migration
-pub use crate::llvm_compiler_concrete::{
-    LlvmCompiler,
-    CompiledFunction,
-    LlvmCompilerError,
-};
+pub mod adaptor;
+pub mod compiler;
+// pub mod phi_resolution; // TODO: Update to use new FunctionAnalyzer API
+pub mod function_analysis;
+pub mod analysis_result;
+pub mod traits;
 
-// Re-export the production adaptor (was enhanced.rs)
-pub use crate::llvm_adaptor::enhanced::{
-    EnhancedLlvmAdaptor as LlvmAdaptor,
-    PhiInfo,
-};
-
-// Re-export instruction categories
-pub use crate::llvm_compiler::{
-    InstructionCategory,
-    LlvmAdaptorInterface,
-};
-
-// Future modules (to be moved here):
-// pub mod adaptor;           // From llvm_adaptor/enhanced.rs
-// pub mod instruction_select; // Extract from llvm_compiler_concrete.rs
-// pub mod phi_resolution;     // From phi_resolver.rs
-// pub mod function_analysis;  // From function_analyzer_arena.rs
-// pub mod gep;               // Extract GEP-related code
+// Main exports
+pub use compiler::{LlvmCompiler, CompiledFunction, LlvmCompilerError};
+pub use adaptor::{EnhancedLlvmAdaptor as LlvmAdaptor, PhiInfo};
+pub use traits::{InstructionCategory, LlvmAdaptorInterface};

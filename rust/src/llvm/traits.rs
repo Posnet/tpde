@@ -1,7 +1,6 @@
-//! LLVM-specific compiler implementation with proper instruction selection.
+//! LLVM-specific traits and types.
 //!
-//! This module provides a specialized compiler for LLVM IR that uses opcode-based
-//! instruction selection instead of the generic operand-counting approach. 
+//! This module defines the interfaces and types specific to LLVM IR compilation.
 
 /// Categories of LLVM instructions for code generation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,4 +38,3 @@ pub trait LlvmAdaptorInterface: crate::adaptor::IrAdaptor {
     /// Check if the current function has allocas.
     fn has_allocas(&self) -> bool;
 }
-

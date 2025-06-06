@@ -4,7 +4,7 @@
 //! tracks register usage, and manages eviction/spilling. This is the core of TPDE's
 //! register allocation strategy, using a clock-based algorithm with on-demand spilling.
 
-use crate::value_assignment::ValLocalIdx;
+use super::value_assignment::ValLocalIdx;
 
 /// Type alias for register spill callback function.
 type SpillCallback = Box<dyn Fn(AsmReg, &Assignment) -> Result<(), String>>;

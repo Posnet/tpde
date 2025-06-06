@@ -5,9 +5,11 @@
 //! to the System V x86-64 ABI.
 
 use crate::{
-    calling_convention::{CCAssigner, SysVAssigner, FunctionFrame, CCAssignment, RegBank},
-    register_file::AsmReg,
-    x64_encoder::{X64Encoder, EncodingError},
+    x64::{
+        calling_convention::{CCAssigner, SysVAssigner, FunctionFrame, CCAssignment, RegBank},
+        encoder::{X64Encoder, EncodingError},
+    },
+    core::register_file::AsmReg,
 };
 
 /// Function code generator that handles calling conventions.
@@ -207,7 +209,7 @@ impl FunctionCodegen {
     }
     
     /// Get the calling convention information.
-    pub fn get_cc_info(&self) -> &crate::calling_convention::CCInfo {
+    pub fn get_cc_info(&self) -> &crate::x64::calling_convention::CCInfo {
         self.cc_assigner.get_ccinfo()
     }
     

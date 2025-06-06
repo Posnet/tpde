@@ -4,7 +4,7 @@
 //! fadec-based implementation. It integrates with the ValueRef/RegisterFile system
 //! to emit actual executable machine code for basic arithmetic and control flow.
 
-use crate::register_file::AsmReg;
+use crate::core::register_file::AsmReg;
 use iced_x86::code_asm::*;
 use std::collections::HashMap;
 
@@ -1023,7 +1023,7 @@ impl InstructionSelector {
 #[cfg(test)]
 mod tests {
     use super::{X64Encoder, InstructionSelector, EncodingError, JumpCondition};
-    use crate::register_file::AsmReg;
+    use crate::core::register_file::AsmReg;
 
     #[test]
     fn test_basic_instructions() {

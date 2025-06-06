@@ -97,7 +97,7 @@ fn test_block_successor_extraction() {
     let compiler = LlvmCompiler::new(module, &session).unwrap();
     
     // Use the analyzer directly to test successor extraction
-    use tpde::function_analyzer_arena::FunctionAnalyzer;
+    use tpde::llvm::function_analysis::FunctionAnalyzer;
     let function = compiler.module().get_function("control_flow").unwrap();
     let analyzer = FunctionAnalyzer::new(&session, function).unwrap();
     let analysis = analyzer.analyze().unwrap();
@@ -204,7 +204,7 @@ fn test_loop_successor_extraction() {
     let session = CompilationSession::new(&arena);
     let compiler = LlvmCompiler::new(module, &session).unwrap();
     
-    use tpde::function_analyzer_arena::FunctionAnalyzer;
+    use tpde::llvm::function_analysis::FunctionAnalyzer;
     let function = compiler.module().get_function("loop_fn").unwrap();
     let analyzer = FunctionAnalyzer::new(&session, function).unwrap();
     let analysis = analyzer.analyze().unwrap();

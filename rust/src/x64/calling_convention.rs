@@ -4,7 +4,7 @@
 //! return value handling, and callee-saved register management. It closely mirrors
 //! the C++ CCAssigner infrastructure while adapting to Rust's type system.
 
-use crate::register_file::{AsmReg, RegBitSet};
+use crate::core::register_file::{AsmReg, RegBitSet};
 
 /// Register banks for different register types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -35,39 +35,26 @@ pub mod x64;
 pub mod legacy;
 pub mod experimental;
 
-// Existing modules (to be reorganized)
+// Framework modules (to be moved later)
 pub mod overview;
 pub mod guide;
 pub mod adaptor;
 pub mod analyzer;
-pub mod assembler;
 pub mod compiler;
-pub mod value_assignment;
-pub mod register_file;
 pub mod value_ref;
-pub mod x64_encoder;
-pub mod x64_backend;
-pub mod calling_convention;
 pub mod function_codegen;
-pub mod complete_compiler;
-pub mod llvm_compiler;
-pub mod compilation_session;
-pub mod llvm_compiler_concrete;
 pub mod instruction_selection_test;
-pub mod llvm_adaptor;
 pub mod encodegen;
-pub mod function_analyzer;
-pub mod error;
-pub mod phi_resolver;
-pub mod function_analyzer_arena;
 
-// Keep existing exports for now
+// Re-export common types from organized modules
 pub use compiler::{Backend, CompilerBase};
-pub use value_assignment::{ValueAssignment, ValueAssignmentManager, ValLocalIdx};
-pub use register_file::{RegisterFile, AsmReg, RegBitSet, RegAllocError};
+pub use core::{
+    ValueAssignment, ValueAssignmentManager, ValLocalIdx,
+    RegisterFile, AsmReg, RegBitSet, RegAllocError,
+    CompilationSession, SessionStats, SessionError,
+};
 pub use value_ref::{ValueRef, ValuePartRef, ValueRefBuilder, ValueRefError, CompilerContext};
-pub use compilation_session::{CompilationSession, SessionStats, SessionError};
-pub use llvm_compiler_concrete::{LlvmCompiler as LlvmCompilerConcrete, CompiledFunction, LlvmCompilerError};
+pub use llvm::{LlvmCompiler as LlvmCompilerConcrete, CompiledFunction, LlvmCompilerError};
 
 // =============================================================================
 // Compatibility Layer - Deprecated Aliases

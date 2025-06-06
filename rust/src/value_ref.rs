@@ -6,8 +6,8 @@
 //! access to registers while abstracting the complexity of the underlying
 //! ValueAssignment and RegisterFile systems.
 
-use crate::value_assignment::{ValLocalIdx, ValueAssignmentManager};
-use crate::register_file::{RegisterFile, AsmReg, RegAllocError};
+use crate::core::value_assignment::{ValLocalIdx, ValueAssignmentManager};
+use crate::core::register_file::{RegisterFile, AsmReg, RegAllocError};
 
 /// Error types for value reference operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -253,7 +253,7 @@ impl ValuePartRef {
         // Update assignment with new register
         if let Some(assignment) = ctx.assignments.get_assignment_mut(self.local_idx) {
             if let Some(part_data) = assignment.part_mut(self.part_idx) {
-                *part_data = crate::value_assignment::PartData::new(
+                *part_data = crate::core::value_assignment::PartData::new(
                     reg.bank, 
                     reg.id, 
                     part_data.size_log2()
@@ -328,7 +328,7 @@ impl ValuePartRef {
         // Update our assignment
         if let Some(assignment) = ctx.assignments.get_assignment_mut(self.local_idx) {
             if let Some(part_data) = assignment.part_mut(self.part_idx) {
-                *part_data = crate::value_assignment::PartData::new(
+                *part_data = crate::core::value_assignment::PartData::new(
                     reg.bank,
                     reg.id,
                     part_data.size_log2()
@@ -435,8 +435,8 @@ mod tests {
     fn create_test_setup() -> (ValueAssignmentManager, RegisterFile) {
         let assignments = ValueAssignmentManager::new();
         
-        let mut allocatable = crate::register_file::RegBitSet::new();
-        allocatable.union(&crate::register_file::RegBitSet::all_in_bank(0, 8));
+        let mut allocatable = crate::core::register_file::RegBitSet::new();
+        allocatable.union(&crate::core::register_file::RegBitSet::all_in_bank(0, 8));
         let register_file = RegisterFile::new(8, 1, allocatable);
         
         (assignments, register_file)

@@ -7,8 +7,14 @@
 //! - Error types
 //! - ELF assembly generation
 
-// Re-export core components (temporary during migration)
-pub use crate::compilation_session::{
+pub mod session;
+pub mod register_file;
+pub mod value_assignment;
+pub mod error;
+pub mod assembler;
+
+// Re-export core components
+pub use session::{
     CompilationSession,
     SessionStats,
     SessionError,
@@ -17,14 +23,14 @@ pub use crate::compilation_session::{
     PhiNodeInfo,
 };
 
-pub use crate::register_file::{
+pub use register_file::{
     RegisterFile,
     AsmReg,
     RegBitSet,
     RegAllocError,
 };
 
-pub use crate::value_assignment::{
+pub use value_assignment::{
     ValueAssignment,
     ValueAssignmentManager,
     ValLocalIdx,
@@ -33,19 +39,12 @@ pub use crate::value_assignment::{
     StorageLocation,
 };
 
-pub use crate::error::{
+pub use error::{
     CompileError,
     CompileResult,
 };
 
-pub use crate::assembler::{
+pub use assembler::{
     Assembler,
     ElfAssembler,
 };
-
-// Future modules (to be moved here):
-// pub mod session;           // From compilation_session.rs
-// pub mod register_file;     // From register_file.rs
-// pub mod value_assignment;  // From value_assignment.rs
-// pub mod error;            // From error.rs
-// pub mod assembler;        // From assembler.rs

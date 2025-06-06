@@ -6,8 +6,8 @@
 #[cfg(test)]
 pub mod tests {
     use crate::{
-        complete_compiler::CompleteCompiler,
-        llvm_compiler::{LlvmAdaptorInterface, InstructionCategory},
+        legacy::GenericCompiler as CompleteCompiler,
+        llvm::{LlvmAdaptorInterface, InstructionCategory},
         adaptor::IrAdaptor,
     };
     

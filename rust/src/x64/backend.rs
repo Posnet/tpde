@@ -6,13 +6,15 @@
 
 use crate::{
     adaptor::IrAdaptor,
-    assembler::ElfAssembler,
+    core::{
+        assembler::ElfAssembler,
+        register_file::{RegisterFile, RegAllocError, RegBitSet},
+        value_assignment::ValueAssignmentManager,
+    },
     compiler::{Backend, CompilerBase},
-    register_file::{RegisterFile, RegAllocError, RegBitSet},
-    value_assignment::ValueAssignmentManager,
     value_ref::{CompilerContext, ValuePartRef, ValueRefError},
-    x64_encoder::{InstructionSelector, EncodingError},
 };
+use super::encoder::{InstructionSelector, EncodingError};
 
 /// Error types for the x86-64 backend.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -225,7 +227,7 @@ impl<A: IrAdaptor> Backend<A, ElfAssembler> for X64Backend {
 pub fn create_x64_compiler<A: IrAdaptor>(
     adaptor: A,
 ) -> Result<CompilerBase<A, ElfAssembler, X64Backend>, X64BackendError> {
-    use crate::assembler::Assembler;
+    use crate::core::assembler::Assembler;
     let assembler = <ElfAssembler as Assembler<A>>::new(true);
     let backend = X64Backend::new()?;
     Ok(CompilerBase::new(adaptor, assembler, backend))

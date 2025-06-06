@@ -3,8 +3,8 @@
 //! This design avoids copies and heap allocations by using arena allocation
 //! throughout and moving ownership when producing results.
 
-use crate::compilation_session::CompilationSession;
-use crate::error::{CompileError, CompileResult};
+use crate::core::session::CompilationSession;
+use crate::core::error::{CompileError, CompileResult};
 use inkwell::basic_block::BasicBlock;
 use inkwell::values::{FunctionValue, InstructionValue, InstructionOpcode};
 

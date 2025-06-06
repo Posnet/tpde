@@ -7,18 +7,21 @@
 #![allow(dead_code)] // Many methods are part of the architecture but not used yet
 
 use crate::{
-
     adaptor::IrAdaptor,
     analyzer::Analyzer,
-    assembler::{Assembler, ElfAssembler},
-    calling_convention::{CCAssigner, SysVAssigner, CCAssignment, RegBank},
+    core::{
+        assembler::{Assembler, ElfAssembler},
+        register_file::{AsmReg, RegisterFile, RegAllocError, RegBitSet},
+        value_assignment::ValueAssignmentManager,
+    },
+    x64::{
+        calling_convention::{CCAssigner, SysVAssigner, CCAssignment, RegBank},
+        encoder::EncodingError,
+    },
     function_codegen::{FunctionCodegen, FunctionCodegenError, ArgInfo},
-    register_file::{AsmReg, RegisterFile, RegAllocError, RegBitSet},
-    value_assignment::ValueAssignmentManager,
     value_ref::{CompilerContext, ValuePartRef, ValueRefError},
-    llvm_compiler::InstructionCategory,
+    llvm::InstructionCategory,
 };
-use crate::x64_encoder::EncodingError;
 
 /// Addressing modes for x86-64 memory operations.
 ///
@@ -603,7 +606,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
     
     /// Classify instruction by operand count (fallback when opcode info unavailable).
     fn classify_by_operand_count(&self, operand_count: usize, result_count: usize) -> InstructionCategory {
-        use crate::llvm_compiler::InstructionCategory;
+        use crate::llvm::InstructionCategory;
         
         match (operand_count, result_count) {
             (2, 1) => InstructionCategory::Arithmetic, // Most binary ops are arithmetic
@@ -632,11 +635,11 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
     /// Compile instruction by opcode category (for LLVM adaptors).
     fn compile_instruction_by_category(
         &mut self,
-        category: crate::llvm_compiler::InstructionCategory,
+        category: crate::llvm::InstructionCategory,
         operands: &[A::ValueRef],
         results: &[A::ValueRef],
     ) -> Result<(), CompilerError> {
-        use crate::llvm_compiler::InstructionCategory;
+        use crate::llvm::InstructionCategory;
         
         match category {
             InstructionCategory::Arithmetic => {
@@ -1312,7 +1315,7 @@ impl<A: IrAdaptor> CompleteCompiler<A> {
     
     /// Generate final object file.
     pub fn generate_object_file(&mut self) -> Vec<u8> {
-        use crate::assembler::Assembler;
+        use crate::core::assembler::Assembler;
         <ElfAssembler as Assembler<A>>::finalize(&mut self.assembler);
         <ElfAssembler as Assembler<A>>::build_object_file(&mut self.assembler)
     }

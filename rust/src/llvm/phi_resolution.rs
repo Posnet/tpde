@@ -3,11 +3,11 @@
 //! This module implements PHI node resolution with cycle detection,
 //! based on the C++ implementation but using arena allocation.
 
-use crate::compilation_session::CompilationSession;
-use crate::error::{CompileError, CompileResult};
-use crate::function_analyzer::FunctionAnalyzer;
-use crate::llvm_compiler_concrete::LlvmCompiler;
-use crate::register_file::AsmReg;
+use crate::core::session::CompilationSession;
+use crate::core::error::{CompileError, CompileResult};
+use super::function_analysis::FunctionAnalyzer;
+use super::compiler::LlvmCompiler;
+use crate::core::register_file::AsmReg;
 
 
 /// PHI resolution state for tracking cycles.

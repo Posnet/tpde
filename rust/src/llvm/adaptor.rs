@@ -16,7 +16,7 @@ use inkwell::llvm_sys::prelude::LLVMValueRef;
 use inkwell::values::{AnyValue, AsValueRef, InstructionOpcode};
 use std::collections::HashMap;
 use crate::adaptor::IrAdaptor;
-use crate::llvm_compiler::{LlvmAdaptorInterface, InstructionCategory};
+use super::traits::{LlvmAdaptorInterface, InstructionCategory};
 
 /// PHI node information for resolution and register allocation.
 ///
@@ -966,7 +966,7 @@ mod tests {
         
         let param_idx = adaptor.val_local_idx(Some(params[0]));
         // Parameters are indexed after globals, but could start at 0 if no globals
-        log::debug!("{}Parameter index: {}", param_idx);
+        log::debug!("Parameter index: {}", param_idx);
         
         // Check that instructions get different indices
         let mut indices = std::collections::HashSet::new();
@@ -1010,17 +1010,17 @@ mod tests {
                 let block_name = block.get_name().to_str().unwrap_or(&default_name);
                 
                 // Verify we get some form of successor information
-                log::debug!("{}Block '{}' has {} successors", block_name, successors.len());
+                log::debug!("Block '{}' has {} successors", block_name, successors.len());
                 
                 // Check terminator types
                 if let Some(terminator) = block.get_terminator() {
-                    log::debug!("{}  Terminator: {:?} ({} operands)", 
+                    log::debug!("  Terminator: {:?} ({} operands)", 
                              terminator.get_opcode(), terminator.get_num_operands());
                 }
             }
         }
         
-        log::debug!("{}✅ Block successor extraction test completed!");
+        log::debug!("✅ Block successor extraction test completed!");
     }
 
     #[test]
@@ -1042,7 +1042,7 @@ mod tests {
                     let block_name = block.get_name().to_str().unwrap_or("unnamed");
                     terminator_types.insert(block_name.to_string(), opcode);
                     
-                    log::debug!("{}Block '{}' terminator: {:?} ({} operands)", 
+                    log::debug!("Block '{}' terminator: {:?} ({} operands)", 
                              block_name, opcode, terminator.get_num_operands());
                 }
             }
@@ -1062,6 +1062,6 @@ mod tests {
             assert_eq!(*return_terminator, InstructionOpcode::Return);
         }
         
-        log::debug!("{}✅ Terminator instruction analysis test passed!");
+        log::debug!("✅ Terminator instruction analysis test passed!");
     }
 }

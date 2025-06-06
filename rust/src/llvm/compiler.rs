@@ -5,13 +5,16 @@
 //! trait bound complexity while preserving all excellent functionality.
 
 use crate::{
-
-    compilation_session::CompilationSession,
-    value_assignment::ValueAssignmentManager,
-    register_file::{RegisterFile, AsmReg},
+    core::{
+        session::CompilationSession,
+        value_assignment::ValueAssignmentManager,
+        register_file::{RegisterFile, AsmReg, RegBitSet},
+    },
     function_codegen::FunctionCodegen,
     value_ref::{ValuePartRef, CompilerContext},
-    function_analyzer_arena::{FunctionAnalyzer, FunctionAnalysis},
+};
+use super::{
+    function_analysis::{FunctionAnalyzer, FunctionAnalysis},
 };
 use std::collections::HashMap;
 use inkwell::basic_block::BasicBlock;
@@ -178,7 +181,7 @@ pub enum LlvmCompilerError {
     FunctionNotFound(String),
     
     /// Session error.
-    Session(crate::compilation_session::SessionError),
+    Session(crate::core::session::SessionError),
 }
 
 impl std::fmt::Display for LlvmCompilerError {
@@ -207,9 +210,9 @@ where
     ) -> Result<Self, LlvmCompilerError> {
         let value_mgr = ValueAssignmentManager::new();
         // Create register file with GP and XMM registers
-        let mut allocatable = crate::register_file::RegBitSet::new();
-        allocatable.union(&crate::register_file::RegBitSet::all_in_bank(0, 16)); // GP regs
-        allocatable.union(&crate::register_file::RegBitSet::all_in_bank(1, 16)); // XMM regs
+        let mut allocatable = RegBitSet::new();
+        allocatable.union(&RegBitSet::all_in_bank(0, 16)); // GP regs
+        allocatable.union(&RegBitSet::all_in_bank(1, 16)); // XMM regs
         let register_file = RegisterFile::new(16, 2, allocatable);
         let codegen = FunctionCodegen::new()
             .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to create codegen: {:?}", e)))?;
@@ -260,9 +263,9 @@ where
         // Reset compiler state for new function
         self.value_mgr = ValueAssignmentManager::new();
         // Reset register file
-        let mut allocatable = crate::register_file::RegBitSet::new();
-        allocatable.union(&crate::register_file::RegBitSet::all_in_bank(0, 16)); // GP regs
-        allocatable.union(&crate::register_file::RegBitSet::all_in_bank(1, 16)); // XMM regs
+        let mut allocatable = RegBitSet::new();
+        allocatable.union(&RegBitSet::all_in_bank(0, 16)); // GP regs
+        allocatable.union(&RegBitSet::all_in_bank(1, 16)); // XMM regs
         self.register_file = RegisterFile::new(16, 2, allocatable);
         self.codegen = FunctionCodegen::new()
             .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to reset codegen: {:?}", e)))?;
@@ -1186,7 +1189,7 @@ where
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit test: {:?}", e)))?;
                 
                 // JNE true_block (jump if not equal/not zero)
-                encoder.jmp_conditional_to_block(crate::x64_encoder::JumpCondition::NotEqual, true_block_idx)
+                encoder.jmp_conditional_to_block(crate::x64::encoder::JumpCondition::NotEqual, true_block_idx)
                     .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit jne: {:?}", e)))?;
                 
                 // Emit unconditional jump to false block
@@ -1239,7 +1242,7 @@ where
         log::debug!("   Argument count: {}", arg_count);
         
         // Create calling convention assigner
-        use crate::calling_convention::{SysVAssigner, CCAssigner, CCAssignment, RegBank};
+        use crate::x64::calling_convention::{SysVAssigner, CCAssigner, CCAssignment, RegBank};
         let mut cc_assigner = SysVAssigner::new();
         
         // Process arguments and assign them according to System V ABI
@@ -1643,7 +1646,7 @@ where
             }
             
             // Store PHI node information in session for later resolution
-            let phi_info = crate::compilation_session::PhiNodeInfo {
+            let phi_info = crate::core::session::PhiNodeInfo {
                 result_value: result_idx,
                 incoming_values,
             };

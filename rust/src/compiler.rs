@@ -33,7 +33,7 @@
 //! to zero the allocator may reuse the registers or spill to the stack if necessary.
 //! Additional helpers like `ScratchReg` will be ported from the C++ code later.
 
-use crate::{adaptor::IrAdaptor, analyzer::Analyzer, assembler::Assembler};
+use crate::{adaptor::IrAdaptor, analyzer::Analyzer, core::assembler::Assembler};
 
 /// Hooks implemented by architecture specific compiler code.
 ///

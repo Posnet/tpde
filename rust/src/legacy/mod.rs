@@ -14,9 +14,12 @@
     note = "Legacy code - use tpde::llvm for production"
 )]
 
+pub mod generic_compiler;
+pub mod minimal_adaptor;
+
 // Re-export old generic compiler with clearer name
 #[deprecated(note = "Use llvm::LlvmCompiler instead")]
-pub use crate::complete_compiler::{
+pub use generic_compiler::{
     CompleteCompiler as GenericCompiler,
     AddressingMode,
     GepExpression,
@@ -25,11 +28,6 @@ pub use crate::complete_compiler::{
 
 // Re-export minimal adaptor (was basic.rs)
 #[deprecated(note = "Use llvm::LlvmAdaptor instead")]
-pub use crate::llvm_adaptor::basic::{
+pub use minimal_adaptor::{
     LlvmIrAdaptor as MinimalAdaptor,
 };
-
-// Future modules (to be moved here):
-// pub mod generic_compiler;  // From complete_compiler.rs
-// pub mod minimal_adaptor;   // From llvm_adaptor/basic.rs
-// pub mod trait_based;       // Extract old trait-based approach

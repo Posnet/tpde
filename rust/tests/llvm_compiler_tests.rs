@@ -4,8 +4,8 @@ use bumpalo::Bump;
 use inkwell::context::Context;
 use inkwell::IntPredicate;
 use tpde::{
-    compilation_session::CompilationSession,
-    llvm_compiler_concrete::LlvmCompiler,
+    core::CompilationSession,
+    llvm::LlvmCompiler,
 };
 
 /// Create a simple test module with load/store operations.

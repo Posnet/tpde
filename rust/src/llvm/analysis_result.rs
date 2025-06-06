@@ -3,7 +3,6 @@
 //! This separates the analysis data from the analyzer itself,
 //! avoiding lifetime issues while preserving all the analysis information.
 
-use crate::error::CompileResult;
 
 /// Results of function analysis that can be owned and passed around.
 #[derive(Debug)]
