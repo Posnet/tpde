@@ -10,11 +10,12 @@ use crate::{
     register_file::{RegisterFile, AsmReg},
     function_codegen::FunctionCodegen,
     value_ref::{ValuePartRef, CompilerContext},
+    function_analyzer_arena::{FunctionAnalyzer, FunctionAnalysis},
 };
 use std::collections::HashMap;
 use inkwell::basic_block::BasicBlock;
 use inkwell::values::BasicValueEnum;
-use inkwell::IntPredicate;
+use inkwell::{IntPredicate, Either};
 
 /// Addressing modes for x86-64 memory operations.
 #[derive(Debug, Clone)]
@@ -113,7 +114,7 @@ pub struct LlvmCompiler<'ctx, 'arena> {
     module: inkwell::module::Module<'ctx>,
     
     /// Compilation session for arena allocation.
-    session: &'arena mut CompilationSession<'arena>,
+    session: &'arena CompilationSession<'arena>,
     
     /// Value assignment and tracking.
     value_mgr: ValueAssignmentManager,
@@ -184,11 +185,14 @@ impl std::fmt::Display for LlvmCompilerError {
 
 impl std::error::Error for LlvmCompilerError {}
 
-impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
+impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> 
+where
+    'ctx: 'arena,
+{
     /// Create a new LLVM compiler.
     pub fn new(
         module: inkwell::module::Module<'ctx>,
-        session: &'arena mut CompilationSession<'arena>,
+        session: &'arena CompilationSession<'arena>,
     ) -> Result<Self, LlvmCompilerError> {
         let value_mgr = ValueAssignmentManager::new();
         // Create register file with GP and XMM registers
@@ -255,15 +259,24 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
         // Process function signature and setup
         self.setup_function_signature(function)?;
         
-        // Analyze and layout blocks
-        self.analyze_and_layout_blocks(function)?;
+        // Analyze function using the consuming analyzer
+        let analyzer = FunctionAnalyzer::new(self.session, function)
+            .map_err(|e| LlvmCompilerError::LlvmError(format!("Failed to create analyzer: {:?}", e)))?;
+        
+        let analysis = analyzer.analyze()
+            .map_err(|e| LlvmCompilerError::LlvmError(format!("Function analysis failed: {:?}", e)))?;
+        
+        println!("📊 Function analysis complete:");
+        println!("   - {} blocks", analysis.num_blocks);
+        println!("   - {} instructions", analysis.instruction_count);
+        println!("   - {} PHI nodes", analysis.phi_count);
         
         // Generate prologue
         self.codegen.emit_prologue()
             .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Prologue generation failed: {:?}", e)))?;
         
-        // Compile function body
-        self.compile_function_body(function)?;
+        // Compile function body with analysis
+        self.compile_function_body_with_analysis(function, analysis)?;
         
         // Generate epilogue  
         self.codegen.emit_epilogue()
@@ -393,6 +406,30 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
         Ok(())
     }
     
+    /// Compile the function body using analysis results.
+    fn compile_function_body_with_analysis(
+        &mut self, 
+        function: inkwell::values::FunctionValue<'ctx>,
+        analysis: FunctionAnalysis<'arena>
+    ) -> Result<(), LlvmCompilerError> {
+        let blocks = function.get_basic_blocks();
+        
+        // Compile blocks in optimized layout order
+        for &block_idx in analysis.block_layout {
+            let block = blocks[block_idx];
+            
+            // Check if this block has PHI nodes
+            let phi_nodes = analysis.get_block_phi_nodes(block_idx);
+            if !phi_nodes.is_empty() {
+                println!("📍 Block {} has {} PHI nodes", block_idx, phi_nodes.len());
+            }
+            
+            self.compile_basic_block(block)?;
+        }
+        
+        Ok(())
+    }
+    
     /// Compile a single basic block.
     fn compile_basic_block(
         &mut self,
@@ -450,6 +487,7 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
             InstructionOpcode::Br => self.compile_branch_instruction(instruction),
             InstructionOpcode::Call => self.compile_call_instruction(instruction),
             InstructionOpcode::Alloca => self.compile_alloca_instruction(instruction),
+            InstructionOpcode::Phi => self.compile_phi_instruction(instruction),
             
             _ => {
                 println!("⚠️  Unsupported instruction: {:?}", instruction.get_opcode());
@@ -1229,10 +1267,6 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
         self.session
     }
     
-    /// Get mutable access to compilation session.
-    pub fn session_mut(&mut self) -> &mut CompilationSession<'arena> {
-        self.session
-    }
     
     /// Get list of compiled functions.
     pub fn compiled_functions(&self) -> &HashMap<String, CompiledFunction<'arena>> {
@@ -1353,6 +1387,97 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
         
         Ok(())
     }
+    
+    /// Compile PHI instruction.
+    fn compile_phi_instruction(
+        &mut self,
+        instruction: inkwell::values::InstructionValue<'ctx>
+    ) -> Result<(), LlvmCompilerError> {
+        println!("🔄 Compiling PHI instruction");
+        
+        // PHI nodes are special - they don't generate code directly.
+        // Instead, they define values that need to be resolved at block edges.
+        // The actual moves are generated when compiling branch instructions.
+        
+        // Get result value index for this PHI
+        use inkwell::values::AsValueRef;
+        let inst_ptr = instruction.as_value_ref() as usize;
+        let result_idx = inst_ptr % 1024;
+        
+        // Get the type of the PHI result
+        let phi_type = instruction.get_type();
+        let value_size = match phi_type {
+            inkwell::types::AnyTypeEnum::IntType(int_type) => {
+                (int_type.get_bit_width() / 8) as u8
+            }
+            inkwell::types::AnyTypeEnum::PointerType(_) => 8,
+            _ => {
+                return Err(LlvmCompilerError::UnsupportedInstruction(
+                    format!("Unsupported PHI type: {:?}", phi_type)
+                ));
+            }
+        };
+        
+        // Create value assignment for the PHI result
+        if self.value_mgr.get_assignment(result_idx).is_none() {
+            self.value_mgr.create_assignment(result_idx, 1, value_size);
+        }
+        
+        // Process incoming values
+        // In LLVM, PHI nodes store values in a specific pattern
+        let num_operands = instruction.get_num_operands();
+        println!("   PHI has {} operands total", num_operands);
+        
+        // Try to determine the pattern
+        for i in 0..num_operands {
+            let operand = instruction.get_operand(i);
+            if let Some(op) = operand {
+                match op {
+                    Either::Left(val) => {
+                        println!("   Operand {}: Value", i);
+                    }
+                    Either::Right(bb) => {
+                        println!("   Operand {}: BasicBlock", i);
+                    }
+                }
+            } else {
+                println!("   Operand {}: None", i);
+            }
+        }
+        
+        // For now, let's handle the simple case of alternating value/block pairs
+        let num_incoming = num_operands / 2;
+        for i in 0..num_incoming {
+            // Get value and block for this incoming edge
+            let value_idx = i * 2;
+            let block_idx = i * 2 + 1;
+            
+            if let (Some(value_op), Some(block_op)) = (
+                instruction.get_operand(value_idx),
+                instruction.get_operand(block_idx)
+            ) {
+                if let (Some(value), Some(block)) = (value_op.left(), block_op.right()) {
+                    // Get or create value index for incoming value
+                    let incoming_idx = self.get_or_create_value_index(value)?;
+                    if self.value_mgr.get_assignment(incoming_idx).is_none() {
+                        self.value_mgr.create_assignment(incoming_idx, 1, value_size);
+                    }
+                    
+                    // Get block name
+                    let block_name = block.get_name().to_str()
+                        .map_err(|e| LlvmCompilerError::LlvmError(format!("Invalid block name: {:?}", e)))?;
+                    
+                    println!("   Incoming: v{} from block {}", incoming_idx, block_name);
+                }
+            }
+        }
+        
+        // Note: Actual PHI resolution happens during branch compilation
+        // when we know which edge we're taking.
+        println!("   PHI node registered for later resolution");
+        
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -1395,8 +1520,8 @@ mod tests {
         let context = Context::create();
         let module = create_simple_module(&context);
         let arena = Bump::new();
-        let mut session = CompilationSession::new(&arena);
-        let mut compiler = LlvmCompiler::new(module, &mut session).unwrap();
+        let session = CompilationSession::new(&arena);
+        let mut compiler = LlvmCompiler::new(module, &session).unwrap();
         
         compiler.compile_function_by_name("add").unwrap();
         
@@ -1410,8 +1535,8 @@ mod tests {
         let context = Context::create();
         let module = create_simple_module(&context);
         let arena = Bump::new();
-        let mut session = CompilationSession::new(&arena);
-        let mut compiler = LlvmCompiler::new(module, &mut session).unwrap();
+        let session = CompilationSession::new(&arena);
+        let mut compiler = LlvmCompiler::new(module, &session).unwrap();
         
         compiler.compile_function_by_name("add").unwrap();
         
@@ -1453,8 +1578,8 @@ mod tests {
         let context = Context::create();
         let module = create_gep_test_module(&context);
         let arena = Bump::new();
-        let mut session = CompilationSession::new(&arena);
-        let mut compiler = LlvmCompiler::new(module, &mut session).unwrap();
+        let session = CompilationSession::new(&arena);
+        let mut compiler = LlvmCompiler::new(module, &session).unwrap();
         
         compiler.compile_function_by_name("array_access")
             .expect("GEP compilation should succeed");
@@ -1496,8 +1621,8 @@ mod tests {
         let context = Context::create();
         let module = create_icmp_test_module(&context);
         let arena = Bump::new();
-        let mut session = CompilationSession::new(&arena);
-        let mut compiler = LlvmCompiler::new(module, &mut session).unwrap();
+        let session = CompilationSession::new(&arena);
+        let mut compiler = LlvmCompiler::new(module, &session).unwrap();
         
         compiler.compile_function_by_name("compare")
             .expect("ICMP compilation should succeed");
