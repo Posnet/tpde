@@ -501,6 +501,7 @@ where
             InstructionOpcode::SExt => self.compile_sext_instruction(instruction),
             InstructionOpcode::ZExt => self.compile_zext_instruction(instruction),
             InstructionOpcode::Trunc => self.compile_trunc_instruction(instruction),
+            InstructionOpcode::Switch => self.compile_switch_instruction(instruction),
             
             _ => {
                 log::warn!("⚠️  Unsupported instruction: {:?}", instruction.get_opcode());
@@ -1981,6 +1982,142 @@ where
                 ));
             }
         }
+        
+        Ok(())
+    }
+    
+    fn compile_switch_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
+        log::trace!("🔀 Compiling SWITCH instruction");
+        
+        // Get the current block index
+        let block = instruction.get_parent().unwrap();
+        let block_name = block.get_name().to_str()
+            .map_err(|e| LlvmCompilerError::LlvmError(format!("Invalid block name: {:?}", e)))?;
+        let current_block_idx = self.get_block_index_by_name(block_name)?;
+        
+        // Switch has at least 2 operands: condition and default block
+        // Additional operands come in pairs (case value, case block)
+        let num_operands = instruction.get_num_operands();
+        if num_operands < 2 {
+            return Err(LlvmCompilerError::UnsupportedInstruction(
+                format!("Switch instruction with {} operands not supported", num_operands)
+            ));
+        }
+        
+        // Get the switch value
+        let switch_value = instruction.get_operand(0).unwrap().left().unwrap();
+        let switch_idx = self.get_or_create_value_index(switch_value)?;
+        
+        // Create value assignment for switch value if needed
+        if self.value_mgr.get_assignment(switch_idx).is_none() {
+            let switch_type = switch_value.get_type();
+            let bit_width = if let inkwell::types::BasicTypeEnum::IntType(int_type) = switch_type {
+                int_type.get_bit_width()
+            } else {
+                return Err(LlvmCompilerError::UnsupportedInstruction(
+                    "Switch on non-integer type not supported".to_string()
+                ));
+            };
+            self.value_mgr.create_assignment(switch_idx, 1, (bit_width / 8) as u8);
+        }
+        
+        // Get the default target block
+        let default_target = instruction.get_operand(1).unwrap().right().unwrap();
+        let default_name = default_target.get_name().to_str()
+            .map_err(|e| LlvmCompilerError::LlvmError(format!("Invalid default block name: {:?}", e)))?;
+        let default_block_idx = self.get_block_index_by_name(default_name)?;
+        
+        // Create compiler context
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+        
+        // Load switch value to register
+        let mut switch_ref = ValuePartRef::new(switch_idx, 0)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to create switch ref: {:?}", e)))?;
+        let switch_reg = switch_ref.load_to_reg(&mut ctx)
+            .map_err(|e| LlvmCompilerError::RegisterAllocation(format!("Failed to load switch value: {:?}", e)))?;
+        
+        // Process case values and targets
+        // The operands are: value, default_block, [case_value, case_block]*
+        let num_cases = (num_operands - 2) / 2;
+        log::debug!("   Switch has {} cases plus default", num_cases);
+        
+        // First, collect all case information
+        let mut cases = Vec::new();
+        for i in 0..num_cases {
+            let case_value_idx = 2 + i * 2;
+            let case_target_idx = 2 + i * 2 + 1;
+            
+            // Get case constant value
+            let case_value = instruction.get_operand(case_value_idx as u32).unwrap().left().unwrap();
+            
+            // Extract constant value
+            let const_value = if let inkwell::values::BasicValueEnum::IntValue(int_val) = case_value {
+                if let Some(const_int) = int_val.get_zero_extended_constant() {
+                    const_int as i32
+                } else {
+                    return Err(LlvmCompilerError::UnsupportedInstruction(
+                        "Non-constant case value not supported".to_string()
+                    ));
+                }
+            } else {
+                return Err(LlvmCompilerError::UnsupportedInstruction(
+                    "Non-integer case value not supported".to_string()
+                ));
+            };
+            
+            // Get case target block
+            let case_target = instruction.get_operand(case_target_idx as u32).unwrap().right().unwrap();
+            let case_name = case_target.get_name().to_str()
+                .map_err(|e| LlvmCompilerError::LlvmError(format!("Invalid case block name: {:?}", e)))?;
+            let case_block_idx = self.get_block_index_by_name(case_name)?;
+            
+            cases.push((const_value, case_block_idx));
+        }
+        
+        // Get bit width for comparisons
+        let bit_width = switch_value.get_type().into_int_type().get_bit_width();
+        
+        // Now generate code for each case
+        for (const_value, case_block_idx) in cases {
+            // Generate comparison
+            let encoder = self.codegen.encoder_mut();
+            match bit_width {
+                32 => {
+                    encoder.cmp32_reg_imm(switch_reg, const_value)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit cmp32: {:?}", e)))?;
+                }
+                64 => {
+                    encoder.cmp_reg_imm(switch_reg, const_value)
+                        .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit cmp: {:?}", e)))?;
+                }
+                _ => {
+                    return Err(LlvmCompilerError::UnsupportedInstruction(
+                        format!("Switch on {}-bit integer not supported", bit_width)
+                    ));
+                }
+            }
+            
+            // Generate PHI moves for this case
+            self.generate_phi_moves_for_edge(current_block_idx, case_block_idx)?;
+            
+            // Generate conditional jump to case block
+            let encoder = self.codegen.encoder_mut();
+            encoder.jmp_conditional_to_block(crate::x64::encoder::JumpCondition::Equal, case_block_idx)
+                .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit je: {:?}", e)))?;
+            
+            log::trace!("   Generated: cmp {}:{}, {}; je block_{}", 
+                     switch_reg.bank, switch_reg.id, const_value, case_block_idx);
+        }
+        
+        // Generate PHI moves for default block
+        self.generate_phi_moves_for_edge(current_block_idx, default_block_idx)?;
+        
+        // Generate unconditional jump to default block
+        let encoder = self.codegen.encoder_mut();
+        encoder.jmp_unconditional_to_block(default_block_idx)
+            .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to emit jmp: {:?}", e)))?;
+        
+        log::trace!("   Generated: jmp block_{} (default)", default_block_idx);
         
         Ok(())
     }
