@@ -1,8 +1,9 @@
 use inkwell::context::Context;
 use inkwell::types::BasicTypeEnum;
 use inkwell::values::BasicValueEnum;
-use tpde::complete_compiler::CompleteCompiler;
-use tpde::llvm_adaptor::enhanced::EnhancedLlvmAdaptor;
+use tpde::llvm::{LlvmCompiler, LlvmAdaptor};
+use tpde::core::CompilationSession;
+use bumpalo::Bump;
 
 /// Test GEP instruction compilation with various addressing patterns.
 ///
@@ -17,9 +18,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let context = Context::create();
     let module = create_example_gep_module(&context);
     
-    // Create enhanced adaptor and compiler
-    let mut adaptor = EnhancedLlvmAdaptor::new(&module);
-    let mut compiler = CompleteCompiler::new(adaptor);
+    // Create compilation session and compiler
+    let arena = Bump::new();
+    let session = CompilationSession::new(&arena);
+    let mut compiler = LlvmCompiler::new(module, &session)?;
     
     // Test compilation of GEP patterns
     test_basic_array_indexing(&mut compiler)?;
@@ -86,57 +88,36 @@ fn create_example_gep_module(context: &Context) -> inkwell::module::Module {
 }
 
 /// Test basic array indexing GEP patterns.
-fn test_basic_array_indexing(compiler: &mut CompleteCompiler<EnhancedLlvmAdaptor>) -> Result<(), Box<dyn std::error::Error>> {
+fn test_basic_array_indexing<'ctx, 'arena>(compiler: &mut LlvmCompiler<'ctx, 'arena>) -> Result<(), Box<dyn std::error::Error>> 
+where
+    'ctx: 'arena,
+{
     println!("📋 Testing basic array indexing...");
     
-    // Get the array_index function
-    let funcs: Vec<_> = compiler.adaptor.funcs().collect();
-    let array_index_func = funcs.iter().find(|f| {
-        if let Some(func) = f {
-            compiler.adaptor.func_link_name(Some(*func)) == "array_index"
-        } else {
-            false
-        }
-    });
-    
-    if let Some(Some(func)) = array_index_func {
-        println!("🔍 Found array_index function, compiling...");
-        compiler.compile_function(Some(*func))?;
-        println!("✅ Array indexing GEP compiled successfully");
-    } else {
-        return Err("array_index function not found".into());
-    }
+    compiler.compile_function_by_name("array_index")?;
+    println!("✅ Array indexing GEP compiled successfully");
     
     Ok(())
 }
 
 /// Test struct field access patterns.
-fn test_struct_field_access(compiler: &mut CompleteCompiler<EnhancedLlvmAdaptor>) -> Result<(), Box<dyn std::error::Error>> {
+fn test_struct_field_access<'ctx, 'arena>(compiler: &mut LlvmCompiler<'ctx, 'arena>) -> Result<(), Box<dyn std::error::Error>> 
+where
+    'ctx: 'arena,
+{
     println!("📋 Testing struct field access...");
     
-    // For now, we'll test with the load function which includes GEP
-    let funcs: Vec<_> = compiler.adaptor.funcs().collect();
-    let load_func = funcs.iter().find(|f| {
-        if let Some(func) = f {
-            compiler.adaptor.func_link_name(Some(*func)) == "load_array_element"
-        } else {
-            false
-        }
-    });
-    
-    if let Some(Some(func)) = load_func {
-        println!("🔍 Found load_array_element function, compiling...");
-        compiler.compile_function(Some(*func))?;
-        println!("✅ Struct field access pattern compiled successfully");
-    } else {
-        return Err("load_array_element function not found".into());
-    }
+    compiler.compile_function_by_name("load_array_element")?;
+    println!("✅ Struct field access pattern compiled successfully");
     
     Ok(())
 }
 
 /// Test multi-dimensional array patterns.
-fn test_multi_dimensional_arrays(compiler: &mut CompleteCompiler<EnhancedLlvmAdaptor>) -> Result<(), Box<dyn std::error::Error>> {
+fn test_multi_dimensional_arrays<'ctx, 'arena>(_compiler: &mut LlvmCompiler<'ctx, 'arena>) -> Result<(), Box<dyn std::error::Error>> 
+where
+    'ctx: 'arena,
+{
     println!("📋 Testing multi-dimensional arrays...");
     
     // For now, this is a placeholder test

@@ -277,7 +277,7 @@ impl<'ctx, 'arena> PhiResolver<'ctx, 'arena> {
         let temp_reg = self.allocate_temp_reg()?;
         
         // Save the start value to temp
-        log::debug!("{}   Breaking cycle: saving v{} to temp", 
+        log::debug!("Breaking cycle: saving v{} to temp", 
                  self.moves[start_idx].src_value);
         
         // Emit moves in cycle order
@@ -289,7 +289,7 @@ impl<'ctx, 'arena> PhiResolver<'ctx, 'arena> {
             let next_idx = self.find_next_in_cycle(current_idx);
             if next_idx == start_idx {
                 // Cycle complete - restore from temp
-                log::debug!("{}   Cycle complete: restoring from temp to v{}", 
+                log::debug!("Cycle complete: restoring from temp to v{}", 
                          self.moves[current_idx].dst_value);
                 break;
             }

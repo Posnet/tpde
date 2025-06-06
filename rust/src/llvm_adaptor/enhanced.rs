@@ -490,7 +490,7 @@ impl<'ctx> EnhancedLlvmAdaptor<'ctx> {
     fn debug_print_successors(&self) {
         if let Some(func) = self.current_function {
             let func_name = func.get_name().to_str().unwrap_or("unknown");
-            log::debug!("{}Block successors for function '{}':", func_name);
+            log::debug!("Block successors for function '{}':", func_name);
             
             let blocks: Vec<_> = func.get_basic_blocks();
             for (i, block) in blocks.iter().enumerate() {
@@ -520,8 +520,8 @@ impl<'ctx> EnhancedLlvmAdaptor<'ctx> {
                     "None".to_string()
                 };
                 
-                log::debug!("{}  {} -> {:?}", block_name, successor_names);
-                log::debug!("{}    terminator: {}", terminator_info);
+                log::debug!("  {} -> {:?}", block_name, successor_names);
+                log::debug!("    terminator: {}", terminator_info);
             }
         }
     }

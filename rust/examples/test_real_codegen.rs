@@ -1,6 +1,7 @@
 use inkwell::context::Context;
-use tpde::complete_compiler::CompleteCompiler;
-use tpde::llvm_adaptor::enhanced::EnhancedLlvmAdaptor;
+use tpde::llvm::{LlvmCompiler, LlvmAdaptor};
+use tpde::core::CompilationSession;
+use bumpalo::Bump;
 
 /// Test real machine code generation with simple arithmetic.
 ///
@@ -15,9 +16,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let context = Context::create();
     let module = create_simple_add_function(&context);
     
-    // Create enhanced adaptor and compiler
-    let mut adaptor = EnhancedLlvmAdaptor::new(&module);
-    let mut compiler = CompleteCompiler::new(adaptor);
+    // Create compilation session and compiler
+    let arena = Bump::new();
+    let session = CompilationSession::new(&arena);
+    let mut compiler = LlvmCompiler::new(module, &session)?;
     
     // Test compilation of simple add function
     test_simple_add_compilation(&mut compiler)?;
@@ -51,46 +53,36 @@ fn create_simple_add_function(context: &Context) -> inkwell::module::Module {
 }
 
 /// Test compilation of the simple add function.
-fn test_simple_add_compilation(compiler: &mut CompleteCompiler<EnhancedLlvmAdaptor>) -> Result<(), Box<dyn std::error::Error>> {
+fn test_simple_add_compilation<'ctx, 'arena>(compiler: &mut LlvmCompiler<'ctx, 'arena>) -> Result<(), Box<dyn std::error::Error>> 
+where
+    'ctx: 'arena,
+{
     println!("📋 Testing simple add function compilation...");
     
-    // Get the add function
-    let funcs: Vec<_> = compiler.adaptor.funcs().collect();
-    let add_func = funcs.iter().find(|f| {
-        if let Some(func) = f {
-            compiler.adaptor.func_link_name(Some(*func)) == "add"
-        } else {
-            false
-        }
-    });
+    // Compile the add function
+    println!("🔍 Compiling add function...");
     
-    if let Some(Some(func)) = add_func {
-        println!("🔍 Found add function, compiling...");
-        
-        // Try to compile the function
-        match compiler.compile_function(Some(*func)) {
-            Ok(_) => {
-                println!("✅ Add function compiled successfully!");
-                
-                // TODO: In a complete test, we would:
-                // 1. Extract generated machine code from assembler
-                // 2. Verify specific instructions were generated (ADD, MOV, RET)
-                // 3. Test that machine code is executable
-                
-                println!("🎯 Machine code should contain:");
-                println!("   - Function prologue (push rbp, mov rbp, rsp)");
-                println!("   - ADD instruction for arithmetic");
-                println!("   - Return value handling (result in RAX)");
-                println!("   - Function epilogue (pop rbp, ret)");
-                
-                Ok(())
-            }
-            Err(e) => {
-                println!("❌ Compilation failed: {:?}", e);
-                Err(format!("Compilation failed: {:?}", e).into())
-            }
+    match compiler.compile_function_by_name("add") {
+        Ok(_) => {
+            println!("✅ Add function compiled successfully!");
+            
+            // Get compilation statistics
+            let stats = compiler.session().stats();
+            println!("📊 Compilation statistics:");
+            println!("   - {} instructions compiled", stats.instructions_compiled);
+            println!("   - {} bytes of code generated", stats.total_code_size);
+            
+            println!("🎯 Machine code should contain:");
+            println!("   - Function prologue (push rbp, mov rbp, rsp)");
+            println!("   - ADD instruction for arithmetic");
+            println!("   - Return value handling (result in RAX)");
+            println!("   - Function epilogue (pop rbp, ret)");
+            
+            Ok(())
         }
-    } else {
-        Err("add function not found".into())
+        Err(e) => {
+            println!("❌ Compilation failed: {:?}", e);
+            Err(format!("Compilation failed: {:?}", e).into())
+        }
     }
 }

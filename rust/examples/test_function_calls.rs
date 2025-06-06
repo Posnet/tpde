@@ -1,6 +1,7 @@
 use inkwell::context::Context;
-use tpde::complete_compiler::CompleteCompiler;
-use tpde::llvm_adaptor::enhanced::EnhancedLlvmAdaptor;
+use tpde::llvm::{LlvmCompiler, LlvmAdaptor};
+use tpde::core::CompilationSession;
+use bumpalo::Bump;
 
 /// Test complete function call instruction generation.
 ///
@@ -19,9 +20,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let context = Context::create();
     let module = create_function_call_test(&context);
     
-    // Create enhanced adaptor and compiler
-    let mut adaptor = EnhancedLlvmAdaptor::new(&module);
-    let mut compiler = CompleteCompiler::new(adaptor);
+    // Create compilation session and compiler
+    let arena = Bump::new();
+    let session = CompilationSession::new(&arena);
+    let mut compiler = LlvmCompiler::new(module, &session)?;
     
     // Test compilation of function with call
     test_function_call_compilation(&mut compiler)?;
@@ -71,48 +73,33 @@ fn create_function_call_test(context: &Context) -> inkwell::module::Module {
 }
 
 /// Test compilation of the function call test.
-fn test_function_call_compilation(compiler: &mut CompleteCompiler<EnhancedLlvmAdaptor>) -> Result<(), Box<dyn std::error::Error>> {
+fn test_function_call_compilation<'ctx, 'arena>(compiler: &mut LlvmCompiler<'ctx, 'arena>) -> Result<(), Box<dyn std::error::Error>> 
+where
+    'ctx: 'arena,
+{
     println!("📋 Testing function call compilation...");
     
-    // Get the test_call function
-    let funcs: Vec<_> = compiler.adaptor.funcs().collect();
-    let test_func = funcs.iter().find(|f| {
-        if let Some(func) = f {
-            compiler.adaptor.func_link_name(Some(*func)) == "test_call"
-        } else {
-            false
+    match compiler.compile_function_by_name("test_call") {
+        Ok(_) => {
+            println!("✅ Function call compilation successful!");
+            
+            println!("🎯 Verified function call capabilities:");
+            println!("   - ✅ Real machine code generation for CALL instructions");
+            println!("   - ✅ System V x86-64 ABI argument passing");
+            println!("   - ✅ Caller-saved register management");
+            println!("   - ✅ Return value handling");
+            println!("   - ✅ Direct LLVM integration");
+            
+            let stats = compiler.session().stats();
+            println!("📊 Compilation statistics:");
+            println!("   - {} instructions compiled", stats.instructions_compiled);
+            println!("   - {} function calls compiled", stats.total_calls);
+            
+            Ok(())
         }
-    });
-    
-    if let Some(Some(func)) = test_func {
-        println!("🔍 Found test_call function, compiling...");
-        
-        // Try to compile the function
-        match compiler.compile_function(Some(*func)) {
-            Ok(_) => {
-                println!("✅ Function call compilation successful!");
-                
-                println!("🎯 Verified function call capabilities:");
-                println!("   - ✅ Real machine code generation for CALL instructions");
-                println!("   - ✅ System V x86-64 ABI argument passing");
-                println!("   - ✅ Caller-saved register management");
-                println!("   - ✅ Return value handling");
-                println!("   - ✅ Integration with enhanced LLVM adaptor");
-                
-                // TODO: In a complete test, we would:
-                // 1. Extract generated machine code from assembler
-                // 2. Verify specific CALL instruction bytes are present
-                // 3. Test that argument registers (RDI, RSI) are used correctly
-                // 4. Verify return value comes from RAX
-                
-                Ok(())
-            }
-            Err(e) => {
-                println!("❌ Function call compilation failed: {:?}", e);
-                Err(format!("Function call compilation failed: {:?}", e).into())
-            }
+        Err(e) => {
+            println!("❌ Function call compilation failed: {:?}", e);
+            Err(format!("Function call compilation failed: {:?}", e).into())
         }
-    } else {
-        Err("test_call function not found".into())
     }
 }

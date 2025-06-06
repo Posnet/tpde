@@ -203,7 +203,7 @@ impl<'arena> CompilationSession<'arena> {
         self.stats.borrow_mut().total_calls += 1;
         // In a real implementation, we would store the call site location
         // and function name for the linker to resolve
-        log::debug!("{}   Call site recorded: {}", function_name);
+        log::debug!("Call site recorded: {}", function_name);
     }
 }
 

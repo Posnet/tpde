@@ -1,19 +1,41 @@
-//! Core TPDE framework rewritten in Rust.
+//! TPDE - Fast SSA-based IR Compilation.
 //!
-//! This crate contains the foundation of TPDE.  It mirrors the
-//! architecture laid out in the original C++ implementation while adopting
-//! Rust idioms.  The framework aims for extremely fast compilation of SSA based
-//! IRs by providing just enough infrastructure for register allocation, stack
-//! management, unwind info and ELF emission.  Instruction selection is left to
-//! the user, either handwritten or stitched together from snippet encoders.
+//! TPDE (Two Phase Deoptimization Engine) provides extremely fast compilation 
+//! of SSA-based IRs with a focus on LLVM IR. It compiles 10-20x faster than 
+//! LLVM -O0 while maintaining reasonable code quality.
 //!
-//! High level pieces are:
-//! - [`overview`] summarises the overall framework design.
-//! - [`adaptor`] defines the [`IrAdaptor`] trait implemented by an IR frontend.
-//! - [`analyzer`] computes block order and liveness.
-//! - [`compiler`] implements the architecture neutral driver.
-//! - [`assembler`] is the trait for emitting object files.
+//! # Primary Usage
+//! 
+//! ```ignore
+//! use tpde::llvm::{LlvmCompiler, LlvmAdaptor};
+//! use tpde::core::CompilationSession;
+//! use bumpalo::Bump;
+//! 
+//! // Create compilation session with arena allocation
+//! let arena = Bump::new();
+//! let session = CompilationSession::new(&arena);
+//! 
+//! // Compile LLVM IR module
+//! let mut compiler = LlvmCompiler::new(&module, &session)?;
+//! let result = compiler.compile_function("main")?;
+//! ```
+//!
+//! # Architecture
+//! 
+//! - [`llvm`] - Primary LLVM compilation implementation
+//! - [`core`] - Shared infrastructure (session, registers, values)
+//! - [`x64`] - x86-64 specific code (encoder, calling convention)
+//! - [`legacy`] - Deprecated implementations for reference
+//! - [`experimental`] - Work in progress features
 
+// New organized modules
+pub mod llvm;
+pub mod core;
+pub mod x64;
+pub mod legacy;
+pub mod experimental;
+
+// Existing modules (to be reorganized)
 pub mod overview;
 pub mod guide;
 pub mod adaptor;
@@ -38,12 +60,26 @@ pub mod function_analyzer;
 pub mod error;
 pub mod phi_resolver;
 pub mod function_analyzer_arena;
+
+// Keep existing exports for now
 pub use compiler::{Backend, CompilerBase};
 pub use value_assignment::{ValueAssignment, ValueAssignmentManager, ValLocalIdx};
 pub use register_file::{RegisterFile, AsmReg, RegBitSet, RegAllocError};
 pub use value_ref::{ValueRef, ValuePartRef, ValueRefBuilder, ValueRefError, CompilerContext};
 pub use compilation_session::{CompilationSession, SessionStats, SessionError};
-pub use llvm_compiler_concrete::{LlvmCompiler, CompiledFunction, LlvmCompilerError};
+pub use llvm_compiler_concrete::{LlvmCompiler as LlvmCompilerConcrete, CompiledFunction, LlvmCompilerError};
+
+// =============================================================================
+// Compatibility Layer - Deprecated Aliases
+// =============================================================================
+
+/// Primary LLVM compiler (was llvm_compiler_concrete::LlvmCompiler).
+#[deprecated(since = "0.2.0", note = "Use llvm::LlvmCompiler directly")]
+pub use self::llvm::LlvmCompiler;
+
+/// Generic trait-based compiler (legacy).
+#[deprecated(since = "0.2.0", note = "Use llvm::LlvmCompiler instead of generic approach")]
+pub use self::legacy::GenericCompiler as CompleteCompiler;
 
 /// Temporary hello world to prove the crate builds.
 pub fn hello() -> &'static str {

@@ -255,7 +255,7 @@ where
         
         self.current_function = Some(function);
         
-        log::info!("{}🔧 Compiling LLVM function: {}", function_name);
+        log::info!("🔧 Compiling LLVM function: {}", function_name);
         
         // Reset compiler state for new function
         self.value_mgr = ValueAssignmentManager::new();
@@ -277,9 +277,9 @@ where
         let analysis = analyzer.analyze()
             .map_err(|e| LlvmCompilerError::LlvmError(format!("Function analysis failed: {:?}", e)))?;
         
-        log::debug!("{}📊 Function analysis complete:");
-        log::debug!("{}   - {} blocks", analysis.num_blocks);
-        log::trace!("{}   - {} instructions", analysis.instruction_count);
+        log::debug!("📊 Function analysis complete:");
+        log::debug!("   - {} blocks", analysis.num_blocks);
+        log::trace!("   - {} instructions", analysis.instruction_count);
         log::trace!("   PHI   - {} PHI nodes", analysis.phi_count);
         
         // Generate prologue
@@ -402,7 +402,7 @@ where
             // Check if this block has PHI nodes
             let phi_nodes = analysis.get_block_phi_nodes(block_idx);
             if !phi_nodes.is_empty() {
-                log::debug!("{}📍 Block {} has {} PHI nodes", block_idx, phi_nodes.len());
+                log::debug!("📍 Block {} has {} PHI nodes", block_idx, phi_nodes.len());
             }
             
             self.compile_basic_block(block)?;
@@ -431,9 +431,9 @@ where
             encoder.place_label_for_block(block_idx)
                 .map_err(|e| LlvmCompilerError::CodeGeneration(format!("Failed to place label: {:?}", e)))?;
             
-            log::trace!("{}📦 Compiling basic block: {} (index {})", name, block_idx);
+            log::trace!("📦 Compiling basic block: {} (index {})", name, block_idx);
         } else {
-            log::trace!("{}📦 Compiling basic block");
+            log::trace!("📦 Compiling basic block");
         }
         
         // Iterate through instructions in the block
@@ -471,7 +471,7 @@ where
             InstructionOpcode::Phi => self.compile_phi_instruction(instruction),
             
             _ => {
-                log::warn!("{}⚠️  Unsupported instruction: {:?}", instruction.get_opcode());
+                log::warn!("⚠️  Unsupported instruction: {:?}", instruction.get_opcode());
                 // For now, just skip unsupported instructions
                 Ok(())
             }
@@ -560,7 +560,7 @@ where
         &mut self,
         instruction: inkwell::values::InstructionValue<'ctx>
     ) -> Result<(), LlvmCompilerError> {
-        log::trace!("{}➕ Compiling ADD instruction");
+        log::trace!("➕ Compiling ADD instruction");
         
         let context = self.setup_binary_operation(instruction)?;
         let (left_reg, right_reg, result_reg) = self.allocate_binary_op_registers(&context, true)?;
@@ -616,13 +616,13 @@ where
         &mut self,
         instruction: inkwell::values::InstructionValue<'ctx>
     ) -> Result<(), LlvmCompilerError> {
-        log::trace!("{}🔍 Compiling ICMP instruction");
+        log::trace!("🔍 Compiling ICMP instruction");
         
         // Direct predicate extraction - no trait bounds!
         let predicate = instruction.get_icmp_predicate()
             .ok_or_else(|| LlvmCompilerError::LlvmError("ICMP instruction missing predicate".to_string()))?;
         
-        log::debug!("{}   Real predicate extracted: {:?}", predicate);
+        log::debug!("   Real predicate extracted: {:?}", predicate);
         
         // Get operands
         let operand0 = instruction.get_operand(0).unwrap().left().unwrap();
@@ -708,15 +708,15 @@ where
         &mut self,
         instruction: inkwell::values::InstructionValue<'ctx>
     ) -> Result<(), LlvmCompilerError> {
-        log::trace!("{}🔙 Compiling RETURN instruction");
+        log::trace!("🔙 Compiling RETURN instruction");
         
         let operand_count = instruction.get_num_operands();
         if operand_count > 0 {
             // Return with value
-            log::debug!("{}   Return with value");
+            log::debug!("   Return with value");
         } else {
             // Void return
-            log::debug!("{}   Void return");
+            log::debug!("   Void return");
         }
         
         // The epilogue will be generated separately
@@ -725,7 +725,7 @@ where
     
     /// Compile SUB instruction with real machine code generation.
     fn compile_sub_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
-        log::trace!("{}➖ Compiling SUB instruction");
+        log::trace!("➖ Compiling SUB instruction");
         
         let context = self.setup_binary_operation(instruction)?;
         let (left_reg, right_reg, result_reg) = self.allocate_binary_op_registers(&context, true)?;
@@ -778,7 +778,7 @@ where
     }
     
     fn compile_mul_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
-        log::trace!("{}✖️  Compiling MUL instruction");
+        log::trace!("✖️  Compiling MUL instruction");
         
         let context = self.setup_binary_operation(instruction)?;
         // MUL doesn't reuse left register because it uses RAX
@@ -835,7 +835,7 @@ where
     }
     
     fn compile_load_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
-        log::trace!("{}📥 Compiling LOAD instruction");
+        log::trace!("📥 Compiling LOAD instruction");
         
         // Load instruction format: %result = load <type>, <type>* <pointer>
         // Get the pointer operand (source address)
@@ -923,7 +923,7 @@ where
     }
     
     fn compile_store_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
-        log::trace!("{}📤 Compiling STORE instruction");
+        log::trace!("📤 Compiling STORE instruction");
         
         // Store instruction format: store <type> <value>, <type>* <pointer>
         // Get the value to store (first operand)
@@ -1008,7 +1008,7 @@ where
     }
     
     fn compile_gep_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
-        log::info!("{}🗂️  Compiling GEP instruction");
+        log::info!("🗂️  Compiling GEP instruction");
         
         // Get operand count
         let operand_count = instruction.get_num_operands();
@@ -1076,7 +1076,7 @@ where
                 // Fold constant into displacement
                 let offset = element_size as i64 * const_val;
                 gep_expr.add_displacement(offset);
-                log::debug!("{}   GEP: Folded constant index {} -> displacement {}", const_val, offset);
+                log::debug!("   GEP: Folded constant index {} -> displacement {}", const_val, offset);
             } else {
                 // Dynamic index
                 let mut index_ref = ValuePartRef::new(index_idx, 0)
@@ -1087,11 +1087,11 @@ where
                 if idx_num == 0 && gep_expr.index.is_none() {
                     // First dynamic index - can use scaled addressing
                     gep_expr.set_index(index_reg, element_size);
-                    log::debug!("{}   GEP: Set dynamic index with scale {}", element_size);
+                    log::debug!("   GEP: Set dynamic index with scale {}", element_size);
                 } else {
                     // Multiple indices need materialization
                     gep_expr.needs_materialization = true;
-                    log::debug!("{}   GEP: Complex index requires materialization");
+                    log::debug!("   GEP: Complex index requires materialization");
                 }
             }
         }
@@ -1105,12 +1105,12 @@ where
         // Generate address calculation
         self.materialize_gep_expression(gep_expr, result_reg)?;
         
-        log::debug!("{}✅ GEP instruction compiled successfully");
+        log::debug!("✅ GEP instruction compiled successfully");
         Ok(())
     }
     
     fn compile_branch_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
-        log::info!("{}🔀 Compiling BRANCH instruction");
+        log::info!("🔀 Compiling BRANCH instruction");
         
         // LLVM has two types of branch instructions:
         // - Unconditional: br label %dest
@@ -1212,7 +1212,7 @@ where
     }
     
     fn compile_call_instruction(&mut self, instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
-        log::trace!("{}📞 Compiling CALL instruction");
+        log::trace!("📞 Compiling CALL instruction");
         
         // Get the call instruction details
         use inkwell::values::CallSiteValue;
@@ -1232,11 +1232,11 @@ where
             ));
         };
         
-        log::debug!("{}   Calling function: {}", function_name);
+        log::debug!("   Calling function: {}", function_name);
         
         // Get arguments
         let arg_count = call_site.count_arguments();
-        log::debug!("{}   Argument count: {}", arg_count);
+        log::debug!("   Argument count: {}", arg_count);
         
         // Create calling convention assigner
         use crate::calling_convention::{SysVAssigner, CCAssigner, CCAssignment, RegBank};
@@ -1274,7 +1274,7 @@ where
             let mut assignment = CCAssignment::new(bank, size, size);
             cc_assigner.assign_arg(&mut assignment);
             
-            log::debug!("{}   Arg {}: v{} -> {:?}", i, arg_idx, assignment);
+            log::debug!("   Arg {}: v{} -> {:?}", i, arg_idx, assignment);
             
             // Create value assignment if needed
             if self.value_mgr.get_assignment(arg_idx).is_none() {
@@ -1368,7 +1368,7 @@ where
             cc_assigner.assign_ret(&mut ret_assignment);
             
             if let Some(ret_reg) = ret_assignment.reg {
-                log::debug!("{}   Return value in {}:{}", ret_reg.bank, ret_reg.id);
+                log::debug!("   Return value in {}:{}", ret_reg.bank, ret_reg.id);
                 
                 // Create value assignment for result
                 if self.value_mgr.get_assignment(result_idx).is_none() {
@@ -1377,7 +1377,7 @@ where
                 
                 // The return value is already in the correct register (RAX or XMM0)
                 // We'll handle this by recording it in our internal tracking
-                log::debug!("{}   Return value will be in register {}:{}", ret_reg.bank, ret_reg.id);
+                log::debug!("   Return value will be in register {}:{}", ret_reg.bank, ret_reg.id);
                 // In a real implementation, we would need to ensure the register
                 // allocation system knows about this fixed assignment
             }
@@ -1387,7 +1387,7 @@ where
     }
     
     fn compile_alloca_instruction(&mut self, _instruction: inkwell::values::InstructionValue<'ctx>) -> Result<(), LlvmCompilerError> {
-        log::info!("{}📋 Compiling ALLOCA instruction (placeholder)");
+        log::info!("📋 Compiling ALLOCA instruction (placeholder)");
         Ok(())
     }
     
@@ -1508,7 +1508,7 @@ where
             }
         } else if gep_expr.needs_materialization {
             // Complex expression needs multiple instructions
-            log::debug!("{}   GEP: Complex materialization required (not implemented)");
+            log::debug!("   GEP: Complex materialization required (not implemented)");
             return Err(LlvmCompilerError::UnsupportedInstruction(
                 "Complex GEP expressions not yet supported".to_string()
             ));
@@ -1569,7 +1569,7 @@ where
                         log::trace!("   Generated:      Generated: mov {}:{}, {}:{}", 
                                  dst_reg.bank, dst_reg.id, src_reg.bank, src_reg.id);
                     } else {
-                        log::debug!("{}      No move needed (same register)");
+                        log::debug!("      No move needed (same register)");
                     }
                     
                     self.session.record_phi_resolved();
@@ -1585,7 +1585,7 @@ where
         &mut self,
         instruction: inkwell::values::InstructionValue<'ctx>
     ) -> Result<(), LlvmCompilerError> {
-        log::trace!("{}🔄 Compiling PHI instruction");
+        log::trace!("🔄 Compiling PHI instruction");
         
         // PHI nodes are special - they don't generate code directly.
         // Instead, they define values that need to be resolved at block edges.
@@ -1638,7 +1638,7 @@ where
                     .map_err(|e| LlvmCompilerError::LlvmError(format!("Invalid block name: {:?}", e)))?;
                 let block_idx = self.get_block_index_by_name(block_name)?;
                 
-                log::debug!("{}   Incoming: v{} from block {} (idx {})", incoming_idx, block_name, block_idx);
+                log::debug!("   Incoming: v{} from block {} (idx {})", incoming_idx, block_name, block_idx);
                 incoming_values.push((incoming_idx, block_idx));
             }
             
