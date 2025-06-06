@@ -1,6 +1,7 @@
 //! Test block successor extraction functionality.
 
-use tpde::{CompilationSession, LlvmCompiler};
+use tpde::core::CompilationSession;
+use tpde::llvm::LlvmCompiler;
 use inkwell::context::Context;
 use inkwell::IntPredicate;
 use bumpalo::Bump;

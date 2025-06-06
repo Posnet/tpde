@@ -35,11 +35,10 @@
 //! - `docs/tpde/guide.md` - Implementation guide with examples
 //! - `docs/tpde/adaptor.md` - IRAdaptor implementation details
 
-// New organized modules
+// Main modules
 pub mod llvm;
 pub mod core;
 pub mod x64;
-pub mod legacy;
 pub mod experimental;
 
 // Utility modules
@@ -58,18 +57,6 @@ pub use core::{
     CompilationSession, SessionStats, SessionError,
 };
 pub use llvm::{LlvmCompiler as LlvmCompilerConcrete, CompiledFunction, LlvmCompilerError};
-
-// =============================================================================
-// Compatibility Layer - Deprecated Aliases
-// =============================================================================
-
-/// Primary LLVM compiler (was llvm_compiler_concrete::LlvmCompiler).
-#[deprecated(since = "0.2.0", note = "Use llvm::LlvmCompiler directly")]
-pub use self::llvm::LlvmCompiler;
-
-/// Generic trait-based compiler (legacy).
-#[deprecated(since = "0.2.0", note = "Use llvm::LlvmCompiler instead of generic approach")]
-pub use self::legacy::GenericCompiler as CompleteCompiler;
 
 /// Temporary hello world to prove the crate builds.
 pub fn hello() -> &'static str {
