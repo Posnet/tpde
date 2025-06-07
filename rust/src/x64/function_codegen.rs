@@ -34,7 +34,7 @@ use bumpalo::Bump;
 /// ABI compliance.
 pub struct FunctionCodegen<'arena> {
     /// Bump allocator backing instruction encoding.
-    alloc: &'arena Bump,
+    _alloc: &'arena Bump,
     /// Machine code encoder.
     encoder: X64Encoder<'arena>,
     /// Calling convention assigner.
@@ -49,7 +49,7 @@ impl<'arena> FunctionCodegen<'arena> {
     /// Create a new function code generator.
     pub fn new(alloc: &'arena Bump) -> Result<Self, FunctionCodegenError> {
         Ok(Self {
-            alloc,
+            _alloc: alloc,
             encoder: X64Encoder::new(alloc)?,
             cc_assigner: SysVAssigner::new(),
             frame: FunctionFrame::new(alloc),

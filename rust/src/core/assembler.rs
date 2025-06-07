@@ -65,7 +65,7 @@ struct LabelInfo {
 
 /// Minimal assembler based on the [`object`] crate producing ELF objects.
 pub struct ElfAssembler {
-    arena: &'static Bump,
+    _arena: &'static Bump,
     obj: Object<'static>,
     current: SectionId,
     labels: BumpVec<'static, LabelInfo>,
@@ -143,7 +143,7 @@ impl<A: IrAdaptor> Assembler<A> for ElfAssembler {
         let mut offsets = HashMap::new_in(arena);
         offsets.insert(text, 0);
         Self {
-            arena,
+            _arena: arena,
             obj,
             current: text,
             labels: BumpVec::new_in(arena),

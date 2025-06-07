@@ -66,7 +66,7 @@ impl From<EncodingError> for X64BackendError {
 /// - ValueRef/ValuePartRef for instruction selection
 /// - X64Encoder for machine code generation
 pub struct X64Backend<'arena> {
-    alloc: &'arena Bump,
+    _alloc: &'arena Bump,
     /// Value assignment tracking.
     value_mgr: ValueAssignmentManager<'arena>,
     /// Register allocator.
@@ -81,7 +81,7 @@ impl<'arena> X64Backend<'arena> {
     /// Create a new x86-64 backend.
     pub fn new(session: &'arena CompilationSession<'arena>) -> Result<Self, X64BackendError> {
         Ok(Self {
-            alloc: session.arena(),
+            _alloc: session.arena(),
             value_mgr: ValueAssignmentManager::new_in(session.arena()),
             register_file: RegisterFile::new(session, 16, 2, RegBitSet::all_in_bank(0, 16)),
             encoder: InstructionSelector::new(session.arena())?,

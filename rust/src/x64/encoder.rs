@@ -58,7 +58,7 @@ impl std::error::Error for EncodingError {}
 /// generating real x86-64 machine code that can be executed.
 pub struct X64Encoder<'arena> {
     /// Allocator backing all encoder collections.
-    alloc: &'arena Bump,
+    _alloc: &'arena Bump,
     /// Code assembler for generating instructions.
     assembler: CodeAssembler,
     /// Current instruction buffer position.
@@ -76,7 +76,7 @@ impl<'arena> X64Encoder<'arena> {
             CodeAssembler::new(64).map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
 
         Ok(Self {
-            alloc,
+            _alloc: alloc,
             assembler,
             position: 0x1000, // Start at a reasonable base address
             block_labels: HashMap::new_in(alloc),
