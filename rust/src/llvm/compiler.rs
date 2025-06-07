@@ -28,7 +28,8 @@ use crate::{
 use inkwell::basic_block::BasicBlock;
 use inkwell::values::BasicValueEnum;
 use inkwell::IntPredicate;
-use std::collections::HashMap;
+use hashbrown::{HashMap, DefaultHashBuilder};
+use bumpalo::Bump;
 
 /// Addressing modes for x86-64 memory operations.
 #[derive(Debug, Clone)]
@@ -159,7 +160,7 @@ pub struct LlvmCompiler<'ctx, 'arena> {
     codegen: FunctionCodegen<'arena>,
 
     /// Cache of compiled functions.
-    compiled_functions: HashMap<String, CompiledFunction<'arena>>,
+    compiled_functions: HashMap<String, CompiledFunction<'arena>, DefaultHashBuilder, &'arena Bump>,
 
     /// Current function being compiled.
     current_function: Option<inkwell::values::FunctionValue<'ctx>>,
@@ -257,7 +258,7 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
             value_mgr,
             register_file,
             codegen,
-            compiled_functions: HashMap::new(),
+            compiled_functions: HashMap::new_in(session.arena()),
             current_function: None,
         })
     }
@@ -4068,7 +4069,7 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
     }
 
     /// Get list of compiled functions.
-    pub fn compiled_functions(&self) -> &HashMap<String, CompiledFunction<'arena>> {
+    pub fn compiled_functions(&self) -> &HashMap<String, CompiledFunction<'arena>, DefaultHashBuilder, &'arena Bump> {
         &self.compiled_functions
     }
 

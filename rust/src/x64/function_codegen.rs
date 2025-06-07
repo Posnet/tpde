@@ -32,24 +32,27 @@ use bumpalo::Bump;
 /// This integrates the calling convention logic with machine code generation,
 /// providing a high-level interface for compiling functions with proper
 /// ABI compliance.
-pub struct FunctionCodegen<'a> {
+pub struct FunctionCodegen<'arena> {
+    /// Bump allocator backing instruction encoding.
+    alloc: &'arena Bump,
     /// Machine code encoder.
-    encoder: X64Encoder,
+    encoder: X64Encoder<'arena>,
     /// Calling convention assigner.
     cc_assigner: SysVAssigner,
     /// Stack frame management.
-    frame: FunctionFrame<'a>,
+    frame: FunctionFrame<'arena>,
     /// Whether function makes calls (affects register allocation).
     makes_calls: bool,
 }
 
-impl<'a> FunctionCodegen<'a> {
+impl<'arena> FunctionCodegen<'arena> {
     /// Create a new function code generator.
-    pub fn new(arena: &'a Bump) -> Result<Self, FunctionCodegenError> {
+    pub fn new(alloc: &'arena Bump) -> Result<Self, FunctionCodegenError> {
         Ok(Self {
-            encoder: X64Encoder::new()?,
+            alloc,
+            encoder: X64Encoder::new(alloc)?,
             cc_assigner: SysVAssigner::new(),
-            frame: FunctionFrame::new(arena),
+            frame: FunctionFrame::new(alloc),
             makes_calls: false,
         })
     }
@@ -270,7 +273,7 @@ impl<'a> FunctionCodegen<'a> {
     }
 
     /// Get access to the underlying encoder for instruction emission.
-    pub fn encoder_mut(&mut self) -> &mut X64Encoder {
+    pub fn encoder_mut(&mut self) -> &mut X64Encoder<'arena> {
         &mut self.encoder
     }
 
@@ -280,7 +283,7 @@ impl<'a> FunctionCodegen<'a> {
     }
 
     /// Get the current stack frame info.
-    pub fn get_frame(&self) -> &FunctionFrame<'a> {
+    pub fn get_frame(&self) -> &FunctionFrame<'arena> {
         &self.frame
     }
 
@@ -464,6 +467,7 @@ mod tests {
     #[test]
     fn test_many_arguments() {
         let arena = Bump::new();
+        let session = CompilationSession::new(&arena);
         let mut codegen = FunctionCodegen::new(&arena).unwrap();
 
         // Function with 8 integer arguments (6 in regs, 2 on stack)
@@ -477,9 +481,6 @@ mod tests {
             ArgInfo::int64(),
             ArgInfo::int64(),
         ];
-
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
         let assignments = codegen.process_arguments(&session, &args).unwrap();
 
         // First 6 should be in registers
@@ -498,6 +499,7 @@ mod tests {
     #[test]
     fn test_mixed_argument_types() {
         let arena = Bump::new();
+        let session = CompilationSession::new(&arena);
         let mut codegen = FunctionCodegen::new(&arena).unwrap();
 
         // Function with mixed int/float arguments
@@ -507,9 +509,6 @@ mod tests {
             ArgInfo::int32(),   // RSI
             ArgInfo::float32(), // XMM1
         ];
-
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
         let assignments = codegen.process_arguments(&session, &args).unwrap();
 
         // Verify register assignments

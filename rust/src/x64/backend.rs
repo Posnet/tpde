@@ -16,6 +16,7 @@
 //! from SSA IR through register allocation to machine code generation.
 
 use super::encoder::{EncodingError, InstructionSelector};
+use bumpalo::Bump;
 use crate::core::{
     assembler::ElfAssembler,
     register_file::{RegAllocError, RegBitSet, RegisterFile},
@@ -65,23 +66,25 @@ impl From<EncodingError> for X64BackendError {
 /// - ValueRef/ValuePartRef for instruction selection
 /// - X64Encoder for machine code generation
 pub struct X64Backend<'arena> {
+    alloc: &'arena Bump,
     /// Value assignment tracking.
     value_mgr: ValueAssignmentManager<'arena>,
     /// Register allocator.
     register_file: RegisterFile,
     /// Instruction encoder.
-    encoder: InstructionSelector,
+    encoder: InstructionSelector<'arena>,
     /// Current stack frame size.
     frame_size: u32,
 }
 
 impl<'arena> X64Backend<'arena> {
-    /// Create a new x86-64 backend backed by the given arena.
-    pub fn new(arena: &'arena Bump) -> Result<Self, X64BackendError> {
+    /// Create a new x86-64 backend.
+    pub fn new(alloc: &'arena Bump) -> Result<Self, X64BackendError> {
         Ok(Self {
-            value_mgr: ValueAssignmentManager::new_in(arena),
+            alloc,
+            value_mgr: ValueAssignmentManager::new_in(alloc),
             register_file: RegisterFile::new(16, 2, RegBitSet::all_in_bank(0, 16)),
-            encoder: InstructionSelector::new()?,
+            encoder: InstructionSelector::new(alloc)?,
             frame_size: 0,
         })
     }
@@ -388,8 +391,8 @@ mod tests {
 
     #[test]
     fn test_x64_backend_creation() {
-        let arena = Bump::new();
-        let backend = X64Backend::new(&arena);
+        let alloc = Bump::new();
+        let backend = X64Backend::new(&alloc);
         assert!(backend.is_ok());
     }
 
