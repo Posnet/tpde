@@ -90,139 +90,93 @@ impl X64Encoder {
 
     /// Convert AsmReg to iced-x86 64-bit GP register.
     fn to_gp64_register(&self, reg: AsmReg) -> Result<AsmRegister64, EncodingError> {
+        use iced_x86::code_asm::*;
+        
         if reg.bank != 0 {
             return Err(EncodingError::InvalidRegister);
         }
 
-        match reg.id {
-            0 => Ok(iced_x86::code_asm::rax),
-            1 => Ok(iced_x86::code_asm::rcx),
-            2 => Ok(iced_x86::code_asm::rdx),
-            3 => Ok(iced_x86::code_asm::rbx),
-            4 => Ok(iced_x86::code_asm::rsp),
-            5 => Ok(iced_x86::code_asm::rbp),
-            6 => Ok(iced_x86::code_asm::rsi),
-            7 => Ok(iced_x86::code_asm::rdi),
-            8 => Ok(iced_x86::code_asm::r8),
-            9 => Ok(iced_x86::code_asm::r9),
-            10 => Ok(iced_x86::code_asm::r10),
-            11 => Ok(iced_x86::code_asm::r11),
-            12 => Ok(iced_x86::code_asm::r12),
-            13 => Ok(iced_x86::code_asm::r13),
-            14 => Ok(iced_x86::code_asm::r14),
-            15 => Ok(iced_x86::code_asm::r15),
-            _ => Err(EncodingError::InvalidRegister),
-        }
+        const GP64_REGS: [AsmRegister64; 16] = [
+            rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi,
+            r8, r9, r10, r11, r12, r13, r14, r15,
+        ];
+        
+        GP64_REGS.get(reg.id as usize)
+            .copied()
+            .ok_or(EncodingError::InvalidRegister)
     }
 
     /// Convert AsmReg to iced-x86 32-bit GP register.
     fn to_gp32_register(&self, reg: AsmReg) -> Result<AsmRegister32, EncodingError> {
+        use iced_x86::code_asm::*;
+        
         if reg.bank != 0 {
             return Err(EncodingError::InvalidRegister);
         }
 
-        match reg.id {
-            0 => Ok(iced_x86::code_asm::eax),
-            1 => Ok(iced_x86::code_asm::ecx),
-            2 => Ok(iced_x86::code_asm::edx),
-            3 => Ok(iced_x86::code_asm::ebx),
-            4 => Ok(iced_x86::code_asm::esp),
-            5 => Ok(iced_x86::code_asm::ebp),
-            6 => Ok(iced_x86::code_asm::esi),
-            7 => Ok(iced_x86::code_asm::edi),
-            8 => Ok(iced_x86::code_asm::r8d),
-            9 => Ok(iced_x86::code_asm::r9d),
-            10 => Ok(iced_x86::code_asm::r10d),
-            11 => Ok(iced_x86::code_asm::r11d),
-            12 => Ok(iced_x86::code_asm::r12d),
-            13 => Ok(iced_x86::code_asm::r13d),
-            14 => Ok(iced_x86::code_asm::r14d),
-            15 => Ok(iced_x86::code_asm::r15d),
-            _ => Err(EncodingError::InvalidRegister),
-        }
+        const GP32_REGS: [AsmRegister32; 16] = [
+            eax, ecx, edx, ebx, esp, ebp, esi, edi,
+            r8d, r9d, r10d, r11d, r12d, r13d, r14d, r15d,
+        ];
+        
+        GP32_REGS.get(reg.id as usize)
+            .copied()
+            .ok_or(EncodingError::InvalidRegister)
     }
 
     /// Convert AsmReg to iced-x86 16-bit GP register.
     fn to_gp16_register(&self, reg: AsmReg) -> Result<AsmRegister16, EncodingError> {
+        use iced_x86::code_asm::*;
+        
         if reg.bank != 0 {
             return Err(EncodingError::InvalidRegister);
         }
 
-        match reg.id {
-            0 => Ok(iced_x86::code_asm::ax),
-            1 => Ok(iced_x86::code_asm::cx),
-            2 => Ok(iced_x86::code_asm::dx),
-            3 => Ok(iced_x86::code_asm::bx),
-            4 => Ok(iced_x86::code_asm::sp),
-            5 => Ok(iced_x86::code_asm::bp),
-            6 => Ok(iced_x86::code_asm::si),
-            7 => Ok(iced_x86::code_asm::di),
-            8 => Ok(iced_x86::code_asm::r8w),
-            9 => Ok(iced_x86::code_asm::r9w),
-            10 => Ok(iced_x86::code_asm::r10w),
-            11 => Ok(iced_x86::code_asm::r11w),
-            12 => Ok(iced_x86::code_asm::r12w),
-            13 => Ok(iced_x86::code_asm::r13w),
-            14 => Ok(iced_x86::code_asm::r14w),
-            15 => Ok(iced_x86::code_asm::r15w),
-            _ => Err(EncodingError::InvalidRegister),
-        }
+        const GP16_REGS: [AsmRegister16; 16] = [
+            ax, cx, dx, bx, sp, bp, si, di,
+            r8w, r9w, r10w, r11w, r12w, r13w, r14w, r15w,
+        ];
+        
+        GP16_REGS.get(reg.id as usize)
+            .copied()
+            .ok_or(EncodingError::InvalidRegister)
     }
 
     /// Convert AsmReg to iced-x86 8-bit GP register.
     fn to_gp8_register(&self, reg: AsmReg) -> Result<AsmRegister8, EncodingError> {
+        use iced_x86::code_asm::*;
+        
         if reg.bank != 0 {
             return Err(EncodingError::InvalidRegister);
         }
 
-        match reg.id {
-            0 => Ok(iced_x86::code_asm::al),
-            1 => Ok(iced_x86::code_asm::cl),
-            2 => Ok(iced_x86::code_asm::dl),
-            3 => Ok(iced_x86::code_asm::bl),
-            4 => Ok(iced_x86::code_asm::spl),
-            5 => Ok(iced_x86::code_asm::bpl),
-            6 => Ok(iced_x86::code_asm::sil),
-            7 => Ok(iced_x86::code_asm::dil),
-            // For R8-R15, we use the 8-bit part which is accessed via r8b, r9b, etc.
-            8 => Ok(iced_x86::code_asm::r8b),
-            9 => Ok(iced_x86::code_asm::r9b),
-            10 => Ok(iced_x86::code_asm::r10b),
-            11 => Ok(iced_x86::code_asm::r11b),
-            12 => Ok(iced_x86::code_asm::r12b),
-            13 => Ok(iced_x86::code_asm::r13b),
-            14 => Ok(iced_x86::code_asm::r14b),
-            15 => Ok(iced_x86::code_asm::r15b),
-            _ => Err(EncodingError::InvalidRegister),
-        }
+        const GP8_REGS: [AsmRegister8; 16] = [
+            al, cl, dl, bl, spl, bpl, sil, dil,
+            r8b, r9b, r10b, r11b, r12b, r13b, r14b, r15b,
+        ];
+        
+        GP8_REGS.get(reg.id as usize)
+            .copied()
+            .ok_or(EncodingError::InvalidRegister)
     }
 
     /// Convert AsmReg to iced-x86 Register for XMM registers.
     #[allow(dead_code)]
     fn to_xmm_register(&self, reg: AsmReg) -> Result<AsmRegisterXmm, EncodingError> {
+        use iced_x86::code_asm::*;
+        
         if reg.bank != 1 {
             return Err(EncodingError::InvalidRegister);
         }
 
-        match reg.id {
-            0 => Ok(iced_x86::code_asm::xmm0),
-            1 => Ok(iced_x86::code_asm::xmm1),
-            2 => Ok(iced_x86::code_asm::xmm2),
-            3 => Ok(iced_x86::code_asm::xmm3),
-            4 => Ok(iced_x86::code_asm::xmm4),
-            5 => Ok(iced_x86::code_asm::xmm5),
-            6 => Ok(iced_x86::code_asm::xmm6),
-            7 => Ok(iced_x86::code_asm::xmm7),
-            8 => Ok(iced_x86::code_asm::xmm8),
-            9 => Ok(iced_x86::code_asm::xmm9),
-            10 => Ok(iced_x86::code_asm::xmm10),
-            11 => Ok(iced_x86::code_asm::xmm11),
-            12 => Ok(iced_x86::code_asm::xmm12),
-            13 => Ok(iced_x86::code_asm::xmm13),
-            14 => Ok(iced_x86::code_asm::xmm14),
-            15 => Ok(iced_x86::code_asm::xmm15),
-            _ => Err(EncodingError::InvalidRegister),
-        }
+        const XMM_REGS: [AsmRegisterXmm; 16] = [
+            xmm0, xmm1, xmm2, xmm3, xmm4, xmm5, xmm6, xmm7,
+            xmm8, xmm9, xmm10, xmm11, xmm12, xmm13, xmm14, xmm15,
+        ];
+        
+        XMM_REGS.get(reg.id as usize)
+            .copied()
+            .ok_or(EncodingError::InvalidRegister)
     }
 
     /// Emit MOV instruction - register to register.

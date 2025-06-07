@@ -61,8 +61,9 @@ impl PartData {
         assert!(reg_id < 32, "Register ID must fit in 5 bits");
         assert!(size_log2 < 8, "Size log2 must fit in 3 bits");
 
-        let packed = ((reg_bank as u16) << 13) | ((reg_id as u16) << 8) | ((size_log2 as u16) << 5);
-        Self { packed }
+        Self {
+            packed: ((reg_bank as u16) << 13) | ((reg_id as u16) << 8) | ((size_log2 as u16) << 5),
+        }
     }
 
     /// Get the register bank for this part.
@@ -92,11 +93,7 @@ impl PartData {
 
     /// Set register validity flag.
     pub fn set_register_valid(&mut self, valid: bool) {
-        if valid {
-            self.packed |= 0x1;
-        } else {
-            self.packed &= !0x1;
-        }
+        self.packed = if valid { self.packed | 0x1 } else { self.packed & !0x1 };
     }
 
     /// Whether the part has been modified since last spill.
@@ -106,11 +103,7 @@ impl PartData {
 
     /// Set modification flag.
     pub fn set_modified(&mut self, modified: bool) {
-        if modified {
-            self.packed |= 0x2;
-        } else {
-            self.packed &= !0x2;
-        }
+        self.packed = if modified { self.packed | 0x2 } else { self.packed & !0x2 };
     }
 }
 
@@ -327,11 +320,9 @@ impl ValueAssignmentManager {
 
     /// Get a mutable reference to the assignment for a local value.
     pub fn get_assignment_mut(&mut self, local_idx: ValLocalIdx) -> Option<&mut ValueAssignment> {
-        if let Some(&idx) = self.assignments.get(&local_idx) {
-            self.allocator.get_mut(idx)
-        } else {
-            None
-        }
+        self.assignments
+            .get(&local_idx)
+            .and_then(|&idx| self.allocator.get_mut(idx))
     }
 
     /// Remove reference to a value, potentially freeing its assignment.

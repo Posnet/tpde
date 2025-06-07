@@ -181,6 +181,16 @@ pub struct CompiledFunction<'arena> {
     pub code_size: usize,
 }
 
+/// Macro to simplify error mapping
+macro_rules! map_err {
+    ($expr:expr, $variant:ident, $msg:expr) => {
+        $expr.map_err(|e| LlvmCompilerError::$variant(format!("{}: {:?}", $msg, e)))
+    };
+    ($expr:expr, $variant:ident) => {
+        $expr.map_err(|e| LlvmCompilerError::$variant(format!("{:?}", e)))
+    };
+}
+
 /// Errors that can occur during LLVM compilation.
 #[derive(Debug, Clone)]
 pub enum LlvmCompilerError {
@@ -208,18 +218,15 @@ pub enum LlvmCompilerError {
 
 impl std::fmt::Display for LlvmCompilerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use LlvmCompilerError::*;
         match self {
-            LlvmCompilerError::LlvmError(msg) => write!(f, "LLVM error: {}", msg),
-            LlvmCompilerError::RegisterAllocation(msg) => {
-                write!(f, "Register allocation error: {}", msg)
-            }
-            LlvmCompilerError::CodeGeneration(msg) => write!(f, "Code generation error: {}", msg),
-            LlvmCompilerError::UnsupportedInstruction(msg) => {
-                write!(f, "Unsupported instruction: {}", msg)
-            }
-            LlvmCompilerError::FunctionNotFound(msg) => write!(f, "Function not found: {}", msg),
-            LlvmCompilerError::InvalidInstruction(msg) => write!(f, "Invalid instruction: {}", msg),
-            LlvmCompilerError::Session(err) => write!(f, "Session error: {}", err),
+            LlvmError(msg) => write!(f, "LLVM error: {msg}"),
+            RegisterAllocation(msg) => write!(f, "Register allocation error: {msg}"),
+            CodeGeneration(msg) => write!(f, "Code generation error: {msg}"),
+            UnsupportedInstruction(msg) => write!(f, "Unsupported instruction: {msg}"),
+            FunctionNotFound(msg) => write!(f, "Function not found: {msg}"),
+            InvalidInstruction(msg) => write!(f, "Invalid instruction: {msg}"),
+            Session(err) => write!(f, "Session error: {err}"),
         }
     }
 }
@@ -241,9 +248,7 @@ where
         allocatable.union(&RegBitSet::all_in_bank(0, 16)); // GP regs
         allocatable.union(&RegBitSet::all_in_bank(1, 16)); // XMM regs
         let register_file = RegisterFile::new(16, 2, allocatable);
-        let codegen = FunctionCodegen::new().map_err(|e| {
-            LlvmCompilerError::CodeGeneration(format!("Failed to create codegen: {:?}", e))
-        })?;
+        let codegen = map_err!(FunctionCodegen::new(), CodeGeneration, "Failed to create codegen")?;
 
         Ok(Self {
             module,
@@ -299,21 +304,19 @@ where
         allocatable.union(&RegBitSet::all_in_bank(0, 16)); // GP regs
         allocatable.union(&RegBitSet::all_in_bank(1, 16)); // XMM regs
         self.register_file = RegisterFile::new(16, 2, allocatable);
-        self.codegen = FunctionCodegen::new().map_err(|e| {
-            LlvmCompilerError::CodeGeneration(format!("Failed to reset codegen: {:?}", e))
-        })?;
+        self.codegen = map_err!(FunctionCodegen::new(), CodeGeneration, "Failed to reset codegen")?;
 
         // Process function signature and setup
         self.setup_function_signature(function)?;
 
         // Analyze function using the consuming analyzer
-        let analyzer = FunctionAnalyzer::new(self.session, function).map_err(|e| {
-            LlvmCompilerError::LlvmError(format!("Failed to create analyzer: {:?}", e))
-        })?;
+        let analyzer = map_err!(
+            FunctionAnalyzer::new(self.session, function),
+            LlvmError,
+            "Failed to create analyzer"
+        )?;
 
-        let analysis = analyzer.analyze().map_err(|e| {
-            LlvmCompilerError::LlvmError(format!("Function analysis failed: {:?}", e))
-        })?;
+        let analysis = map_err!(analyzer.analyze(), LlvmError, "Function analysis failed")?;
 
         log::debug!("📊 Function analysis complete:");
         log::debug!("   - {} blocks", analysis.num_blocks);
@@ -324,17 +327,13 @@ where
         self.store_phi_nodes_from_analysis(&analysis)?;
 
         // Generate prologue
-        self.codegen.emit_prologue().map_err(|e| {
-            LlvmCompilerError::CodeGeneration(format!("Prologue generation failed: {:?}", e))
-        })?;
+        map_err!(self.codegen.emit_prologue(), CodeGeneration, "Prologue generation failed")?;
 
         // Compile function body with analysis
         self.compile_function_body_with_analysis(function, analysis)?;
 
         // Generate epilogue
-        self.codegen.emit_epilogue().map_err(|e| {
-            LlvmCompilerError::CodeGeneration(format!("Epilogue generation failed: {:?}", e))
-        })?;
+        map_err!(self.codegen.emit_epilogue(), CodeGeneration, "Epilogue generation failed")?;
 
         // Take ownership of codegen and finalize
         let codegen = std::mem::replace(

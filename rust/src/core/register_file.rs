@@ -83,10 +83,9 @@ impl RegBitSet {
 
     /// Check if register is set.
     pub fn contains(&self, reg: AsmReg) -> bool {
-        if reg.bank as usize >= MAX_REGISTER_BANKS || reg.id >= 64 {
-            return false;
-        }
-        (self.banks[reg.bank as usize] & (1u64 << reg.id)) != 0
+        reg.bank < MAX_REGISTER_BANKS as u8 
+            && reg.id < 64 
+            && (self.banks[reg.bank as usize] & (1u64 << reg.id)) != 0
     }
 
     /// Set a register.
@@ -133,10 +132,7 @@ impl RegBitSet {
 
     /// Check if any registers are set in the given bank.
     pub fn any_in_bank(&self, bank: RegBank) -> bool {
-        if bank as usize >= MAX_REGISTER_BANKS {
-            return false;
-        }
-        self.banks[bank as usize] != 0
+        bank < MAX_REGISTER_BANKS as u8 && self.banks[bank as usize] != 0
     }
 
     /// Count number of set registers in bank.
