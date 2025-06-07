@@ -118,7 +118,7 @@ impl<'arena> TestIRCompiler<'arena> {
             func.name, arg_count, func.arg_begin_idx, func.arg_end_idx
         );
         let args: Vec<ArgInfo> = vec![ArgInfo::int64(); arg_count];
-        let arg_assignments = func_codegen.process_arguments(&args)?;
+        let arg_assignments = func_codegen.process_arguments(self._session, &args)?;
 
         // Assign arguments to registers/stack according to calling convention
         for (idx, assignment) in arg_assignments.iter().enumerate() {
@@ -158,7 +158,7 @@ impl<'arena> TestIRCompiler<'arena> {
 
         // Set return value (always single i64 for TestIR)
         let rets = vec![ArgInfo::int64()];
-        func_codegen.process_return_values(&rets)?;
+        func_codegen.process_return_values(self._session, &rets)?;
 
         // Generate prologue
         func_codegen.emit_prologue()?;

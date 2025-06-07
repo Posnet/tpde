@@ -59,12 +59,15 @@ impl FunctionCodegen {
     }
 
     /// Process function arguments according to calling convention.
-    pub fn process_arguments(
+    pub fn process_arguments<'arena>(
         &mut self,
+        session: &'arena crate::core::session::CompilationSession<'arena>,
         args: &[ArgInfo],
-    ) -> Result<Vec<CCAssignment>, FunctionCodegenError> {
+    ) -> Result<&'arena [CCAssignment], FunctionCodegenError> {
+        use bumpalo::collections::Vec as BumpVec;
+
         self.cc_assigner.reset();
-        let mut assignments = Vec::new();
+        let mut assignments = BumpVec::with_capacity_in(args.len(), session.arena());
 
         for arg in args {
             let mut assignment = CCAssignment::new(arg.bank, arg.size, arg.align);
@@ -72,25 +75,47 @@ impl FunctionCodegen {
             assignments.push(assignment);
         }
 
-        self.frame.arg_assignments = assignments.clone();
-        Ok(assignments)
+        let slice = assignments.into_bump_slice();
+        self.frame.arg_assignments = slice.to_vec();
+        Ok(slice)
     }
 
     /// Process return values according to calling convention.
-    pub fn process_return_values(
+    pub fn process_return_values<'arena>(
         &mut self,
+        session: &'arena crate::core::session::CompilationSession<'arena>,
         rets: &[ArgInfo],
-    ) -> Result<Vec<CCAssignment>, FunctionCodegenError> {
-        let mut assignments = Vec::new();
+    ) -> Result<&'arena [CCAssignment], FunctionCodegenError> {
+        use bumpalo::collections::Vec as BumpVec;
 
+        if rets.is_empty() {
+            self.frame.ret_assignments.clear();
+            return Ok(&[]);
+        }
+
+        if rets.len() <= 2 {
+            // Fixed-size array for up to two return values
+            let mut tmp = [CCAssignment::new(RegBank::GeneralPurpose, 0, 0); 2];
+            for (i, ret) in rets.iter().enumerate() {
+                tmp[i] = CCAssignment::new(ret.bank, ret.size, ret.align);
+                self.cc_assigner.assign_ret(&mut tmp[i]);
+            }
+            let arr_ref = session.alloc(tmp);
+            let slice = &arr_ref[..rets.len()];
+            self.frame.ret_assignments = slice.to_vec();
+            return Ok(slice);
+        }
+
+        let mut assignments = BumpVec::with_capacity_in(rets.len(), session.arena());
         for ret in rets {
             let mut assignment = CCAssignment::new(ret.bank, ret.size, ret.align);
             self.cc_assigner.assign_ret(&mut assignment);
             assignments.push(assignment);
         }
 
-        self.frame.ret_assignments = assignments.clone();
-        Ok(assignments)
+        let slice = assignments.into_bump_slice();
+        self.frame.ret_assignments = slice.to_vec();
+        Ok(slice)
     }
 
     /// Add a callee-saved register that needs to be preserved.
@@ -351,17 +376,21 @@ impl From<EncodingError> for FunctionCodegenError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::session::CompilationSession;
+    use bumpalo::Bump;
 
     #[test]
     fn test_simple_function_codegen() {
+        let arena = Bump::new();
+        let session = CompilationSession::new(&arena);
         let mut codegen = FunctionCodegen::new().unwrap();
 
         // Simple function: int add(int a, int b) { return a + b; }
         let args = vec![ArgInfo::int32(), ArgInfo::int32()];
         let rets = vec![ArgInfo::int32()];
 
-        let arg_assignments = codegen.process_arguments(&args).unwrap();
-        let ret_assignments = codegen.process_return_values(&rets).unwrap();
+        let arg_assignments = codegen.process_arguments(&session, &args).unwrap();
+        let ret_assignments = codegen.process_return_values(&session, &rets).unwrap();
 
         // Verify arguments are assigned to RDI, RSI
         assert!(arg_assignments[0].reg.is_some());
@@ -443,7 +472,9 @@ mod tests {
             ArgInfo::int64(),
         ];
 
-        let assignments = codegen.process_arguments(&args).unwrap();
+        let arena = Bump::new();
+        let session = CompilationSession::new(&arena);
+        let assignments = codegen.process_arguments(&session, &args).unwrap();
 
         // First 6 should be in registers
         for assignment in assignments.iter().take(6) {
@@ -470,7 +501,9 @@ mod tests {
             ArgInfo::float32(), // XMM1
         ];
 
-        let assignments = codegen.process_arguments(&args).unwrap();
+        let arena = Bump::new();
+        let session = CompilationSession::new(&arena);
+        let assignments = codegen.process_arguments(&session, &args).unwrap();
 
         // Verify register assignments
         assert_eq!(assignments[0].reg.unwrap(), AsmReg::new(0, 7)); // RDI

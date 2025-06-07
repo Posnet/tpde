@@ -429,11 +429,15 @@ where
         };
 
         // Setup calling convention
-        self.codegen.process_arguments(&args_vec).map_err(|e| {
+        self.codegen
+            .process_arguments(self.session, &args_vec)
+            .map_err(|e| {
             LlvmCompilerError::CodeGeneration(format!("Argument processing failed: {:?}", e))
         })?;
 
-        self.codegen.process_return_values(&ret_info).map_err(|e| {
+        self.codegen
+            .process_return_values(self.session, &ret_info)
+            .map_err(|e| {
             LlvmCompilerError::CodeGeneration(format!("Return value processing failed: {:?}", e))
         })?;
 
