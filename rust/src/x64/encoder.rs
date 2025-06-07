@@ -265,6 +265,17 @@ impl<'arena> X64Encoder<'arena> {
         Ok(())
     }
 
+    /// Emit MOV instruction - register to register (32-bit).
+    pub fn mov32_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp32_register(dst)?;
+        let src_reg = self.to_gp32_register(src)?;
+
+        self.assembler
+            .mov(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
     // ==== SIGN/ZERO EXTENSION INSTRUCTIONS ====
 
     /// Emit MOVSX instruction - 8-bit to 32-bit sign extension.
@@ -579,17 +590,6 @@ impl<'arena> X64Encoder<'arena> {
     }
 
     // ==== 32-BIT INSTRUCTION VARIANTS (Critical for i32 operations) ====
-
-    /// Emit MOV instruction - register to register (32-bit).
-    pub fn mov32_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
-        let dst_reg = self.to_gp32_register(dst)?;
-        let src_reg = self.to_gp32_register(src)?;
-
-        self.assembler
-            .mov(dst_reg, src_reg)
-            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
-        Ok(())
-    }
 
     /// Emit MOV instruction - immediate to register (32-bit).
     pub fn mov32_reg_imm(&mut self, dst: AsmReg, imm: i32) -> Result<(), EncodingError> {
@@ -1285,6 +1285,46 @@ impl<'arena> X64Encoder<'arena> {
     pub fn nop(&mut self) -> Result<(), EncodingError> {
         self.assembler
             .nop()
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit CMOVE (conditional move if equal) for 32-bit registers.
+    pub fn cmove32_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp32_register(dst)?;
+        let src_reg = self.to_gp32_register(src)?;
+        self.assembler
+            .cmove(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit CMOVE (conditional move if equal) for 64-bit registers.
+    pub fn cmove64_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp64_register(dst)?;
+        let src_reg = self.to_gp64_register(src)?;
+        self.assembler
+            .cmove(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit CMOVNE (conditional move if not equal) for 32-bit registers.
+    pub fn cmovne32_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp32_register(dst)?;
+        let src_reg = self.to_gp32_register(src)?;
+        self.assembler
+            .cmovne(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit CMOVNE (conditional move if not equal) for 64-bit registers.
+    pub fn cmovne64_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_gp64_register(dst)?;
+        let src_reg = self.to_gp64_register(src)?;
+        self.assembler
+            .cmovne(dst_reg, src_reg)
             .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
         Ok(())
     }

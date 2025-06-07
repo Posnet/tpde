@@ -220,6 +220,9 @@ pub enum LlvmCompilerError {
 
     /// Memory limit exceeded.
     MemoryLimit(String),
+
+    /// Unsupported type.
+    UnsupportedType(String),
 }
 
 impl std::fmt::Display for LlvmCompilerError {
@@ -234,6 +237,7 @@ impl std::fmt::Display for LlvmCompilerError {
             InvalidInstruction(msg) => write!(f, "Invalid instruction: {msg}"),
             Session(err) => write!(f, "Session error: {err}"),
             MemoryLimit(msg) => write!(f, "Memory limit exceeded: {msg}"),
+            UnsupportedType(msg) => write!(f, "Unsupported type: {msg}"),
         }
     }
 }
@@ -594,6 +598,7 @@ impl<'ctx, 'arena, 'session> LlvmCompiler<'ctx, 'arena, 'session> {
             InstructionOpcode::SDiv => self.compile_sdiv_instruction(instruction),
             InstructionOpcode::URem => self.compile_urem_instruction(instruction),
             InstructionOpcode::SRem => self.compile_srem_instruction(instruction),
+            InstructionOpcode::Select => self.compile_select_instruction(instruction),
 
             _ => {
                 log::warn!(
@@ -1731,6 +1736,161 @@ impl<'ctx, 'arena, 'session> LlvmCompiler<'ctx, 'arena, 'session> {
 
             self.register_file.unlock_register(scratch_reg).ok();
             self.register_file.free_register(scratch_reg).ok();
+        }
+
+        Ok(())
+    }
+
+    /// Compile Select (ternary conditional) instruction.
+    fn compile_select_instruction(
+        &mut self,
+        instruction: inkwell::values::InstructionValue<'ctx>,
+    ) -> Result<(), LlvmCompilerError> {
+        log::trace!("🔧 Compiling SELECT instruction");
+
+        // Select has 3 operands: condition, true_value, false_value
+        let condition = instruction.get_operand(0).unwrap().left().unwrap();
+        let true_value = instruction.get_operand(1).unwrap().left().unwrap();
+        let false_value = instruction.get_operand(2).unwrap().left().unwrap();
+
+        // Get bit width from result type
+        let bit_width = instruction.get_type().into_int_type().get_bit_width();
+        let value_size = match bit_width {
+            1 | 8 => 1,
+            16 => 2,
+            32 => 4,
+            64 => 8,
+            _ => {
+                return Err(LlvmCompilerError::UnsupportedType(format!(
+                    "Unsupported bit width for select: {}",
+                    bit_width
+                )))
+            }
+        };
+
+        // Get indices for operands
+        let condition_idx = self.get_or_create_value_index(condition)?;
+        let true_idx = self.get_or_create_value_index(true_value)?;
+        let false_idx = self.get_or_create_value_index(false_value)?;
+
+        // Create value assignment for result
+        use inkwell::values::AsValueRef;
+        let inst_ptr = instruction.as_value_ref() as usize;
+        let result_idx = inst_ptr % 1024; // Simple hash for value index
+
+        // Create value assignments if needed
+        if self.value_mgr.get_assignment(condition_idx).is_none() {
+            self.value_mgr.create_assignment(condition_idx, 1, 1); // Condition is always 1 byte
+        }
+        if self.value_mgr.get_assignment(true_idx).is_none() {
+            self.value_mgr.create_assignment(true_idx, 1, value_size);
+        }
+        if self.value_mgr.get_assignment(false_idx).is_none() {
+            self.value_mgr.create_assignment(false_idx, 1, value_size);
+        }
+        if self.value_mgr.get_assignment(result_idx).is_none() {
+            self.value_mgr.create_assignment(result_idx, 1, value_size);
+        }
+
+        // Create compiler context
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+
+        // Load condition into a register
+        let mut condition_ref = ValuePartRef::new(condition_idx, 0).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to create condition ref: {:?}", e))
+        })?;
+        let condition_reg = condition_ref.load_to_reg(&mut ctx).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to load condition: {:?}", e))
+        })?;
+
+        // Load true value into a register
+        let mut true_ref = ValuePartRef::new(true_idx, 0).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to create true ref: {:?}", e))
+        })?;
+        let true_reg = true_ref.load_to_reg(&mut ctx).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to load true value: {:?}", e))
+        })?;
+
+        // Load false value into a register
+        let mut false_ref = ValuePartRef::new(false_idx, 0).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to create false ref: {:?}", e))
+        })?;
+        let false_reg = false_ref.load_to_reg(&mut ctx).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to load false value: {:?}", e))
+        })?;
+
+        // Allocate result register
+        let mut result_ref = ValuePartRef::new(result_idx, 0).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to create result ref: {:?}", e))
+        })?;
+        let result_reg = result_ref.load_to_reg(&mut ctx).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to allocate result: {:?}", e))
+        })?;
+
+        let encoder = self.codegen.encoder_mut();
+
+        // The select instruction works as: result = condition ? true_value : false_value
+        // We implement this using conditional moves (CMOV):
+        // 1. Move false value to result
+        // 2. Test condition 
+        // 3. If condition is true (non-zero), move true value to result
+
+        // First, move false value to result
+        match bit_width {
+            1 | 8 => {
+                encoder.mov8_reg_reg(result_reg, false_reg).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to mov8 false value: {:?}", e))
+                })?;
+                log::trace!("   Generated: mov8 {}:{}, {}:{}", 
+                    result_reg.bank, result_reg.id, false_reg.bank, false_reg.id);
+            }
+            16 => {
+                encoder.mov16_reg_reg(result_reg, false_reg).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to mov16 false value: {:?}", e))
+                })?;
+                log::trace!("   Generated: mov16 {}:{}, {}:{}", 
+                    result_reg.bank, result_reg.id, false_reg.bank, false_reg.id);
+            }
+            32 => {
+                encoder.mov32_reg_reg(result_reg, false_reg).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to mov32 false value: {:?}", e))
+                })?;
+                log::trace!("   Generated: mov32 {}:{}, {}:{}", 
+                    result_reg.bank, result_reg.id, false_reg.bank, false_reg.id);
+            }
+            64 => {
+                encoder.mov_reg_reg(result_reg, false_reg).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to mov64 false value: {:?}", e))
+                })?;
+                log::trace!("   Generated: mov {}:{}, {}:{}", 
+                    result_reg.bank, result_reg.id, false_reg.bank, false_reg.id);
+            }
+            _ => unreachable!(),
+        }
+
+        // Test condition (condition & 1 to check if LSB is set)
+        encoder.test_reg_imm(condition_reg, 1).map_err(|e| {
+            LlvmCompilerError::CodeGeneration(format!("Failed to test condition: {:?}", e))
+        })?;
+        log::trace!("   Generated: test {}:{}, 1", condition_reg.bank, condition_reg.id);
+
+        // Conditional move: if condition is non-zero, move true value to result
+        match bit_width {
+            1 | 8 | 16 | 32 => {
+                encoder.cmovne32_reg_reg(result_reg, true_reg).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to cmovne32: {:?}", e))
+                })?;
+                log::trace!("   Generated: cmovne32 {}:{}, {}:{}", 
+                    result_reg.bank, result_reg.id, true_reg.bank, true_reg.id);
+            }
+            64 => {
+                encoder.cmovne64_reg_reg(result_reg, true_reg).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to cmovne64: {:?}", e))
+                })?;
+                log::trace!("   Generated: cmovne {}:{}, {}:{}", 
+                    result_reg.bank, result_reg.id, true_reg.bank, true_reg.id);
+            }
+            _ => unreachable!(),
         }
 
         Ok(())

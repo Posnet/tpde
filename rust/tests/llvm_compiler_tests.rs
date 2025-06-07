@@ -278,3 +278,108 @@ fn test_arithmetic_operations() {
         stats.instruction_counts["Mul"]
     );
 }
+
+#[test]
+fn test_select_instruction() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    let context = Context::create();
+    let module = context.create_module("select_test");
+    let builder = context.create_builder();
+
+    // Create function: i32 @test_select(i1 %cond, i32 %a, i32 %b)
+    let i32_type = context.i32_type();
+    let i1_type = context.bool_type();
+    let fn_type = i32_type.fn_type(&[i1_type.into(), i32_type.into(), i32_type.into()], false);
+    let function = module.add_function("test_select", fn_type, None);
+
+    let entry = context.append_basic_block(function, "entry");
+    builder.position_at_end(entry);
+
+    let cond = function.get_nth_param(0).unwrap().into_int_value();
+    let a = function.get_nth_param(1).unwrap().into_int_value();
+    let b = function.get_nth_param(2).unwrap().into_int_value();
+
+    // Build select: result = cond ? a : b
+    let result = builder.build_select(cond, a, b, "select_result").unwrap();
+    
+    builder.build_return(Some(&result)).unwrap();
+
+    // Verify module
+    assert!(module.verify().is_ok());
+
+    // Print for debugging
+    module.print_to_stderr();
+
+    // Create arena and session
+    let arena = Bump::new();
+    let session = CompilationSession::new(&arena);
+
+    // Compile the module
+    let mut compiler = LlvmCompiler::new(module, &session).unwrap();
+    
+    // Compile the function
+    compiler.compile_function_by_name("test_select").unwrap();
+
+    // Check that we compiled the select instruction
+    let stats = compiler.session().stats();
+    assert!(stats.instruction_counts.contains_key("Select"));
+
+    println!("✅ Select instruction compiled successfully!");
+    println!("   Select: {}", stats.instruction_counts["Select"]);
+}
+
+#[test]
+fn test_select_with_comparison() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    let context = Context::create();
+    let module = context.create_module("select_cmp_test");
+    let builder = context.create_builder();
+
+    // Create function: i32 @max(i32 %x, i32 %y)
+    let i32_type = context.i32_type();
+    let fn_type = i32_type.fn_type(&[i32_type.into(), i32_type.into()], false);
+    let function = module.add_function("max", fn_type, None);
+
+    let entry = context.append_basic_block(function, "entry");
+    builder.position_at_end(entry);
+
+    let x = function.get_nth_param(0).unwrap().into_int_value();
+    let y = function.get_nth_param(1).unwrap().into_int_value();
+
+    // Compare x > y
+    let cmp = builder.build_int_compare(IntPredicate::SGT, x, y, "cmp").unwrap();
+    
+    // Select max(x, y) using: cmp ? x : y
+    let max_val = builder.build_select(cmp, x, y, "max").unwrap();
+    
+    builder.build_return(Some(&max_val)).unwrap();
+
+    // Verify module
+    assert!(module.verify().is_ok());
+
+    // Print for debugging
+    module.print_to_stderr();
+
+    // Create arena and session
+    let arena = Bump::new();
+    let session = CompilationSession::new(&arena);
+
+    // Compile the module
+    let mut compiler = LlvmCompiler::new(module, &session).unwrap();
+    
+    // Compile the function
+    compiler.compile_function_by_name("max").unwrap();
+
+    // Check that we compiled both icmp and select instructions
+    let stats = compiler.session().stats();
+    assert!(stats.instruction_counts.contains_key("ICmp"));
+    assert!(stats.instruction_counts.contains_key("Select"));
+
+    println!("✅ Select with comparison compiled successfully!");
+    println!("   ICmp: {}, Select: {}", 
+        stats.instruction_counts["ICmp"],
+        stats.instruction_counts["Select"]
+    );
+}
