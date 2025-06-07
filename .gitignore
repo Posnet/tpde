@@ -13,3 +13,4 @@ target/
 rust/target/
 rust/Cargo.lock
 rust/.docs-cache
+.claude/settings.local.json
