@@ -76,8 +76,13 @@ fn test_analyzer_liveness() {
 #[test]
 fn test_analyzer_block_layout() {
     let ir = load_tir("br.tir");
+    
+    // Create arena and session for analyzer
+    let arena = Bump::new();
+    let session = CompilationSession::new(&arena);
+    
     let mut adaptor = TestIRAdaptor::new(&ir);
-    let mut analyzer = Analyzer::new();
+    let mut analyzer = Analyzer::new(&session);
 
     // Test condbr1 function
     let funcs: Vec<_> = adaptor.funcs().collect();

@@ -5,7 +5,8 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use tpde::core::{Analyzer, IrAdaptor};
+use bumpalo::Bump;
+use tpde::core::{Analyzer, IrAdaptor, session::CompilationSession};
 use tpde::test_ir::{TestIR, TestIRAdaptor};
 
 #[derive(Default)]
@@ -142,8 +143,12 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
         || config.print_layout
         || config.run_until == "analyzer"
     {
+        // Create arena and session for analyzer
+        let arena = Bump::new();
+        let session = CompilationSession::new(&arena);
+        
         let mut adaptor = TestIRAdaptor::new(&ir);
-        let mut analyzer = Analyzer::new();
+        let mut analyzer = Analyzer::new(&session);
 
         // Process each function
         let funcs: Vec<_> = adaptor.funcs().collect();

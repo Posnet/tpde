@@ -5,7 +5,8 @@
 //! but implemented in a Rust-native way.
 
 use super::{TestIR, TestIRAdaptor};
-use crate::core::{Analyzer, IrAdaptor};
+use crate::core::{Analyzer, IrAdaptor, session::CompilationSession};
+use bumpalo::Bump;
 use std::collections::VecDeque;
 
 /// A CHECK directive extracted from a TIR file
@@ -144,8 +145,11 @@ impl TestRunner {
         }
 
         if print_rpo || print_liveness || run_until == "analyzer" {
+            // Create arena and session with proper lifetime management
+            let arena = Bump::new();
+            let session = CompilationSession::new(&arena);
             let mut adaptor = TestIRAdaptor::new(ir);
-            let mut analyzer = Analyzer::new();
+            let mut analyzer = Analyzer::new(&session);
 
             for func in adaptor.funcs() {
                 let func_name = adaptor.func_link_name(func).to_string(); // Clone the name

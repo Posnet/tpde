@@ -90,9 +90,9 @@ impl<'arena> X64Backend<'arena> {
     }
 
     /// Compile a binary arithmetic operation.
-    fn compile_binary_op<A: IrAdaptor>(
+    fn compile_binary_op<'arena2, A: IrAdaptor>(
         &mut self,
-        base: &mut CompilerBase<A, ElfAssembler, Self>,
+        base: &mut CompilerBase<'arena2, A, ElfAssembler, Self>,
         inst: A::InstRef,
         op_type: BinaryOpType,
     ) -> Result<(), X64BackendError> {
@@ -141,9 +141,9 @@ impl<'arena> X64Backend<'arena> {
     }
 
     /// Compile a load from memory.
-    fn compile_load<A: IrAdaptor>(
+    fn compile_load<'arena2, A: IrAdaptor>(
         &mut self,
-        _base: &mut CompilerBase<A, ElfAssembler, Self>,
+        _base: &mut CompilerBase<'arena2, A, ElfAssembler, Self>,
         _inst: A::InstRef,
     ) -> Result<(), X64BackendError> {
         // For now, just implement stack loads
@@ -154,9 +154,9 @@ impl<'arena> X64Backend<'arena> {
 
     /// Compile a store to memory.
     #[allow(dead_code)]
-    fn compile_store<A: IrAdaptor>(
+    fn compile_store<'arena2, A: IrAdaptor>(
         &mut self,
-        _base: &mut CompilerBase<A, ElfAssembler, Self>,
+        _base: &mut CompilerBase<'arena2, A, ElfAssembler, Self>,
         _inst: A::InstRef,
     ) -> Result<(), X64BackendError> {
         // For now, just implement stack stores
@@ -166,9 +166,9 @@ impl<'arena> X64Backend<'arena> {
     }
 
     /// Compile a return instruction.
-    fn compile_return<A: IrAdaptor>(
+    fn compile_return<'arena2, A: IrAdaptor>(
         &mut self,
-        _base: &mut CompilerBase<A, ElfAssembler, Self>,
+        _base: &mut CompilerBase<'arena2, A, ElfAssembler, Self>,
         _inst: A::InstRef,
     ) -> Result<(), X64BackendError> {
         // Return is handled by epilogue
@@ -185,19 +185,19 @@ enum BinaryOpType {
 }
 
 impl<'arena, A: IrAdaptor> Backend<A, ElfAssembler> for X64Backend<'arena> {
-    fn gen_prologue(&mut self, _base: &mut CompilerBase<A, ElfAssembler, Self>) {
+    fn gen_prologue<'a>(&mut self, _base: &mut CompilerBase<'a, A, ElfAssembler, Self>) {
         // Emit function prologue
         self.encoder.emit_prologue(self.frame_size).unwrap();
     }
 
-    fn gen_epilogue(&mut self, _base: &mut CompilerBase<A, ElfAssembler, Self>) {
+    fn gen_epilogue<'a>(&mut self, _base: &mut CompilerBase<'a, A, ElfAssembler, Self>) {
         // Emit function epilogue
         self.encoder.emit_epilogue(self.frame_size).unwrap();
     }
 
-    fn compile_inst(
+    fn compile_inst<'a>(
         &mut self,
-        base: &mut CompilerBase<A, ElfAssembler, Self>,
+        base: &mut CompilerBase<'a, A, ElfAssembler, Self>,
         inst: A::InstRef,
     ) -> bool {
         // In a real implementation, this would dispatch based on instruction opcode
@@ -238,11 +238,11 @@ impl<'arena, A: IrAdaptor> Backend<A, ElfAssembler> for X64Backend<'arena> {
 pub fn create_x64_compiler<'arena, A: IrAdaptor>(
     adaptor: A,
     session: &'arena CompilationSession<'arena>,
-) -> Result<CompilerBase<A, ElfAssembler, X64Backend<'arena>>, X64BackendError> {
+) -> Result<CompilerBase<'arena, A, ElfAssembler, X64Backend<'arena>>, X64BackendError> {
     use crate::core::assembler::Assembler;
     let assembler = <ElfAssembler as Assembler<A>>::new(true);
     let backend = X64Backend::new(session)?;
-    Ok(CompilerBase::new(adaptor, assembler, backend))
+    Ok(CompilerBase::new(adaptor, assembler, backend, session))
 }
 
 #[cfg(test)]

@@ -45,7 +45,7 @@
 //! to zero the allocator may reuse the registers or spill to the stack if necessary.
 //! Additional helpers like `ScratchReg` will be ported from the C++ code later.
 
-use super::{adaptor::IrAdaptor, analyzer::Analyzer, assembler::Assembler};
+use super::{adaptor::IrAdaptor, analyzer::Analyzer, assembler::Assembler, session::CompilationSession};
 
 /// Hooks implemented by architecture specific compiler code.
 ///
@@ -53,13 +53,13 @@ use super::{adaptor::IrAdaptor, analyzer::Analyzer, assembler::Assembler};
 /// and epilogue around each function.  Methods receive a mutable reference
 /// to the [`CompilerBase`] so they can use register allocation helpers.
 pub trait Backend<A: IrAdaptor, ASM: Assembler<A>> {
-    fn gen_prologue(&mut self, base: &mut CompilerBase<A, ASM, Self>)
+    fn gen_prologue<'arena>(&mut self, base: &mut CompilerBase<'arena, A, ASM, Self>)
     where
         Self: Sized;
-    fn gen_epilogue(&mut self, base: &mut CompilerBase<A, ASM, Self>)
+    fn gen_epilogue<'arena>(&mut self, base: &mut CompilerBase<'arena, A, ASM, Self>)
     where
         Self: Sized;
-    fn compile_inst(&mut self, base: &mut CompilerBase<A, ASM, Self>, inst: A::InstRef) -> bool
+    fn compile_inst<'arena>(&mut self, base: &mut CompilerBase<'arena, A, ASM, Self>, inst: A::InstRef) -> bool
     where
         Self: Sized;
 }
@@ -73,26 +73,28 @@ pub trait Backend<A: IrAdaptor, ASM: Assembler<A>> {
 /// an [`Assembler`].  Register allocation happens on the fly based on the
 /// liveness info.  This file only implements a thin skeleton so far.
 #[allow(dead_code)]
-pub struct CompilerBase<A: IrAdaptor, ASM: Assembler<A>, C: Backend<A, ASM>> {
+pub struct CompilerBase<'arena, A: IrAdaptor, ASM: Assembler<A>, C: Backend<A, ASM>> {
     pub adaptor: A,
-    pub analyzer: Analyzer<A>,
+    pub analyzer: Analyzer<'arena, 'arena, A>,
     pub assembler: ASM,
     backend: C,
+    _marker: std::marker::PhantomData<&'arena ()>,
 }
 
-impl<A, ASM, C> CompilerBase<A, ASM, C>
+impl<'arena, A, ASM, C> CompilerBase<'arena, A, ASM, C>
 where
     A: IrAdaptor,
     ASM: Assembler<A>,
     C: Backend<A, ASM>,
 {
     /// Create a new compiler base from an adaptor, assembler and backend.
-    pub fn new(adaptor: A, assembler: ASM, backend: C) -> Self {
+    pub fn new(adaptor: A, assembler: ASM, backend: C, session: &'arena CompilationSession<'arena>) -> Self {
         Self {
             adaptor,
-            analyzer: Analyzer::new(),
+            analyzer: Analyzer::new(session),
             assembler,
             backend,
+            _marker: std::marker::PhantomData,
         }
     }
 

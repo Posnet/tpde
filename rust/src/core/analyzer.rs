@@ -10,9 +10,11 @@
 // for liveness tracking.
 
 use super::adaptor::IrAdaptor;
+use super::session::CompilationSession;
+use bumpalo::collections::{Vec as BVec, CollectIn};
 use core::marker::PhantomData;
+use hashbrown::{HashMap, HashSet};
 use log::trace;
-use std::collections::{HashMap, HashSet};
 
 /// Liveness information for a single value.
 #[derive(Default, Clone, Copy)]
@@ -52,35 +54,34 @@ pub struct Loop {
 /// follows the description in the C++ docs and is summarized in
 /// [`overview`].
 #[allow(dead_code)]
-pub struct Analyzer<A: IrAdaptor> {
-    order: Vec<A::BlockRef>,
+pub struct Analyzer<'session, 'arena: 'session, A: IrAdaptor> {
+    order: BVec<'arena, A::BlockRef>,
     block_map: HashMap<A::BlockRef, usize>,
-    liveness: Vec<LivenessInfo>,
-    block_layout: Vec<A::BlockRef>,
-    loops: Vec<Loop>,
-    block_loop_map: Vec<u32>,
+    liveness: BVec<'arena, LivenessInfo>,
+    block_layout: BVec<'arena, A::BlockRef>,
+    loops: BVec<'arena, Loop>,
+    block_loop_map: BVec<'arena, u32>,
+    session: &'session CompilationSession<'arena>,
     _marker: PhantomData<A>,
 }
 
-impl<A: IrAdaptor> Default for Analyzer<A> {
-    fn default() -> Self {
+impl<'session, 'arena: 'session, A: IrAdaptor> Analyzer<'session, 'arena, A> {
+    /// Create a new analyzer with the given session.
+    pub fn new(session: &'session CompilationSession<'arena>) -> Self {
         Self {
-            order: Vec::new(),
+            order: BVec::new_in(session.arena()),
             block_map: HashMap::new(),
-            liveness: Vec::new(),
-            block_layout: Vec::new(),
-            loops: Vec::new(),
-            block_loop_map: Vec::new(),
+            liveness: BVec::new_in(session.arena()),
+            block_layout: BVec::new_in(session.arena()),
+            loops: BVec::new_in(session.arena()),
+            block_loop_map: BVec::new_in(session.arena()),
+            session,
             _marker: PhantomData,
         }
     }
 }
 
-impl<A: IrAdaptor> Analyzer<A> {
-    /// Create a new analyzer.
-    pub fn new() -> Self {
-        Self::default()
-    }
+impl<'session, 'arena: 'session, A: IrAdaptor> Analyzer<'session, 'arena, A> {
 
     /// Sequence of blocks in reverse post order.
     pub fn order(&self) -> &[A::BlockRef] {
@@ -305,7 +306,7 @@ impl<A: IrAdaptor> Analyzer<A> {
     }
 
     /// Build reverse post-order of blocks.
-    fn build_rpo_block_order(&mut self, adaptor: &A) -> Vec<A::BlockRef> {
+    fn build_rpo_block_order(&mut self, adaptor: &A) -> BVec<'arena, A::BlockRef> {
         let entry = adaptor.entry_block();
 
         // First pass: build a map of blocks to their order in the IR
@@ -315,8 +316,9 @@ impl<A: IrAdaptor> Analyzer<A> {
             block_order_map.insert(block, idx as u32);
         }
 
-        let mut post = Vec::new();
-        let mut stack = vec![(entry, false)];
+        let mut post = BVec::new_in(self.session.arena());
+        let mut stack = BVec::new_in(self.session.arena());
+        stack.push((entry, false));
         let mut visited = HashSet::new();
 
         while let Some((block, processed)) = stack.pop() {
@@ -355,8 +357,9 @@ impl<A: IrAdaptor> Analyzer<A> {
     }
 
     /// Identify loops using the algorithm from Wei et al.
-    fn identify_loops(&self, adaptor: &A, block_rpo: &[A::BlockRef]) -> (Vec<u32>, HashSet<usize>) {
-        let mut loop_parent = vec![0; block_rpo.len()];
+    fn identify_loops(&self, adaptor: &A, block_rpo: &[A::BlockRef]) -> (BVec<'arena, u32>, HashSet<usize>) {
+        let mut loop_parent = BVec::with_capacity_in(block_rpo.len(), self.session.arena());
+        loop_parent.resize(block_rpo.len(), 0);
         let mut loop_heads = HashSet::new();
 
         #[derive(Default, Clone)]
@@ -367,10 +370,11 @@ impl<A: IrAdaptor> Analyzer<A> {
             iloop_header: u32,
         }
 
-        let mut block_infos = vec![BlockInfo::default(); block_rpo.len()];
+        let mut block_infos = BVec::with_capacity_in(block_rpo.len(), self.session.arena());
+        block_infos.resize(block_rpo.len(), BlockInfo::default());
 
         // Helper function to tag loop headers
-        let tag_lhead = |block_infos: &mut Vec<BlockInfo>, b: u32, h: u32| {
+        let tag_lhead = |block_infos: &mut BVec<'arena, BlockInfo>, b: u32, h: u32| {
             if b == h || h == 0 {
                 return;
             }
@@ -406,10 +410,11 @@ impl<A: IrAdaptor> Analyzer<A> {
         }
 
         // DFS to identify loops
-        let mut stack = vec![StackState::Visit {
+        let mut stack = BVec::new_in(self.session.arena());
+        stack.push(StackState::Visit {
             block_idx: 0,
             dfsp_pos: 1,
-        }];
+        });
         let mut dfsp_counter = 1u32;
 
         while let Some(state) = stack.pop() {
@@ -432,10 +437,10 @@ impl<A: IrAdaptor> Analyzer<A> {
                     });
 
                     // Process successors in reverse order (they'll be popped in correct order)
-                    let succs: Vec<_> = adaptor
+                    let succs: BVec<'arena, _> = adaptor
                         .block_succs(block_rpo[block_idx])
                         .filter_map(|succ| self.block_map.get(&succ).copied())
-                        .collect();
+                        .collect_in(self.session.arena());
 
                     for &succ_idx in succs.iter().rev() {
                         if succ_idx == block_idx {
@@ -511,8 +516,8 @@ impl<A: IrAdaptor> Analyzer<A> {
     fn build_loop_tree_and_block_layout(
         &mut self,
         adaptor: &A,
-        block_rpo: Vec<A::BlockRef>,
-        loop_parent: Vec<u32>,
+        block_rpo: BVec<'arena, A::BlockRef>,
+        loop_parent: BVec<'arena, u32>,
         loop_heads: HashSet<usize>,
     ) {
         #[derive(Clone, Copy)]
@@ -521,13 +526,14 @@ impl<A: IrAdaptor> Analyzer<A> {
             rpo_idx: u32,
         }
 
-        let mut loop_blocks = vec![
+        let mut loop_blocks = BVec::with_capacity_in(block_rpo.len(), self.session.arena());
+        loop_blocks.resize(
+            block_rpo.len(),
             BlockLoopInfo {
                 loop_idx: !0,
                 rpo_idx: 0
-            };
-            block_rpo.len()
-        ];
+            }
+        );
         for (i, block_info) in loop_blocks.iter_mut().enumerate() {
             block_info.rpo_idx = i as u32;
         }
@@ -544,8 +550,8 @@ impl<A: IrAdaptor> Analyzer<A> {
         loop_blocks[0].loop_idx = 0;
 
         // Helper to build or get parent loop
-        fn build_or_get_parent_loop(
-            loops: &mut Vec<Loop>,
+        fn build_or_get_parent_loop<'a>(
+            loops: &mut BVec<'a, Loop>,
             loop_blocks: &mut [BlockLoopInfo],
             loop_parent: &[u32],
             i: usize,
@@ -615,7 +621,8 @@ impl<A: IrAdaptor> Analyzer<A> {
         self.loops[0].end = 0;
 
         // Layout loops
-        let mut loop_begins = vec![None; self.loops.len()];
+        let mut loop_begins = BVec::with_capacity_in(self.loops.len(), self.session.arena());
+        loop_begins.resize(self.loops.len(), None);
 
         for i in 0..block_rpo.len() {
             let loop_idx = loop_blocks[i].loop_idx as usize;
@@ -624,9 +631,9 @@ impl<A: IrAdaptor> Analyzer<A> {
             if loop_begins[loop_idx].is_none() {
                 // Layout this loop
                 let mut curr_loop = loop_idx;
-                let mut to_layout = vec![];
 
                 // Find all loops that need to be laid out
+                let mut to_layout = BVec::new_in(self.session.arena());
                 while loop_begins[curr_loop].is_none() && curr_loop != 0 {
                     to_layout.push(curr_loop);
                     curr_loop = self.loops[curr_loop].parent as usize;

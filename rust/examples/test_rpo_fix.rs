@@ -1,4 +1,5 @@
-use tpde::core::{Analyzer, IrAdaptor};
+use bumpalo::Bump;
+use tpde::core::{Analyzer, IrAdaptor, session::CompilationSession};
 use tpde::test_ir::{TestIR, TestIRAdaptor};
 
 fn main() {
@@ -19,9 +20,13 @@ cont:
     // Parse the IR
     let ir = TestIR::parse(test_ir).expect("Failed to parse test IR");
 
+    // Create arena and session for analyzer
+    let arena = Bump::new();
+    let session = CompilationSession::new(&arena);
+    
     // Create adaptor and analyzer
     let mut adaptor = TestIRAdaptor::new(&ir);
-    let mut analyzer = Analyzer::new();
+    let mut analyzer = Analyzer::new(&session);
 
     // Process the function
     let funcs: Vec<_> = adaptor.funcs().collect();
