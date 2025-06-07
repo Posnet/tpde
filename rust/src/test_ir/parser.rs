@@ -194,16 +194,16 @@ impl<'a> Parser<'a> {
         if is_hex {
             self.advance(); // Skip '0'
             self.advance(); // Skip 'x' or 'X'
-            
+
             // Read hex digits
             while self.current_char().is_some_and(|ch| ch.is_ascii_hexdigit()) {
                 self.advance();
             }
-            
+
             if self.pos == start + 2 {
                 return Err("Expected hex digits after 0x".to_string());
             }
-            
+
             u32::from_str_radix(&self.text[start + 2..self.pos], 16)
                 .map_err(|e| format!("Failed to parse hex number: {}", e))
         } else {
@@ -211,11 +211,11 @@ impl<'a> Parser<'a> {
             while self.current_char().is_some_and(|ch| ch.is_ascii_digit()) {
                 self.advance();
             }
-            
+
             if self.pos == start {
                 return Err("Expected number".to_string());
             }
-            
+
             self.text[start..self.pos]
                 .parse()
                 .map_err(|e| format!("Failed to parse number: {}", e))
