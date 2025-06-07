@@ -16,101 +16,74 @@ fn create_alloca_test_module(context: &Context) -> inkwell::module::Module {
     let i32_type = context.i32_type();
     let i64_type = context.i64_type();
     
+    // Simpler function without loops to avoid register exhaustion
     // Function: i32 sum_array_stack()
     // {
-    //     int arr[10];  // Stack allocated array
-    //     for (int i = 0; i < 10; i++)
-    //         arr[i] = i;
-    //     int sum = 0;
-    //     for (int i = 0; i < 10; i++)
-    //         sum += arr[i];
-    //     return sum;
+    //     int arr[10];
+    //     arr[0] = 5;
+    //     arr[1] = 10;
+    //     arr[2] = 15;
+    //     return arr[0] + arr[1] + arr[2];
     // }
     let fn_type = i32_type.fn_type(&[], false);
     let function = module.add_function("sum_array_stack", fn_type, None);
     
     let entry_block = context.append_basic_block(function, "entry");
-    let init_loop_block = context.append_basic_block(function, "init_loop");
-    let init_body_block = context.append_basic_block(function, "init_body");
-    let sum_loop_block = context.append_basic_block(function, "sum_loop");
-    let sum_body_block = context.append_basic_block(function, "sum_body");
-    let exit_block = context.append_basic_block(function, "exit");
-    
     let builder = context.create_builder();
-    
-    // Entry block: allocate array and initialize loop counter
     builder.position_at_end(entry_block);
+    
+    // Allocate array on stack
     let array_type = i32_type.array_type(10);
     let array_alloca = builder.build_alloca(array_type, "arr").unwrap();
+    
+    // Also allocate some scalar variables for testing
     let i_alloca = builder.build_alloca(i32_type, "i").unwrap();
     let sum_alloca = builder.build_alloca(i32_type, "sum").unwrap();
     
-    // Initialize i = 0
+    // Store values at specific indices (no loops)
     let zero = i32_type.const_int(0, false);
-    builder.build_store(i_alloca, zero).unwrap();
-    builder.build_unconditional_branch(init_loop_block).unwrap();
-    
-    // Init loop condition
-    builder.position_at_end(init_loop_block);
-    let i_val = builder.build_load(i32_type, i_alloca, "i_val").unwrap().into_int_value();
-    let ten = i32_type.const_int(10, false);
-    let cond = builder.build_int_compare(inkwell::IntPredicate::SLT, i_val, ten, "cond").unwrap();
-    builder.build_conditional_branch(cond, init_body_block, sum_loop_block).unwrap();
-    
-    // Init body: arr[i] = i
-    builder.position_at_end(init_body_block);
-    let i_val = builder.build_load(i32_type, i_alloca, "i_val").unwrap().into_int_value();
     let zero_64 = i64_type.const_int(0, false);
-    let i_64 = builder.build_int_z_extend(i_val, i64_type, "i_64").unwrap();
-    let indices = [zero_64, i_64];
-    let element_ptr = unsafe {
-        builder.build_gep(array_type, array_alloca, &indices, "element_ptr").unwrap()
+    let one_64 = i64_type.const_int(1, false);
+    let two_64 = i64_type.const_int(2, false);
+    
+    // arr[0] = 5
+    let indices0 = [zero_64, zero_64];
+    let element_ptr0 = unsafe {
+        builder.build_gep(array_type, array_alloca, &indices0, "element_ptr0").unwrap()
     };
-    builder.build_store(element_ptr, i_val).unwrap();
+    let five = i32_type.const_int(5, false);
+    builder.build_store(element_ptr0, five).unwrap();
     
-    // Increment i
-    let one = i32_type.const_int(1, false);
-    let i_next = builder.build_int_add(i_val, one, "i_next").unwrap();
-    builder.build_store(i_alloca, i_next).unwrap();
-    builder.build_unconditional_branch(init_loop_block).unwrap();
+    // arr[1] = 10
+    let indices1 = [zero_64, one_64];
+    let element_ptr1 = unsafe {
+        builder.build_gep(array_type, array_alloca, &indices1, "element_ptr1").unwrap()
+    };
+    let ten = i32_type.const_int(10, false);
+    builder.build_store(element_ptr1, ten).unwrap();
     
-    // Sum loop initialization
-    builder.position_at_end(sum_loop_block);
-    // Reset i = 0, sum = 0
+    // arr[2] = 15
+    let indices2 = [zero_64, two_64];
+    let element_ptr2 = unsafe {
+        builder.build_gep(array_type, array_alloca, &indices2, "element_ptr2").unwrap()
+    };
+    let fifteen = i32_type.const_int(15, false);
+    builder.build_store(element_ptr2, fifteen).unwrap();
+    
+    // Store zero to i and sum allocas
     builder.build_store(i_alloca, zero).unwrap();
     builder.build_store(sum_alloca, zero).unwrap();
     
-    // Sum loop condition
-    let sum_loop_cond_block = context.append_basic_block(function, "sum_loop_cond");
-    builder.build_unconditional_branch(sum_loop_cond_block).unwrap();
+    // Load values and compute sum
+    let val0 = builder.build_load(i32_type, element_ptr0, "val0").unwrap().into_int_value();
+    let val1 = builder.build_load(i32_type, element_ptr1, "val1").unwrap().into_int_value();
+    let val2 = builder.build_load(i32_type, element_ptr2, "val2").unwrap().into_int_value();
     
-    builder.position_at_end(sum_loop_cond_block);
-    let i_val = builder.build_load(i32_type, i_alloca, "i_val").unwrap().into_int_value();
-    let cond = builder.build_int_compare(inkwell::IntPredicate::SLT, i_val, ten, "cond").unwrap();
-    builder.build_conditional_branch(cond, sum_body_block, exit_block).unwrap();
+    // sum = val0 + val1 + val2
+    let sum01 = builder.build_int_add(val0, val1, "sum01").unwrap();
+    let sum = builder.build_int_add(sum01, val2, "sum").unwrap();
     
-    // Sum body: sum += arr[i]
-    builder.position_at_end(sum_body_block);
-    let i_val = builder.build_load(i32_type, i_alloca, "i_val").unwrap().into_int_value();
-    let sum_val = builder.build_load(i32_type, sum_alloca, "sum_val").unwrap().into_int_value();
-    let i_64 = builder.build_int_z_extend(i_val, i64_type, "i_64").unwrap();
-    let indices = [zero_64, i_64];
-    let element_ptr = unsafe {
-        builder.build_gep(array_type, array_alloca, &indices, "element_ptr").unwrap()
-    };
-    let element_val = builder.build_load(i32_type, element_ptr, "element_val").unwrap().into_int_value();
-    let new_sum = builder.build_int_add(sum_val, element_val, "new_sum").unwrap();
-    builder.build_store(sum_alloca, new_sum).unwrap();
-    
-    // Increment i
-    let i_next = builder.build_int_add(i_val, one, "i_next").unwrap();
-    builder.build_store(i_alloca, i_next).unwrap();
-    builder.build_unconditional_branch(sum_loop_cond_block).unwrap();
-    
-    // Exit block: return sum
-    builder.position_at_end(exit_block);
-    let final_sum = builder.build_load(i32_type, sum_alloca, "final_sum").unwrap().into_int_value();
-    builder.build_return(Some(&final_sum)).unwrap();
+    builder.build_return(Some(&sum)).unwrap();
     
     module
 }

@@ -146,6 +146,9 @@ impl<'ir> IrAdaptor for TestIRAdaptor<'ir> {
     const INVALID_VALUE_REF: Self::ValueRef = ValueRef(!0);
     const INVALID_BLOCK_REF: Self::BlockRef = BlockRef(!0);
     const INVALID_FUNC_REF: Self::FuncRef = FuncRef(!0);
+    
+    // Tell the analyzer to visit function arguments during liveness analysis
+    const TPDE_LIVENESS_VISIT_ARGS: bool = true;
 
     fn func_count(&self) -> u32 {
         self.ir.functions.len() as u32
@@ -212,12 +215,54 @@ impl<'ir> IrAdaptor for TestIRAdaptor<'ir> {
 
     fn val_local_idx(&self, val: Self::ValueRef) -> usize {
         let func = &self.ir.functions[self.cur_func as usize];
-        assert!(val.0 >= func.arg_begin_idx);
-        (val.0 - func.arg_begin_idx) as usize
+        // Handle values that might be defined before the function (like constants)
+        if val.0 < func.arg_begin_idx {
+            // Map global constants to indices starting after all possible local values
+            // This is a bit hacky but matches what the C++ code seems to do
+            val.0 as usize
+        } else {
+            (val.0 - func.arg_begin_idx) as usize
+        }
     }
 
     fn val_ignore_liveness(&self, val: Self::ValueRef) -> bool {
         self.ir.values[val.0 as usize].op == Operation::Alloca
+    }
+    
+    fn cur_args(&self) -> Box<dyn Iterator<Item = Self::ValueRef> + '_> {
+        let func = &self.ir.functions[self.cur_func as usize];
+        Box::new((func.arg_begin_idx..func.arg_end_idx).map(ValueRef))
+    }
+    
+    fn block_phis(&self, block: Self::BlockRef) -> Box<dyn Iterator<Item = Self::ValueRef> + '_> {
+        let block_info = &self.ir.blocks[block.0 as usize];
+        Box::new((block_info.inst_begin_idx..block_info.phi_end_idx).map(ValueRef))
+    }
+    
+    fn val_is_phi(&self, val: Self::ValueRef) -> bool {
+        self.ir.values[val.0 as usize].value_type == ValueType::Phi
+    }
+    
+    fn phi_incoming_count(&self, phi: Self::ValueRef) -> u32 {
+        let val_idx = phi.0 as usize;
+        assert_eq!(self.ir.values[val_idx].value_type, ValueType::Phi);
+        self.ir.values[val_idx].op_count
+    }
+    
+    fn phi_incoming_val_for_slot(&self, phi: Self::ValueRef, slot: u32) -> Self::ValueRef {
+        let val_idx = phi.0 as usize;
+        assert_eq!(self.ir.values[val_idx].value_type, ValueType::Phi);
+        let info = &self.ir.values[val_idx];
+        assert!(slot < info.op_count);
+        ValueRef(self.ir.value_operands[(info.op_begin_idx + slot) as usize])
+    }
+    
+    fn phi_incoming_block_for_slot(&self, phi: Self::ValueRef, slot: u32) -> Self::BlockRef {
+        let val_idx = phi.0 as usize;
+        assert_eq!(self.ir.values[val_idx].value_type, ValueType::Phi);
+        let info = &self.ir.values[val_idx];
+        assert!(slot < info.op_count);
+        BlockRef(self.ir.value_operands[(info.op_begin_idx + info.op_count + slot) as usize])
     }
 }
 

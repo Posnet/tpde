@@ -103,8 +103,36 @@ impl<A: IrAdaptor> Analyzer<A> {
         }
 
         // -------- compute liveness ---------
+        // Visit function arguments if the adaptor wants us to
+        // Note: This just marks them as defined in the entry block, it doesn't count as a use
+        if A::TPDE_LIVENESS_VISIT_ARGS {
+            for arg in adaptor.cur_args() {
+                self.record(adaptor, arg, 0); // Entry block is always first in RPO
+            }
+        }
+        
         for idx in 0..self.order.len() {
             let block = self.order[idx];
+            
+            // Process PHI nodes first
+            for phi in adaptor.block_phis(block) {
+                // Handle PHI operands specially - they're used in their incoming blocks
+                let incoming_count = adaptor.phi_incoming_count(phi);
+                for slot in 0..incoming_count {
+                    let incoming_block = adaptor.phi_incoming_block_for_slot(phi, slot);
+                    let incoming_value = adaptor.phi_incoming_val_for_slot(phi, slot);
+                    
+                    // Find the index of the incoming block in our RPO order
+                    if let Some(&incoming_idx) = self.block_map.get(&incoming_block) {
+                        // Mark the incoming value as used in the incoming block
+                        self.record(adaptor, incoming_value, incoming_idx);
+                        // Also mark the PHI itself as used in the incoming block
+                        self.record(adaptor, phi, incoming_idx);
+                    }
+                }
+            }
+            
+            // Process regular instructions
             for inst in adaptor.block_insts(block) {
                 for val in adaptor.inst_results(inst) {
                     self.record(adaptor, val, idx);
@@ -121,6 +149,8 @@ impl<A: IrAdaptor> Analyzer<A> {
             return;
         }
         let idx = adaptor.val_local_idx(val);
+        // Debug logging
+        // eprintln!("Recording value with local_idx {} in block {}", idx, block_idx);
         if idx >= self.liveness.len() {
             self.liveness.resize(
                 idx + 1,
@@ -128,11 +158,13 @@ impl<A: IrAdaptor> Analyzer<A> {
             );
         }
         let info = &mut self.liveness[idx];
-        info.ref_count += 1;
-        if info.ref_count == 1 {
+        if info.ref_count == 0 {
+            // First time seeing this value - initialize with ref_count 1
+            info.ref_count = 1;
             info.first = block_idx;
             info.last = block_idx;
         } else {
+            info.ref_count += 1;
             if block_idx < info.first {
                 info.first = block_idx;
             }

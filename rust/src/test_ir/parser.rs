@@ -269,6 +269,9 @@ impl<'a> Parser<'a> {
             
             let block_end_idx = self.ir.blocks.len() as u32;
             
+            // Resolve references for this function
+            self.resolve_function_references()?;
+            
             // Add function
             self.funcs.insert(func_name, func_idx);
             self.ir.functions.push(Function {
@@ -326,7 +329,8 @@ impl<'a> Parser<'a> {
             
             // Check if this is a PHI
             if self.peek_phi() {
-                if phi_end_idx != inst_begin_idx {
+                // Only allow PHIs if we haven't parsed any non-PHI instructions yet
+                if self.ir.values.len() as u32 > phi_end_idx {
                     return Err("PHI nodes must be at the beginning of a block".to_string());
                 }
                 self.parse_phi()?;
@@ -448,6 +452,10 @@ impl<'a> Parser<'a> {
         let op_begin_idx = self.ir.value_operands.len() as u32;
         let mut incoming_count = 0;
         
+        // Temporarily store values and blocks
+        let mut temp_values = Vec::new();
+        let mut temp_blocks = Vec::new();
+        
         // Parse incoming values: [^block, %value], ...
         self.expect('[')?;
         loop {
@@ -456,19 +464,8 @@ impl<'a> Parser<'a> {
             let (val_name, _) = self.read_value_name()?;
             self.expect(']')?;
             
-            // Store value reference to resolve later
-            self.value_resolves.push(Resolve {
-                name: val_name,
-                index: self.ir.value_operands.len() as u32,
-            });
-            self.ir.value_operands.push(0); // Placeholder
-            
-            // Store block reference to resolve later
-            self.block_resolves.push(Resolve {
-                name: block_name,
-                index: self.ir.value_operands.len() as u32,
-            });
-            self.ir.value_operands.push(0); // Placeholder
+            temp_values.push((val_name, self.ir.value_operands.len() as u32));
+            temp_blocks.push((block_name, self.ir.value_operands.len() as u32 + incoming_count));
             
             incoming_count += 1;
             
@@ -479,29 +476,26 @@ impl<'a> Parser<'a> {
             self.expect('[')?;
         }
         
-        // Rearrange operands: values first, then blocks
-        let mid = op_begin_idx + incoming_count;
-        let end = self.ir.value_operands.len() as u32;
-        
-        // Extract blocks
-        let mut blocks = Vec::new();
-        for i in (mid..end).step_by(2) {
-            blocks.push(self.ir.value_operands[i as usize]);
+        // Now push values first, then blocks, in the correct order
+        // Push value placeholders and create resolves
+        for (val_name, _) in &temp_values {
+            self.value_resolves.push(Resolve {
+                name: val_name,
+                index: self.ir.value_operands.len() as u32,
+            });
+            self.ir.value_operands.push(0); // Placeholder
         }
         
-        // Move values together
-        let mut j = op_begin_idx;
-        for i in (op_begin_idx..end).step_by(2) {
-            self.ir.value_operands[j as usize] = self.ir.value_operands[i as usize];
-            j += 1;
+        // Push block placeholders and create resolves
+        for (block_name, _) in &temp_blocks {
+            self.block_resolves.push(Resolve {
+                name: block_name,
+                index: self.ir.value_operands.len() as u32,
+            });
+            self.ir.value_operands.push(0); // Placeholder
         }
         
-        // Place blocks after values
-        for (i, block) in blocks.into_iter().enumerate() {
-            self.ir.value_operands[(mid + i as u32) as usize] = block;
-        }
-        
-        let op_end_idx = op_begin_idx + incoming_count * 2;
+        let op_end_idx = self.ir.value_operands.len() as u32;
         
         self.ir.values.push(Value {
             name: name.to_string(),
@@ -827,7 +821,7 @@ impl<'a> Parser<'a> {
     }
 
 
-    fn resolve_all_references(&mut self) -> Result<(), String> {
+    fn resolve_function_references(&mut self) -> Result<(), String> {
         // Resolve value references
         for resolve in &self.value_resolves {
             if let Some(&idx) = self.values.get(resolve.name) {
@@ -846,7 +840,11 @@ impl<'a> Parser<'a> {
             }
         }
         
-        // Resolve function references
+        Ok(())
+    }
+
+    fn resolve_all_references(&mut self) -> Result<(), String> {
+        // Resolve function references (cross-function)
         for resolve in &self.func_resolves {
             if let Some(&idx) = self.funcs.get(resolve.name) {
                 self.ir.value_operands[resolve.index as usize] = idx;

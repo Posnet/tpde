@@ -116,7 +116,7 @@ impl Operation {
             Tbz => OpInfo { name: "tbz", is_terminator: true, is_def: false, op_count: 1, succ_count: 2, imm_count: 1 },
             Jump => OpInfo { name: "jump", is_terminator: true, is_def: false, op_count: 0, succ_count: !0, imm_count: 0 },
             Call => OpInfo { name: "call", is_terminator: false, is_def: true, op_count: !0, succ_count: 0, imm_count: 0 },
-            ZeroFill => OpInfo { name: "zerofill", is_terminator: false, is_def: true, op_count: 0, succ_count: 0, imm_count: 1 },
+            ZeroFill => OpInfo { name: "zerofill", is_terminator: false, is_def: false, op_count: 0, succ_count: 0, imm_count: 1 },
         }
     }
 

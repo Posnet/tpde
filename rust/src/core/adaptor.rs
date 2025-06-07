@@ -45,6 +45,9 @@ pub trait IrAdaptor {
     const INVALID_VALUE_REF: Self::ValueRef;
     const INVALID_BLOCK_REF: Self::BlockRef;
     const INVALID_FUNC_REF: Self::FuncRef;
+    
+    /// Whether the analyzer should visit function arguments during liveness analysis.
+    const TPDE_LIVENESS_VISIT_ARGS: bool = false;
 
     /// Number of functions contained in the module.
     fn func_count(&self) -> u32;
@@ -94,4 +97,34 @@ pub trait IrAdaptor {
 
     /// Should this value be ignored during liveness analysis?
     fn val_ignore_liveness(&self, val: Self::ValueRef) -> bool;
+    
+    /// Get the arguments of the current function.
+    fn cur_args(&self) -> Box<dyn Iterator<Item = Self::ValueRef> + '_> {
+        Box::new(std::iter::empty())
+    }
+    
+    /// Get PHI nodes in a block.
+    fn block_phis(&self, block: Self::BlockRef) -> Box<dyn Iterator<Item = Self::ValueRef> + '_> {
+        Box::new(std::iter::empty())
+    }
+    
+    /// Check if a value is a PHI node.
+    fn val_is_phi(&self, val: Self::ValueRef) -> bool {
+        false
+    }
+    
+    /// Get PHI node incoming count.
+    fn phi_incoming_count(&self, phi: Self::ValueRef) -> u32 {
+        0
+    }
+    
+    /// Get incoming value for a PHI node at given slot.
+    fn phi_incoming_val_for_slot(&self, phi: Self::ValueRef, slot: u32) -> Self::ValueRef {
+        Self::INVALID_VALUE_REF
+    }
+    
+    /// Get incoming block for a PHI node at given slot.
+    fn phi_incoming_block_for_slot(&self, phi: Self::ValueRef, slot: u32) -> Self::BlockRef {
+        Self::INVALID_BLOCK_REF
+    }
 }

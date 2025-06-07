@@ -158,8 +158,86 @@ impl TestRunner {
                 }
 
                 if print_liveness {
-                    output.push(format!("Liveness for func {}", func_name));
-                    // Print liveness info similar to C++
+                    output.push(format!("Liveness for {}", func_name));
+                    
+                    // Get block names for index mapping
+                    let blocks: Vec<_> = analyzer.order().to_vec();
+                    let block_names: Vec<String> = blocks.iter()
+                        .map(|&b| adaptor.block_name(b).to_string())
+                        .collect();
+                    
+                    // Print liveness info for each value
+                    let mut value_idx = 0;
+                    
+                    // First, function arguments
+                    for arg in adaptor.cur_args() {
+                        if let Some(liveness) = analyzer.liveness(value_idx) {
+                            let first_block = block_names.get(liveness.first).map(|s| s.as_str()).unwrap_or("?");
+                            let last_block = block_names.get(liveness.last).map(|s| s.as_str()).unwrap_or("?");
+                            
+                            output.push(format!(
+                                "{}: {} refs, {}->{} ({}->{}) , lf: {}",
+                                value_idx,
+                                liveness.ref_count,
+                                liveness.first,
+                                liveness.last,
+                                first_block,
+                                last_block,
+                                liveness.last_full
+                            ));
+                        } else {
+                            output.push(format!("{}: ignored", value_idx));
+                        }
+                        value_idx += 1;
+                    }
+                    
+                    // Then, values in blocks
+                    for block in &blocks {
+                        // PHIs
+                        for phi in adaptor.block_phis(*block) {
+                            if let Some(liveness) = analyzer.liveness(value_idx) {
+                                let first_block = block_names.get(liveness.first).map(|s| s.as_str()).unwrap_or("?");
+                                let last_block = block_names.get(liveness.last).map(|s| s.as_str()).unwrap_or("?");
+                                
+                                output.push(format!(
+                                    "{}: {} refs, {}->{}({}->{}) , lf: {}",
+                                    value_idx,
+                                    liveness.ref_count,
+                                    liveness.first,
+                                    liveness.last,
+                                    first_block,
+                                    last_block,
+                                    liveness.last_full
+                                ));
+                            } else {
+                                output.push(format!("{}: ignored", value_idx));
+                            }
+                            value_idx += 1;
+                        }
+                        
+                        // Instructions
+                        for inst in adaptor.block_insts(*block) {
+                            if let Some(liveness) = analyzer.liveness(value_idx) {
+                                let first_block = block_names.get(liveness.first).map(|s| s.as_str()).unwrap_or("?");
+                                let last_block = block_names.get(liveness.last).map(|s| s.as_str()).unwrap_or("?");
+                                
+                                output.push(format!(
+                                    "{}: {} refs, {}->{}({}->{}) , lf: {}",
+                                    value_idx,
+                                    liveness.ref_count,
+                                    liveness.first,
+                                    liveness.last,
+                                    first_block,
+                                    last_block,
+                                    liveness.last_full
+                                ));
+                            } else {
+                                output.push(format!("{}: ignored", value_idx));
+                            }
+                            value_idx += 1;
+                        }
+                    }
+                    
                     output.push("End Liveness".to_string());
                 }
             }
