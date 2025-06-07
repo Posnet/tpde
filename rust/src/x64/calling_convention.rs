@@ -232,6 +232,16 @@ impl SysVAssigner {
         self.must_assign_stack = true;
     }
 
+    /// Number of GP argument registers used so far.
+    pub fn gp_used(&self) -> usize {
+        self.gp_cnt
+    }
+
+    /// Number of XMM argument registers used so far.
+    pub fn xmm_used(&self) -> usize {
+        self.xmm_cnt
+    }
+
     /// Align a value up to the specified alignment.
     fn align_up(value: u32, align: u32) -> u32 {
         (value + align - 1) & !(align - 1)
