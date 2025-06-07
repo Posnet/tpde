@@ -150,7 +150,7 @@ pub struct LlvmCompiler<'ctx, 'arena> {
     session: &'arena CompilationSession<'arena>,
 
     /// Value assignment and tracking.
-    value_mgr: ValueAssignmentManager,
+    value_mgr: ValueAssignmentManager<'arena>,
 
     /// Register allocation state.
     register_file: RegisterFile,
@@ -242,7 +242,7 @@ where
         module: inkwell::module::Module<'ctx>,
         session: &'arena CompilationSession<'arena>,
     ) -> Result<Self, LlvmCompilerError> {
-        let value_mgr = ValueAssignmentManager::new();
+        let value_mgr = ValueAssignmentManager::new_in(session.arena());
         // Create register file with GP and XMM registers
         let mut allocatable = RegBitSet::new();
         allocatable.union(&RegBitSet::all_in_bank(0, 16)); // GP regs
@@ -302,7 +302,7 @@ where
         log::info!("🔧 Compiling LLVM function: {}", function_name);
 
         // Reset compiler state for new function
-        self.value_mgr = ValueAssignmentManager::new();
+        self.value_mgr = ValueAssignmentManager::new_in(self.session.arena());
         // Reset register file
         let mut allocatable = RegBitSet::new();
         allocatable.union(&RegBitSet::all_in_bank(0, 16)); // GP regs
