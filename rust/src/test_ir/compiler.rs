@@ -29,7 +29,7 @@ pub struct TestIRCompiler<'arena> {
     /// ELF assembler for object generation.
     assembler: ElfAssembler,
     /// Value assignment manager.
-    value_mgr: ValueAssignmentManager,
+    value_mgr: ValueAssignmentManager<'arena>,
     /// Register allocator.
     register_file: RegisterFile,
     /// Compilation session.
@@ -65,7 +65,7 @@ impl<'arena> TestIRCompiler<'arena> {
             ir,
             adaptor,
             assembler,
-            value_mgr: ValueAssignmentManager::new(),
+            value_mgr: ValueAssignmentManager::new_in(session.arena()),
             register_file: RegisterFile::new(16, 2, available_regs),
             _session: session,
             _no_fixed_assignments: no_fixed_assignments,
@@ -105,7 +105,7 @@ impl<'arena> TestIRCompiler<'arena> {
         self.adaptor.switch_func(FuncRef(func_idx as u32));
 
         // Reset per-function state
-        self.value_mgr = ValueAssignmentManager::new();
+        self.value_mgr = ValueAssignmentManager::new_in(self._session.arena());
         self.register_file = RegisterFile::new(16, 2, RegBitSet::all_in_bank(0, 16));
 
         // Create a new function codegen for this function
