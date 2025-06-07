@@ -194,10 +194,9 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
 /// Validate output against CHECK directives
 fn validate_output(output: &str, content: &str) -> Result<(), String> {
     let mut checks = Vec::new();
-    let mut current_line = 0;
 
     // Extract CHECK directives
-    for line in content.lines() {
+    for (current_line, line) in content.lines().enumerate() {
         if let Some(check) = line.strip_prefix("; CHECK:") {
             checks.push((current_line, "CHECK", check.trim()));
         } else if let Some(check) = line.strip_prefix("; CHECK-NEXT:") {
@@ -207,7 +206,6 @@ fn validate_output(output: &str, content: &str) -> Result<(), String> {
         } else if line.starts_with("; CHECK-EMPTY") {
             checks.push((current_line, "CHECK-EMPTY", ""));
         }
-        current_line += 1;
     }
 
     let output_lines: Vec<&str> = output.lines().collect();

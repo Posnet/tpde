@@ -111,10 +111,10 @@ fn test_load_store_compilation() {
 
     // Create arena and session
     let arena = Bump::new();
-    let mut session = CompilationSession::new(&arena);
+    let session = CompilationSession::new(&arena);
 
     // Create compiler
-    let mut compiler = LlvmCompiler::new(module, &mut session).unwrap();
+    let mut compiler = LlvmCompiler::new(module, &session).unwrap();
 
     // Compile the function
     compiler.compile_function_by_name("load_add_store").unwrap();
@@ -143,10 +143,10 @@ fn test_branch_compilation() {
 
     // Create arena and session
     let arena = Bump::new();
-    let mut session = CompilationSession::new(&arena);
+    let session = CompilationSession::new(&arena);
 
     // Create compiler
-    let mut compiler = LlvmCompiler::new(module, &mut session).unwrap();
+    let mut compiler = LlvmCompiler::new(module, &session).unwrap();
 
     // Compile the function
     compiler.compile_function_by_name("max").unwrap();
@@ -205,10 +205,10 @@ fn test_gep_compilation() {
 
     // Create arena and session
     let arena = Bump::new();
-    let mut session = CompilationSession::new(&arena);
+    let session = CompilationSession::new(&arena);
 
     // Create compiler
-    let mut compiler = LlvmCompiler::new(module, &mut session).unwrap();
+    let mut compiler = LlvmCompiler::new(module, &session).unwrap();
 
     // Compile the function
     compiler.compile_function_by_name("index_array").unwrap();
@@ -256,10 +256,10 @@ fn test_arithmetic_operations() {
 
     // Create arena and session
     let arena = Bump::new();
-    let mut session = CompilationSession::new(&arena);
+    let session = CompilationSession::new(&arena);
 
     // Create compiler
-    let mut compiler = LlvmCompiler::new(module, &mut session).unwrap();
+    let mut compiler = LlvmCompiler::new(module, &session).unwrap();
 
     // Compile the function
     compiler.compile_function_by_name("arithmetic").unwrap();
