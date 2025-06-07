@@ -109,7 +109,7 @@ impl<'arena> TestIRCompiler<'arena> {
         self.register_file = RegisterFile::new(16, 2, RegBitSet::all_in_bank(0, 16));
 
         // Create a new function codegen for this function
-        let mut func_codegen = FunctionCodegen::new()?;
+        let mut func_codegen = FunctionCodegen::new(self._session.arena())?;
 
         // Process function arguments
         let arg_count = (func.arg_end_idx - func.arg_begin_idx) as usize;
@@ -189,7 +189,7 @@ impl<'arena> TestIRCompiler<'arena> {
     fn compile_block(
         &mut self,
         block_idx: usize,
-        func_codegen: &mut FunctionCodegen,
+        func_codegen: &mut FunctionCodegen<'arena>,
     ) -> Result<(), CompilationError> {
         let block = &self.ir.blocks[block_idx];
 
@@ -205,7 +205,7 @@ impl<'arena> TestIRCompiler<'arena> {
     fn compile_instruction(
         &mut self,
         inst_idx: usize,
-        func_codegen: &mut FunctionCodegen,
+        func_codegen: &mut FunctionCodegen<'arena>,
     ) -> Result<(), CompilationError> {
         let inst = &self.ir.values[inst_idx];
 
@@ -241,7 +241,7 @@ impl<'arena> TestIRCompiler<'arena> {
     fn compile_binary_op<F>(
         &mut self,
         inst_idx: usize,
-        func_codegen: &mut FunctionCodegen,
+        func_codegen: &mut FunctionCodegen<'arena>,
         emit_op: F,
     ) -> Result<(), CompilationError>
     where
@@ -296,7 +296,7 @@ impl<'arena> TestIRCompiler<'arena> {
     fn compile_add(
         &mut self,
         inst_idx: usize,
-        func_codegen: &mut FunctionCodegen,
+        func_codegen: &mut FunctionCodegen<'arena>,
     ) -> Result<(), CompilationError> {
         self.compile_binary_op(inst_idx, func_codegen, |encoder, dst, src| {
             encoder.add_reg_reg(dst, src)
@@ -307,7 +307,7 @@ impl<'arena> TestIRCompiler<'arena> {
     fn compile_sub(
         &mut self,
         inst_idx: usize,
-        func_codegen: &mut FunctionCodegen,
+        func_codegen: &mut FunctionCodegen<'arena>,
     ) -> Result<(), CompilationError> {
         self.compile_binary_op(inst_idx, func_codegen, |encoder, dst, src| {
             encoder.sub_reg_reg(dst, src)
@@ -318,7 +318,7 @@ impl<'arena> TestIRCompiler<'arena> {
     fn compile_ret(
         &mut self,
         inst_idx: usize,
-        func_codegen: &mut FunctionCodegen,
+        func_codegen: &mut FunctionCodegen<'arena>,
     ) -> Result<(), CompilationError> {
         let inst = &self.ir.values[inst_idx];
 
@@ -350,7 +350,7 @@ impl<'arena> TestIRCompiler<'arena> {
     /// Compile a terminate instruction.
     fn compile_terminate(
         &mut self,
-        _func_codegen: &mut FunctionCodegen,
+        _func_codegen: &mut FunctionCodegen<'arena>,
     ) -> Result<(), CompilationError> {
         // For TestIR, terminate is like a void return
         // Epilogue will be generated at end of function
@@ -361,7 +361,7 @@ impl<'arena> TestIRCompiler<'arena> {
     fn compile_branch(
         &mut self,
         _inst_idx: usize,
-        _func_codegen: &mut FunctionCodegen,
+        _func_codegen: &mut FunctionCodegen<'arena>,
     ) -> Result<(), CompilationError> {
         // TODO: Implement control flow with label management and jump instructions
         Ok(())
@@ -371,7 +371,7 @@ impl<'arena> TestIRCompiler<'arena> {
     fn compile_alloca(
         &mut self,
         inst_idx: usize,
-        _func_codegen: &mut FunctionCodegen,
+        _func_codegen: &mut FunctionCodegen<'arena>,
     ) -> Result<(), CompilationError> {
         // Create value assignment for the result (a pointer to stack space)
         let local_idx = self.global_to_local_idx(inst_idx);
@@ -386,7 +386,7 @@ impl<'arena> TestIRCompiler<'arena> {
     fn compile_call(
         &mut self,
         inst_idx: usize,
-        _func_codegen: &mut FunctionCodegen,
+        _func_codegen: &mut FunctionCodegen<'arena>,
     ) -> Result<(), CompilationError> {
         // Check if this call produces a result
         let inst = &self.ir.values[inst_idx];
@@ -404,7 +404,7 @@ impl<'arena> TestIRCompiler<'arena> {
     fn compile_zerofill(
         &mut self,
         inst_idx: usize,
-        func_codegen: &mut FunctionCodegen,
+        func_codegen: &mut FunctionCodegen<'arena>,
     ) -> Result<(), CompilationError> {
         let inst = &self.ir.values[inst_idx];
 

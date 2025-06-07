@@ -16,6 +16,7 @@
 //! the C++ CCAssigner infrastructure while adapting to Rust's type system.
 
 use crate::core::register_file::{AsmReg, RegBitSet};
+use bumpalo::{collections::Vec as BumpVec, Bump};
 
 /// Register banks for different register types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -339,41 +340,35 @@ impl CCAssigner for SysVAssigner {
 
 /// Function calling state and stack frame management.
 #[derive(Debug)]
-pub struct FunctionFrame {
+pub struct FunctionFrame<'a> {
     /// Callee-saved registers that need to be preserved.
-    pub saved_registers: Vec<AsmReg>,
+    pub saved_registers: BumpVec<'a, AsmReg>,
     /// Total size of the stack frame.
     pub frame_size: u32,
     /// Offset to local variables area.
     pub locals_offset: i32,
     /// Stack slot assignments for spilled values.
-    pub spill_slots: Vec<i32>,
+    pub spill_slots: BumpVec<'a, i32>,
     /// Current spill slot offset.
     pub spill_offset: i32,
     /// Argument assignments for the current function.
-    pub arg_assignments: Vec<CCAssignment>,
+    pub arg_assignments: BumpVec<'a, CCAssignment>,
     /// Return value assignments.
-    pub ret_assignments: Vec<CCAssignment>,
+    pub ret_assignments: BumpVec<'a, CCAssignment>,
 }
 
-impl Default for FunctionFrame {
-    fn default() -> Self {
+impl<'a> FunctionFrame<'a> {
+    /// Create a new function frame using the provided arena.
+    pub fn new(arena: &'a Bump) -> Self {
         Self {
-            saved_registers: Vec::new(),
+            saved_registers: BumpVec::new_in(arena),
             frame_size: 0,
             locals_offset: 0,
-            spill_slots: Vec::new(),
+            spill_slots: BumpVec::new_in(arena),
             spill_offset: -16, // Start below saved RBP
-            arg_assignments: Vec::new(),
-            ret_assignments: Vec::new(),
+            arg_assignments: BumpVec::new_in(arena),
+            ret_assignments: BumpVec::new_in(arena),
         }
-    }
-}
-
-impl FunctionFrame {
-    /// Create a new function frame.
-    pub fn new() -> Self {
-        Self::default()
     }
 
     /// Add a callee-saved register that needs preservation.
@@ -419,6 +414,7 @@ impl FunctionFrame {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bumpalo::Bump;
 
     #[test]
     fn test_sysv_gp_argument_assignment() {
@@ -499,7 +495,8 @@ mod tests {
 
     #[test]
     fn test_function_frame_spill_allocation() {
-        let mut frame = FunctionFrame::new();
+        let arena = Bump::new();
+        let mut frame = FunctionFrame::new(&arena);
 
         // Allocate some spill slots
         let slot1 = frame.allocate_spill_slot(8);
@@ -518,7 +515,8 @@ mod tests {
 
     #[test]
     fn test_function_frame_saved_registers() {
-        let mut frame = FunctionFrame::new();
+        let arena = Bump::new();
+        let mut frame = FunctionFrame::new(&arena);
 
         let rbx = AsmReg::new(0, 3);
         let r12 = AsmReg::new(0, 12);
