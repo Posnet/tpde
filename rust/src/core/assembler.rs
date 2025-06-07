@@ -50,7 +50,8 @@ use object::write::{
     Object, SectionId, StandardSection, Symbol, SymbolId, SymbolKind, SymbolScope, SymbolSection,
 };
 use object::{Architecture, BinaryFormat, Endianness};
-use std::collections::HashMap;
+use bumpalo::{Bump, collections::Vec as BumpVec};
+use hashbrown::{HashMap, DefaultHashBuilder};
 
 /// Label identifier used by [`ElfAssembler`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -64,10 +65,11 @@ struct LabelInfo {
 
 /// Minimal assembler based on the [`object`] crate producing ELF objects.
 pub struct ElfAssembler {
+    arena: &'static Bump,
     obj: Object<'static>,
     current: SectionId,
-    labels: Vec<LabelInfo>,
-    offsets: HashMap<SectionId, u64>,
+    labels: BumpVec<'static, LabelInfo>,
+    offsets: HashMap<SectionId, u64, DefaultHashBuilder, &'static Bump>,
     _emit_obj: bool,
 }
 
@@ -135,14 +137,16 @@ impl<A: IrAdaptor> Assembler<A> for ElfAssembler {
     type Label = ElfLabel;
 
     fn new(generate_object: bool) -> Self {
+        let arena: &'static Bump = Box::leak(Box::new(Bump::new()));
         let mut obj = Object::new(BinaryFormat::Elf, Architecture::X86_64, Endianness::Little);
         let text = obj.section_id(StandardSection::Text);
-        let mut offsets = HashMap::new();
+        let mut offsets = HashMap::new_in(arena);
         offsets.insert(text, 0);
         Self {
+            arena,
             obj,
             current: text,
-            labels: Vec::new(),
+            labels: BumpVec::new_in(arena),
             offsets,
             _emit_obj: generate_object,
         }
