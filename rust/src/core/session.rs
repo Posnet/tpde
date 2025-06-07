@@ -17,8 +17,9 @@
 //! lifetime, eliminating complex lifetime propagation.
 
 use bumpalo::Bump;
+use bumpalo::collections::{String as BString, Vec as BVec};
+use hashbrown::{DefaultHashBuilder, HashMap};
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::fmt;
 
 // LLVM types not needed for the arena-based session management
@@ -34,19 +35,19 @@ pub enum ValueLocation {
 
 /// Block information tracked during compilation.
 #[derive(Debug, Clone)]
-pub struct BlockInfo {
+pub struct BlockInfo<'arena> {
     pub layout_order: usize,
     pub is_visited: bool,
-    pub predecessors: Vec<usize>, // Block indices
-    pub successors: Vec<usize>,   // Block indices
-    pub phi_nodes: Vec<usize>,    // Instruction indices
+    pub predecessors: BVec<'arena, usize>, // Block indices
+    pub successors: BVec<'arena, usize>,   // Block indices
+    pub phi_nodes: BVec<'arena, usize>,    // Instruction indices
 }
 
 /// PHI node information for resolution.
 #[derive(Debug, Clone)]
-pub struct PhiNodeInfo {
+pub struct PhiNodeInfo<'arena> {
     pub result_value: usize,
-    pub incoming_values: Vec<(usize, usize)>, // (value_idx, block_idx)
+    pub incoming_values: BVec<'arena, (usize, usize)>, // (value_idx, block_idx)
 }
 
 /// Arena-based compilation session.
@@ -59,22 +60,22 @@ pub struct CompilationSession<'arena> {
     arena: &'arena Bump,
 
     /// Session statistics for debugging and optimization.
-    stats: RefCell<SessionStats>,
+    stats: RefCell<SessionStats<'arena>>,
 
     /// Value locations tracked during compilation.
-    value_locations: RefCell<HashMap<usize, ValueLocation>>,
+    value_locations: RefCell<HashMap<usize, ValueLocation, DefaultHashBuilder, &'arena Bump>>,
 
     /// Block information for control flow.
-    block_info: RefCell<HashMap<usize, BlockInfo>>,
+    block_info: RefCell<HashMap<usize, BlockInfo<'arena>, DefaultHashBuilder, &'arena Bump>>,
 
     /// PHI node information for resolution.
-    phi_nodes: RefCell<HashMap<usize, PhiNodeInfo>>,
+    phi_nodes: RefCell<HashMap<usize, PhiNodeInfo<'arena>, DefaultHashBuilder, &'arena Bump>>,
 
     /// String interning for efficient storage.
-    interned_strings: RefCell<HashMap<String, &'arena str>>,
+    interned_strings: RefCell<HashMap<BString<'arena>, &'arena str, DefaultHashBuilder, &'arena Bump>>,
 
     /// Current function being compiled.
-    current_function: RefCell<Option<String>>,
+    current_function: RefCell<Option<BString<'arena>>>,
 }
 
 impl<'arena> CompilationSession<'arena> {
@@ -82,11 +83,11 @@ impl<'arena> CompilationSession<'arena> {
     pub fn new(arena: &'arena Bump) -> Self {
         Self {
             arena,
-            stats: RefCell::new(SessionStats::default()),
-            value_locations: RefCell::new(HashMap::new()),
-            block_info: RefCell::new(HashMap::new()),
-            phi_nodes: RefCell::new(HashMap::new()),
-            interned_strings: RefCell::new(HashMap::new()),
+            stats: RefCell::new(SessionStats::new_in(arena)),
+            value_locations: RefCell::new(HashMap::new_in(arena)),
+            block_info: RefCell::new(HashMap::new_in(arena)),
+            phi_nodes: RefCell::new(HashMap::new_in(arena)),
+            interned_strings: RefCell::new(HashMap::new_in(arena)),
             current_function: RefCell::new(None),
         }
     }
@@ -117,13 +118,13 @@ impl<'arena> CompilationSession<'arena> {
         }
 
         let interned = self.arena.alloc_str(s);
-        strings.insert(s.to_string(), interned);
+        strings.insert(BString::from_str_in(s, self.arena), interned);
         interned
     }
 
     /// Set current function being compiled.
     pub fn set_current_function(&self, name: &str) {
-        *self.current_function.borrow_mut() = Some(name.to_string());
+        *self.current_function.borrow_mut() = Some(BString::from_str_in(name, self.arena));
     }
 
     /// Track value location.
@@ -139,32 +140,33 @@ impl<'arena> CompilationSession<'arena> {
     }
 
     /// Add block information.
-    pub fn add_block_info(&self, block_idx: usize, info: BlockInfo) {
+    pub fn add_block_info(&self, block_idx: usize, info: BlockInfo<'arena>) {
         self.block_info.borrow_mut().insert(block_idx, info);
     }
 
     /// Get block information.
-    pub fn get_block_info(&self, block_idx: usize) -> Option<BlockInfo> {
+    pub fn get_block_info(&self, block_idx: usize) -> Option<BlockInfo<'arena>> {
         self.block_info.borrow().get(&block_idx).cloned()
     }
 
     /// Add PHI node information.
-    pub fn add_phi_node(&self, inst_idx: usize, info: PhiNodeInfo) {
+    pub fn add_phi_node(&self, inst_idx: usize, info: PhiNodeInfo<'arena>) {
         self.phi_nodes.borrow_mut().insert(inst_idx, info);
     }
 
     /// Get PHI node information.
-    pub fn get_phi_node(&self, inst_idx: usize) -> Option<PhiNodeInfo> {
+    pub fn get_phi_node(&self, inst_idx: usize) -> Option<PhiNodeInfo<'arena>> {
         self.phi_nodes.borrow().get(&inst_idx).cloned()
     }
 
     /// Get all PHI nodes for resolution.
-    pub fn get_all_phi_nodes(&self) -> Vec<(usize, PhiNodeInfo)> {
-        self.phi_nodes
-            .borrow()
-            .iter()
-            .map(|(idx, info)| (*idx, info.clone()))
-            .collect()
+    pub fn get_all_phi_nodes(&self) -> BVec<'arena, (usize, PhiNodeInfo<'arena>)> {
+        let map = self.phi_nodes.borrow();
+        let mut vec = BVec::with_capacity_in(map.len(), self.arena);
+        for (idx, info) in map.iter() {
+            vec.push((*idx, info.clone()));
+        }
+        vec
     }
 
     /// Clear session state for new function.
@@ -183,7 +185,7 @@ impl<'arena> CompilationSession<'arena> {
 
         if stats.largest_function_size < code_size {
             stats.largest_function_size = code_size;
-            stats.largest_function_name = name.to_string();
+            stats.largest_function_name = BString::from_str_in(name, self.arena);
         }
     }
 
@@ -193,7 +195,7 @@ impl<'arena> CompilationSession<'arena> {
         stats.instructions_compiled += 1;
         *stats
             .instruction_counts
-            .entry(opcode.to_string())
+            .entry(BString::from_str_in(opcode, self.arena))
             .or_insert(0) += 1;
     }
 
@@ -213,7 +215,7 @@ impl<'arena> CompilationSession<'arena> {
     }
 
     /// Get compilation statistics.
-    pub fn stats(&self) -> SessionStats {
+    pub fn stats(&self) -> SessionStats<'arena> {
         self.stats.borrow().clone()
     }
 
@@ -227,8 +229,8 @@ impl<'arena> CompilationSession<'arena> {
 }
 
 /// Compilation session statistics.
-#[derive(Debug, Default, Clone)]
-pub struct SessionStats {
+#[derive(Debug, Clone)]
+pub struct SessionStats<'arena> {
     /// Number of functions compiled.
     pub functions_compiled: usize,
 
@@ -239,13 +241,13 @@ pub struct SessionStats {
     pub instructions_compiled: usize,
 
     /// Count of each instruction type compiled.
-    pub instruction_counts: std::collections::HashMap<String, usize>,
+    pub instruction_counts: HashMap<BString<'arena>, usize, DefaultHashBuilder, &'arena Bump>,
 
     /// Largest function compiled (for analysis).
     pub largest_function_size: usize,
 
     /// Name of largest function.
-    pub largest_function_name: String,
+    pub largest_function_name: BString<'arena>,
 
     /// PHI nodes resolved.
     pub phi_nodes_resolved: usize,
@@ -260,7 +262,24 @@ pub struct SessionStats {
     pub total_calls: usize,
 }
 
-impl fmt::Display for SessionStats {
+impl<'arena> SessionStats<'arena> {
+    pub fn new_in(arena: &'arena Bump) -> Self {
+        Self {
+            functions_compiled: 0,
+            total_code_size: 0,
+            instructions_compiled: 0,
+            instruction_counts: HashMap::new_in(arena),
+            largest_function_size: 0,
+            largest_function_name: BString::new_in(arena),
+            phi_nodes_resolved: 0,
+            registers_allocated: 0,
+            spills_generated: 0,
+            total_calls: 0,
+        }
+    }
+}
+
+impl<'arena> fmt::Display for SessionStats<'arena> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Compilation Session Statistics:")?;
         writeln!(f, "  Functions compiled: {}", self.functions_compiled)?;
@@ -418,14 +437,14 @@ mod tests {
         let info = BlockInfo {
             layout_order: 0,
             is_visited: false,
-            predecessors: vec![],
-            successors: vec![1, 2],
-            phi_nodes: vec![],
+            predecessors: BVec::new_in(&arena),
+            successors: bumpalo::vec![in &arena; 1, 2],
+            phi_nodes: BVec::new_in(&arena),
         };
 
         session.add_block_info(0, info.clone());
         let retrieved = session.get_block_info(0).unwrap();
-        assert_eq!(retrieved.successors, vec![1, 2]);
+        assert_eq!(retrieved.successors.as_slice(), &[1, 2]);
     }
 
     #[test]
@@ -435,7 +454,7 @@ mod tests {
 
         let phi = PhiNodeInfo {
             result_value: 10,
-            incoming_values: vec![(5, 0), (6, 1)],
+            incoming_values: bumpalo::vec![in &arena; (5, 0), (6, 1)],
         };
 
         session.add_phi_node(100, phi.clone());
