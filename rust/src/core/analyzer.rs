@@ -80,6 +80,16 @@ impl<A: IrAdaptor> Analyzer<A> {
 
         // -------- build RPO order ---------
         let entry = adaptor.entry_block();
+        
+        // First pass: build a map of blocks to their order in the IR
+        // This is used to sort successors to maintain source order
+        let mut block_order_map = HashMap::new();
+        let mut idx = 0u32;
+        for block in adaptor.blocks() {
+            block_order_map.insert(block, idx);
+            idx += 1;
+        }
+        
         let mut post = Vec::new();
         let mut stack = vec![(entry, false)];
         let mut visited = HashSet::new();
@@ -92,8 +102,21 @@ impl<A: IrAdaptor> Analyzer<A> {
                 continue;
             }
             stack.push((block, true));
+            
+            // Push successors onto the stack first, then sort them
+            // This matches the C++ implementation exactly
+            let start_idx = stack.len();
             for succ in adaptor.block_succs(block) {
                 stack.push((succ, false));
+            }
+            
+            // Sort the pushed children by their original block index
+            // This ensures blocks appearing earlier in the IR are visited in the correct order
+            let len = stack.len() - start_idx;
+            if len > 1 {
+                // Sort the portion of the stack we just added
+                let slice = &mut stack[start_idx..];
+                slice.sort_by_key(|(block, _)| block_order_map.get(block).copied().unwrap_or(u32::MAX));
             }
         }
         post.reverse();
@@ -142,6 +165,21 @@ impl<A: IrAdaptor> Analyzer<A> {
                 }
             }
         }
+        
+        // Post-process to set last_full correctly
+        // For now, use a simple heuristic: if a value spans multiple blocks
+        // and the last block has successors (not terminating), set last_full = true
+        for idx in 0..self.order.len() {
+            let block = self.order[idx];
+            let has_successors = adaptor.block_succs(block).count() > 0;
+            
+            // Update last_full for values whose last block is this one
+            for info in &mut self.liveness {
+                if info.last == idx && info.first != info.last && has_successors {
+                    info.last_full = true;
+                }
+            }
+        }
     }
 
     fn record(&mut self, adaptor: &A, val: A::ValueRef, block_idx: usize) {
@@ -172,6 +210,8 @@ impl<A: IrAdaptor> Analyzer<A> {
                 info.last = block_idx;
             }
         }
-        info.last_full = info.first != info.last;
+        // last_full should be false for now - it will be updated based on block type
+        // when we have proper loop analysis
+        info.last_full = false;
     }
 }
