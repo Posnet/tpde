@@ -18,7 +18,9 @@
 //! factorial, fibonacci, and other common patterns.
 
 use super::traits::{InstructionCategory, LlvmAdaptorInterface};
-use crate::core::IrAdaptor;
+use crate::core::{CompilationSession, IrAdaptor};
+use bumpalo::Bump;
+use hashbrown::HashMap;
 use inkwell::llvm_sys::prelude::LLVMValueRef;
 use inkwell::values::{AnyValue, AsValueRef, InstructionOpcode};
 use inkwell::{
@@ -27,7 +29,8 @@ use inkwell::{
     values::{BasicValue, BasicValueEnum, FunctionValue, InstructionValue},
     IntPredicate,
 };
-use std::collections::HashMap;
+#[cfg(test)]
+use std::collections::HashMap as StdHashMap;
 
 /// PHI node information for resolution and register allocation.
 ///
@@ -82,49 +85,57 @@ impl<'ctx> PhiInfo<'ctx> {
 /// - Memory operations (loads, stores, allocas)
 /// - PHI nodes for SSA form
 /// - Basic arithmetic and comparison operations
-pub struct EnhancedLlvmAdaptor<'ctx> {
+pub struct EnhancedLlvmAdaptor<'ctx, 'arena> {
+    /// Compilation session that owns all arena allocations.
+    session: &'arena CompilationSession<'arena>,
     /// All functions in the module.
-    functions: Vec<FunctionValue<'ctx>>,
+    functions: &'arena [FunctionValue<'ctx>],
     /// Function names for symbol generation.
-    function_names: Vec<String>,
+    function_names: &'arena [&'arena str],
     /// Currently compiled function.
     current_function: Option<FunctionValue<'ctx>>,
     /// Value to local index mapping.
-    value_indices: HashMap<LLVMValueRef, usize>,
+    value_indices: HashMap<LLVMValueRef, usize, hashbrown::DefaultHashBuilder, &'arena Bump>,
     /// Block to index mapping for current function.
-    block_indices: HashMap<String, usize>,
+    block_indices: HashMap<&'arena str, usize, hashbrown::DefaultHashBuilder, &'arena Bump>,
     /// Block successors for current function.
-    block_successors: Vec<Vec<usize>>,
+    block_successors: &'arena [&'arena [usize]],
     /// Global variables and constants.
-    globals: Vec<BasicValueEnum<'ctx>>,
+    globals: &'arena [BasicValueEnum<'ctx>],
     /// Whether current function has allocas.
     has_allocas: bool,
     /// Whether current function makes calls.
     makes_calls: bool,
 }
 
-impl<'ctx> EnhancedLlvmAdaptor<'ctx> {
+impl<'ctx, 'arena> EnhancedLlvmAdaptor<'ctx, 'arena> {
     /// Create a new enhanced LLVM adaptor.
-    pub fn new(module: &Module<'ctx>) -> Self {
-        let functions: Vec<_> = module.get_functions().collect();
-        let function_names = functions
-            .iter()
-            .map(|f| f.get_name().to_str().unwrap_or("").to_string())
-            .collect();
+    pub fn new(module: &Module<'ctx>, session: &'arena CompilationSession<'arena>) -> Self {
+        let funcs: Vec<_> = module.get_functions().collect();
+        let mut names: Vec<&'arena str> = Vec::new();
+        for f in &funcs {
+            let name = f.get_name().to_str().unwrap_or("");
+            names.push(session.intern_str(name));
+        }
 
         // Collect global variables
-        let globals: Vec<_> = module
+        let globals_vec: Vec<_> = module
             .get_globals()
             .map(|g| g.as_basic_value_enum())
             .collect();
 
+        let functions = session.alloc_slice(&funcs);
+        let function_names = session.alloc_slice(&names);
+        let globals = session.alloc_slice(&globals_vec);
+
         Self {
+            session,
             functions,
             function_names,
             current_function: None,
-            value_indices: HashMap::new(),
-            block_indices: HashMap::new(),
-            block_successors: Vec::new(),
+            value_indices: HashMap::new_in(session.arena()),
+            block_indices: HashMap::new_in(session.arena()),
+            block_successors: session.alloc_slice(&[]),
             globals,
             has_allocas: false,
             makes_calls: false,
@@ -325,40 +336,30 @@ impl<'ctx> EnhancedLlvmAdaptor<'ctx> {
     /// This extracts real successor blocks from terminator instructions,
     /// which is critical for proper control flow analysis in TPDE.
     fn build_block_successors(&mut self) {
-        self.block_successors.clear();
-        self.block_indices.clear();
+        self.block_indices = HashMap::new_in(self.session.arena());
 
         if let Some(func) = self.current_function {
             let blocks: Vec<_> = func.get_basic_blocks();
+            let mut succ_slices: Vec<&'arena [usize]> = Vec::new();
 
-            // Build block index mapping - for now we'll use a simple approach
-            // that works with inkwell's limited API
+            // Build block index mapping
             for (idx, block) in blocks.iter().enumerate() {
-                let block_name = block
-                    .get_name()
-                    .to_str()
-                    .unwrap_or(&format!("block_{idx}"))
-                    .to_string();
-                self.block_indices.insert(block_name, idx);
+                let default_name = format!("block_{idx}");
+                let name_str = block.get_name().to_str().unwrap_or(&default_name);
+                let interned = self.session.intern_str(name_str);
+                self.block_indices.insert(interned, idx);
             }
-
-            // Helper to find block index by name (unused for now but kept for future enhancement)
-            let _find_block_index = |target_name: &str| -> Option<usize> {
-                for (i, block) in blocks.iter().enumerate() {
-                    let default_name = format!("block_{i}");
-                    let name = block.get_name().to_str().unwrap_or(&default_name);
-                    if name == target_name {
-                        return Some(i);
-                    }
-                }
-                None
-            };
 
             // Extract real successors from terminator instructions
             for block in blocks.iter() {
-                let successors = self.extract_block_successors(*block, &blocks);
-                self.block_successors.push(successors);
+                let succ_vec = self.extract_block_successors(*block, &blocks);
+                let slice = self.session.alloc_slice(&succ_vec);
+                succ_slices.push(slice);
             }
+
+            self.block_successors = self.session.alloc_slice(&succ_slices);
+        } else {
+            self.block_successors = self.session.alloc_slice(&[]);
         }
     }
 
@@ -560,9 +561,9 @@ impl<'ctx> EnhancedLlvmAdaptor<'ctx> {
                 let block_name = block.get_name().to_str().unwrap_or(&default_name);
 
                 let successors = if i < self.block_successors.len() {
-                    &self.block_successors[i]
+                    self.block_successors[i]
                 } else {
-                    &Vec::new()
+                    &[]
                 };
 
                 let successor_names: Vec<String> = successors
@@ -607,7 +608,7 @@ impl<'ctx> EnhancedLlvmAdaptor<'ctx> {
     }
 }
 
-impl<'ctx> IrAdaptor for EnhancedLlvmAdaptor<'ctx> {
+impl<'ctx, 'arena> IrAdaptor for EnhancedLlvmAdaptor<'ctx, 'arena> {
     type ValueRef = Option<BasicValueEnum<'ctx>>;
     type InstRef = Option<InstructionValue<'ctx>>;
     type BlockRef = Option<BasicBlock<'ctx>>;
@@ -630,7 +631,7 @@ impl<'ctx> IrAdaptor for EnhancedLlvmAdaptor<'ctx> {
             self.functions
                 .iter()
                 .position(|&fv| fv == f)
-                .map(|pos| self.function_names[pos].as_str())
+                .map(|pos| self.function_names[pos])
         })
         .unwrap_or("")
     }
@@ -684,7 +685,7 @@ impl<'ctx> IrAdaptor for EnhancedLlvmAdaptor<'ctx> {
         self.current_function = None;
         self.value_indices.clear();
         self.block_indices.clear();
-        self.block_successors.clear();
+        self.block_successors = self.session.alloc_slice(&[]);
         self.has_allocas = false;
         self.makes_calls = false;
     }
@@ -712,10 +713,10 @@ impl<'ctx> IrAdaptor for EnhancedLlvmAdaptor<'ctx> {
 
     fn block_succs(&self, block: Self::BlockRef) -> Box<dyn Iterator<Item = Self::BlockRef> + '_> {
         if let Some(bb) = block {
-            let block_name = bb.get_name().to_str().unwrap_or("").to_string();
-            if let Some(&block_idx) = self.block_indices.get(&block_name) {
+            let block_name = bb.get_name().to_str().unwrap_or("");
+            if let Some(&block_idx) = self.block_indices.get(block_name) {
                 if block_idx < self.block_successors.len() {
-                    let successor_indices = &self.block_successors[block_idx];
+                    let successor_indices = self.block_successors[block_idx];
                     if let Some(func) = self.current_function {
                         let blocks: Vec<_> = func.get_basic_blocks();
                         let successors: Vec<_> = successor_indices
@@ -780,7 +781,7 @@ impl<'ctx> IrAdaptor for EnhancedLlvmAdaptor<'ctx> {
     }
 }
 
-impl<'ctx> LlvmAdaptorInterface for EnhancedLlvmAdaptor<'ctx> {
+impl<'ctx, 'arena> LlvmAdaptorInterface for EnhancedLlvmAdaptor<'ctx, 'arena> {
     fn get_instruction_category(&self, inst: Self::InstRef) -> InstructionCategory {
         if let Some(instruction) = inst {
             match instruction.get_opcode() {
@@ -884,6 +885,8 @@ impl<'ctx> LlvmAdaptorInterface for EnhancedLlvmAdaptor<'ctx> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bumpalo::Bump;
+    use crate::core::CompilationSession;
     use inkwell::context::Context;
     use inkwell::IntPredicate;
 
@@ -938,7 +941,9 @@ mod tests {
     fn test_enhanced_adaptor_creation() {
         let context = Context::create();
         let module = create_factorial_function(&context);
-        let adaptor = EnhancedLlvmAdaptor::new(&module);
+        let arena = Bump::new();
+        let session = CompilationSession::new(&arena);
+        let adaptor = EnhancedLlvmAdaptor::new(&module, &session);
 
         assert_eq!(adaptor.func_count(), 1);
         let funcs: Vec<_> = adaptor.funcs().collect();
@@ -949,7 +954,9 @@ mod tests {
     fn test_factorial_function_analysis() {
         let context = Context::create();
         let module = create_factorial_function(&context);
-        let mut adaptor = EnhancedLlvmAdaptor::new(&module);
+        let arena = Bump::new();
+        let session = CompilationSession::new(&arena);
+        let mut adaptor = EnhancedLlvmAdaptor::new(&module, &session);
 
         // Switch to factorial function
         let funcs: Vec<_> = adaptor.funcs().collect();
@@ -989,7 +996,9 @@ mod tests {
     fn test_instruction_classification() {
         let context = Context::create();
         let module = create_factorial_function(&context);
-        let mut adaptor = EnhancedLlvmAdaptor::new(&module);
+        let arena = Bump::new();
+        let session = CompilationSession::new(&arena);
+        let mut adaptor = EnhancedLlvmAdaptor::new(&module, &session);
 
         let funcs: Vec<_> = adaptor.funcs().collect();
         adaptor.switch_func(funcs[0]);
@@ -1027,7 +1036,9 @@ mod tests {
     fn test_value_indexing() {
         let context = Context::create();
         let module = create_factorial_function(&context);
-        let mut adaptor = EnhancedLlvmAdaptor::new(&module);
+        let arena = Bump::new();
+        let session = CompilationSession::new(&arena);
+        let mut adaptor = EnhancedLlvmAdaptor::new(&module, &session);
 
         let funcs: Vec<_> = adaptor.funcs().collect();
         adaptor.switch_func(funcs[0]);
@@ -1061,7 +1072,9 @@ mod tests {
     fn test_enhanced_block_successor_extraction() {
         let context = Context::create();
         let module = create_factorial_function(&context);
-        let mut adaptor = EnhancedLlvmAdaptor::new(&module);
+        let arena = Bump::new();
+        let session = CompilationSession::new(&arena);
+        let mut adaptor = EnhancedLlvmAdaptor::new(&module, &session);
 
         let funcs: Vec<_> = adaptor.funcs().collect();
         adaptor.switch_func(funcs[0]);
@@ -1097,13 +1110,15 @@ mod tests {
     fn test_terminator_instruction_analysis() {
         let context = Context::create();
         let module = create_factorial_function(&context);
-        let mut adaptor = EnhancedLlvmAdaptor::new(&module);
+        let arena = Bump::new();
+        let session = CompilationSession::new(&arena);
+        let mut adaptor = EnhancedLlvmAdaptor::new(&module, &session);
 
         let funcs: Vec<_> = adaptor.funcs().collect();
         adaptor.switch_func(funcs[0]);
 
         let blocks: Vec<_> = adaptor.blocks().collect();
-        let mut terminator_types = std::collections::HashMap::new();
+        let mut terminator_types = StdHashMap::new();
 
         for block in blocks.into_iter().flatten() {
             if let Some(terminator) = block.get_terminator() {

@@ -91,6 +91,7 @@ pub mod function_analysis;
 pub mod traits;
 
 // Main exports
-pub use adaptor::{EnhancedLlvmAdaptor as LlvmAdaptor, PhiInfo};
+pub use adaptor::{EnhancedLlvmAdaptor, PhiInfo};
+pub type LlvmAdaptor<'ctx, 'arena> = EnhancedLlvmAdaptor<'ctx, 'arena>;
 pub use compiler::{CompiledFunction, LlvmCompiler, LlvmCompilerError};
 pub use traits::{InstructionCategory, LlvmAdaptorInterface};
