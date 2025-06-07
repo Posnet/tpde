@@ -28,8 +28,8 @@ use crate::{
 use inkwell::basic_block::BasicBlock;
 use inkwell::values::BasicValueEnum;
 use inkwell::IntPredicate;
-use hashbrown::{HashMap, DefaultHashBuilder};
 use bumpalo::Bump;
+use hashbrown::{HashMap, DefaultHashBuilder};
 
 /// Addressing modes for x86-64 memory operations.
 #[derive(Debug, Clone)]
@@ -159,8 +159,8 @@ pub struct LlvmCompiler<'ctx, 'arena> {
     /// Function code generation.
     codegen: FunctionCodegen<'arena>,
 
-    /// Cache of compiled functions.
-    compiled_functions: HashMap<String, CompiledFunction<'arena>, DefaultHashBuilder, &'arena Bump>,
+    /// Cache of compiled functions allocated in the session arena.
+    compiled_functions: HashMap<&'arena str, CompiledFunction<'arena>, DefaultHashBuilder, &'arena Bump>,
 
     /// Current function being compiled.
     current_function: Option<inkwell::values::FunctionValue<'ctx>>,
@@ -170,7 +170,7 @@ pub struct LlvmCompiler<'ctx, 'arena> {
 #[derive(Debug)]
 pub struct CompiledFunction<'arena> {
     /// Function name.
-    pub name: String,
+    pub name: &'arena str,
 
     /// Generated machine code.
     pub code: &'arena [u8],
@@ -368,9 +368,10 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
         // Allocate code in session arena
         let code_slice = self.session.alloc_slice(&code_bytes);
 
-        // Create compiled function record
+        // Intern name and create compiled function record
+        let name = self.session.intern_str(function_name);
         let compiled = CompiledFunction {
-            name: function_name.to_string(),
+            name,
             code: code_slice,
             entry_offset: 0,
             code_size: code_bytes.len(),
@@ -381,8 +382,7 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
             .record_function_compiled(function_name, code_bytes.len());
 
         // Store in cache
-        self.compiled_functions
-            .insert(function_name.to_string(), compiled);
+        self.compiled_functions.insert(name, compiled);
         Ok(())
     }
 
@@ -4069,7 +4069,9 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
     }
 
     /// Get list of compiled functions.
-    pub fn compiled_functions(&self) -> &HashMap<String, CompiledFunction<'arena>, DefaultHashBuilder, &'arena Bump> {
+    pub fn compiled_functions(
+        &self,
+    ) -> &HashMap<&'arena str, CompiledFunction<'arena>, DefaultHashBuilder, &'arena Bump> {
         &self.compiled_functions
     }
 
