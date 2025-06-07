@@ -52,14 +52,18 @@ impl<'a> Parser<'a> {
             match self.parse_function() {
                 Ok(_) => {}
                 Err(e) => {
-                    eprintln!("Error parsing function at position {}: {}", self.pos, e);
+                    // Include position context in the error message
+                    let mut error_msg = format!("Error parsing function at position {}: {}", self.pos, e);
                     if self.pos < self.text.len() {
                         let context_start = self.pos.saturating_sub(20);
                         let context_end = (self.pos + 20).min(self.text.len());
-                        eprintln!("Context: '{}'", &self.text[context_start..context_end]);
-                        eprintln!("         {}^", " ".repeat(self.pos - context_start));
+                        error_msg.push_str(&format!(
+                            "\nContext: '{}'\n         {}^",
+                            &self.text[context_start..context_end],
+                            " ".repeat(self.pos - context_start)
+                        ));
                     }
-                    return Err(e);
+                    return Err(error_msg);
                 }
             }
             self.skip_whitespace(true);
@@ -927,13 +931,7 @@ entry:
 }
 "#;
 
-        let ir = match TestIR::parse(tir) {
-            Ok(ir) => ir,
-            Err(e) => {
-                eprintln!("Parse error: {}", e);
-                panic!("Failed to parse");
-            }
-        };
+        let ir = TestIR::parse(tir).expect("Failed to parse test IR");
 
         assert_eq!(ir.functions.len(), 1);
         assert_eq!(ir.functions[0].name, "func");

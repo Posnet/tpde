@@ -11,6 +11,7 @@
 
 use super::adaptor::IrAdaptor;
 use core::marker::PhantomData;
+use log::trace;
 use std::collections::{HashMap, HashSet};
 
 /// Liveness information for a single value.
@@ -103,6 +104,8 @@ impl<A: IrAdaptor> Analyzer<A> {
 
     /// Build block layout and liveness for the given function using the adaptor.
     pub fn switch_func(&mut self, adaptor: &mut A, func: A::FuncRef) {
+        trace!("Analyzing function: {}", adaptor.func_link_name(func));
+        
         self.order.clear();
         self.block_map.clear();
         self.liveness.clear();

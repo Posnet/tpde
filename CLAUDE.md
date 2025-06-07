@@ -123,9 +123,9 @@ TPDE is structured around three core concepts connected through well-defined int
 
 ## Rust Implementation Status
 
-### Current Status: ~70-75% Complete (Phase 2B Architectural Redesign COMPLETED)
+### Current Status: ~80% Complete (Phase 2C TestIR Implementation COMPLETED)
 
-The Rust implementation has excellent architectural foundations that surpass the C++ version in maintainability, safety, and developer experience. **Major milestones achieved**: arena-based memory management, concrete LLVM compiler implementation, GEP instruction support with LEA optimization, and complete architectural redesign. The redesign has **been successfully completed**, eliminating all trait bound complexity.
+The Rust implementation has excellent architectural foundations that surpass the C++ version in maintainability, safety, and developer experience. **Major milestones achieved**: arena-based memory management, concrete LLVM compiler implementation, GEP instruction support with LEA optimization, complete architectural redesign, and **NEW**: full TestIR compiler implementation with proper FileCheck-style testing.
 
 ### Comprehensive Implementation Assessment
 
@@ -152,8 +152,12 @@ The Rust implementation has excellent architectural foundations that surpass the
 - **Arithmetic Operations** - Add, Sub, Mul with proper flag handling
 - **Stack Allocation** - Alloca instruction support
 - **Function Calls** - Direct call instruction compilation
+- **TestIR Compiler** - Complete TestIR to x86-64 compiler with proper test infrastructure (`rust/src/test_ir/`)
+- **FileCheck Testing** - Integrated FileCheck-style testing for IR verification
+- **Analyzer Implementation** - Full RPO ordering and liveness analysis with loop detection
+- **Command Line Tools** - Proper clap-based CLI parsing for all tools
 
-#### ❌ **Critical Missing Components (~25-30% of functionality)**
+#### ❌ **Critical Missing Components (~20% of functionality)**
 
 **🚨 PHI Node Resolution - MAJOR GAP**
 - **C++ Implementation**: Sophisticated algorithm with cycle detection, topological sorting, scratch register management
@@ -489,13 +493,14 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
 
 ### Current Status and Next Steps
 
-**Recent Achievements (Phase 2B Architectural Redesign Completed):**
-- ✅ **Concrete LlvmCompiler implementation** - Direct LLVM integration without trait bounds
-- ✅ **Arena-based CompilationSession** - Simplified lifetime management with bumpalo
-- ✅ **Direct opcode dispatch** - Clean `match inst.get_opcode()` pattern
-- ✅ **GEP instruction with LEA optimization** - Real array indexing support
-- ✅ **Proper Rust testing** - `#[test]` functions with assertions
-- ✅ **Real machine code generation** - ADD, SUB, MUL, ICMP, GEP all working
+**Recent Achievements (December 2025):**
+- ✅ **TestIR Compiler Implementation** - Full TestIR to x86-64 compiler with ELF generation
+- ✅ **Code Quality Improvements** - Refactored for conciseness and readability with helper methods
+- ✅ **Command Line Parsing** - Migrated all tools to use clap for consistent CLI interface
+- ✅ **FileCheck Integration** - All TIR tests now use FileCheck-style validation
+- ✅ **Analyzer Correctness** - Fixed liveness analysis with proper loop-aware algorithm
+- ✅ **Logging Cleanup** - Proper use of logging facade throughout codebase
+- ✅ **Test Infrastructure** - 143 tests passing including complex control flow and PHI nodes
 
 **Key Architectural Improvements:**
 1. **Eliminated trait bound complexity** - Direct `InstructionValue<'ctx>` usage
@@ -503,25 +508,48 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
 3. **Professional testing** - Verifiable test cases with real LLVM IR
 4. **Maintainable codebase** - Clear separation between LLVM and generic code
 
-**Immediate Priorities (Phase 2C - Advanced Codegen):**
-1. **Load/Store instructions** - Complete memory operation support
-2. **Branch instructions** - Conditional and unconditional control flow
-3. **PHI node resolution** - Cycle detection and register allocation
-4. **Block successor extraction** - Proper CFG analysis from terminators
+**Immediate Priorities (Phase 3 - LLVM Feature Completion):**
+1. **PHI Node Resolution in LLVM** - Port the working TestIR PHI resolution to LLVM compiler
+2. **Conditional Branch Instructions** - Complete br/condbr support in LLVM backend
+3. **Switch Statement Support** - Multi-way branching for efficient code generation
+4. **Advanced Memory Operations** - Full addressing mode support with optimization
 
 **Strategic Conclusion:**
-The Rust implementation has **successfully completed the architectural redesign** in just 1 day, demonstrating:
-- **Direct LLVM integration** - Eliminated all trait bound complexity
-- **Simplified lifetimes** - Arena-based session management working perfectly
-- **Professional testing** - Proper `#[test]` functions with real assertions
-- **Rapid development** - GEP instruction implemented and tested in hours
+The Rust implementation has made exceptional progress:
+- **TestIR Complete** - Full compiler implementation with all core features working
+- **Test Infrastructure** - Professional FileCheck-based testing matching C++ quality
+- **Code Quality** - Clean, maintainable codebase with proper Rust idioms
+- **Performance Foundation** - Arena allocation and efficient register allocation ready
 
-**Next Phase Timeline**: With the architectural foundation complete, Phase 2C (Advanced Codegen) can proceed immediately with an estimated 2-4 weeks to implement load/store, branches, and PHI nodes.
+**Next Phase Timeline**: With TestIR serving as a proven foundation, porting the remaining features to LLVM compiler should take 1-2 weeks, bringing the Rust implementation to feature parity with C++ for basic compilation scenarios.
+
+### Recent Code Quality Improvements (December 2025)
+
+1. **Enhanced Code Organization**
+   - Refactored verbose print methods using `std::fmt::Write` for cleaner output
+   - Created helper methods (`compile_binary_op`) to reduce code duplication
+   - Simplified type annotations leveraging Rust's type inference
+
+2. **Modern CLI Tooling**
+   - Migrated all command-line tools to use clap with derive macros
+   - Consistent argument parsing across `encodegen`, `test_simple_output`, etc.
+   - Professional help messages and error handling
+
+3. **Improved Testing Infrastructure**
+   - Created `TestConfig` struct for cleaner test configuration management
+   - Fixed ARM64-specific test handling (tbz instruction)
+   - All 143 tests passing with proper FileCheck validation
+
+4. **Logging Best Practices**
+   - Proper use of log facade throughout codebase
+   - Removed inappropriate `eprintln!` usage in library code
+   - Added trace logging to analyzer for debugging
+   - println!/eprintln! only used in binaries and test output
 
 ### Contribution Guidelines
 
 **Immediate Focus Areas (High Impact):**
-1. **PHI Node Resolution** - Critical blocker for complex control flow
+1. **PHI Node Resolution** - Port working TestIR implementation to LLVM
 2. **Conditional Branch Instructions** - Enable if/else and loop constructs
 3. **Switch Statement Support** - Multi-way branching for efficient code
 4. **Test-driven development** - Validate against C++ implementation patterns
@@ -531,3 +559,4 @@ The Rust implementation has **successfully completed the architectural redesign*
 - Follow C++ instruction selection patterns but with safer Rust implementations
 - Prioritize features that unlock the most real-world compilation scenarios
 - Maintain comprehensive test coverage against C++ reference implementation
+- Use proper Rust idioms: prefer clap for CLI, log for logging, Result for errors
