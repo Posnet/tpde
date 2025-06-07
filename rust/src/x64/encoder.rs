@@ -1226,12 +1226,9 @@ impl X64Encoder {
                 .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
         }
 
-        let result = self
-            .assembler
+        self.assembler
             .assemble(self.position)
-            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
-
-        Ok(result)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))
     }
 
     /// Generate prologue for a function.

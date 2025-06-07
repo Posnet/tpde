@@ -186,53 +186,37 @@ impl<'a> Parser<'a> {
         let start = self.pos;
 
         // Check for hex prefix
-        let is_hex = if self.current_char() == Some('0') {
-            self.advance();
-            if self.current_char() == Some('x') || self.current_char() == Some('X') {
+        let is_hex = matches!(
+            (self.current_char(), self.text.chars().nth(self.pos + 1)),
+            (Some('0'), Some('x' | 'X'))
+        );
+
+        if is_hex {
+            self.advance(); // Skip '0'
+            self.advance(); // Skip 'x' or 'X'
+            
+            // Read hex digits
+            while self.current_char().is_some_and(|ch| ch.is_ascii_hexdigit()) {
                 self.advance();
-                true
-            } else {
-                // Back to the '0' we just consumed
-                false
             }
-        } else {
-            false
-        };
-
-        // Read digits
-        if is_hex {
-            while let Some(ch) = self.current_char() {
-                if ch.is_ascii_hexdigit() {
-                    self.advance();
-                } else {
-                    break;
-                }
+            
+            if self.pos == start + 2 {
+                return Err("Expected hex digits after 0x".to_string());
             }
-        } else {
-            // If we didn't consume a '0' prefix, or if we did but it wasn't hex
-            if !is_hex && start == self.pos {
-                // Read decimal digits
-                while let Some(ch) = self.current_char() {
-                    if ch.is_ascii_digit() {
-                        self.advance();
-                    } else {
-                        break;
-                    }
-                }
-            }
-        }
-
-        if start == self.pos || (is_hex && self.pos == start + 2) {
-            return Err("Expected number".to_string());
-        }
-
-        let number_str = &self.text[start..self.pos];
-        if is_hex {
-            // Parse hex without the "0x" prefix
-            u32::from_str_radix(&number_str[2..], 16)
+            
+            u32::from_str_radix(&self.text[start + 2..self.pos], 16)
                 .map_err(|e| format!("Failed to parse hex number: {}", e))
         } else {
-            number_str
+            // Read decimal digits
+            while self.current_char().is_some_and(|ch| ch.is_ascii_digit()) {
+                self.advance();
+            }
+            
+            if self.pos == start {
+                return Err("Expected number".to_string());
+            }
+            
+            self.text[start..self.pos]
                 .parse()
                 .map_err(|e| format!("Failed to parse number: {}", e))
         }

@@ -163,7 +163,7 @@ impl<'arena> CompilationSession<'arena> {
         self.phi_nodes
             .borrow()
             .iter()
-            .map(|(&idx, info)| (idx, info.clone()))
+            .map(|(idx, info)| (*idx, info.clone()))
             .collect()
     }
 
@@ -282,10 +282,9 @@ impl fmt::Display for SessionStats {
         if !self.instruction_counts.is_empty() {
             writeln!(f, "  Instruction breakdown:")?;
             let mut sorted: Vec<_> = self.instruction_counts.iter().collect();
-            sorted.sort_by(|a, b| b.1.cmp(a.1)); // Sort by count descending
+            sorted.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
 
-            for (opcode, count) in sorted.iter().take(10) {
-                // Top 10
+            for (opcode, count) in sorted.into_iter().take(10) {
                 writeln!(f, "    {}: {}", opcode, count)?;
             }
         }

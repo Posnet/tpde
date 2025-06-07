@@ -321,14 +321,10 @@ impl<'ctx, 'arena> PhiResolver<'ctx, 'arena> {
         let current_src = self.moves[current_idx].src_value;
         
         // Find move whose destination is our source
-        for i in 0..self.move_count {
-            if self.moves[i].dst_value == current_src && self.moves[i].in_cycle {
-                return i;
-            }
-        }
-        
-        // Should not happen if cycle detection is correct
-        current_idx
+        self.moves[..self.move_count]
+            .iter()
+            .position(|mv| mv.dst_value == current_src && mv.in_cycle)
+            .unwrap_or(current_idx)
     }
     
     /// Allocate a temporary register for cycle breaking.

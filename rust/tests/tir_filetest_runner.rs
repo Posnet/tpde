@@ -70,20 +70,20 @@ impl TestConfig {
 
 /// Discovers all .tir files in a directory recursively
 fn discover_tir_files(dir: &Path) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-
-    if let Ok(entries) = fs::read_dir(dir) {
-        for entry in entries.flatten() {
+    fs::read_dir(dir)
+        .into_iter()
+        .flat_map(|entries| entries.flatten())
+        .flat_map(|entry| {
             let path = entry.path();
             if path.is_dir() {
-                files.extend(discover_tir_files(&path));
+                discover_tir_files(&path)
             } else if path.extension().and_then(|s| s.to_str()) == Some("tir") {
-                files.push(path);
+                vec![path]
+            } else {
+                vec![]
             }
-        }
-    }
-
-    files
+        })
+        .collect()
 }
 
 /// Run a single TIR file and return its output

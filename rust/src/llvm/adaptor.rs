@@ -626,12 +626,13 @@ impl<'ctx> IrAdaptor for EnhancedLlvmAdaptor<'ctx> {
     }
 
     fn func_link_name(&self, func: Self::FuncRef) -> &str {
-        if let Some(f) = func {
-            if let Some(pos) = self.functions.iter().position(|&fv| fv == f) {
-                return &self.function_names[pos];
-            }
-        }
-        ""
+        func.and_then(|f| {
+            self.functions
+                .iter()
+                .position(|&fv| fv == f)
+                .map(|pos| self.function_names[pos].as_str())
+        })
+        .unwrap_or("")
     }
 
     fn switch_func(&mut self, func: Self::FuncRef) -> bool {
@@ -644,16 +645,16 @@ impl<'ctx> IrAdaptor for EnhancedLlvmAdaptor<'ctx> {
             let mut idx = 0usize;
 
             // Index global values first
-            for global in &self.globals {
-                self.value_indices.insert(global.as_value_ref(), idx);
-                idx += 1;
+            for (i, global) in self.globals.iter().enumerate() {
+                self.value_indices.insert(global.as_value_ref(), idx + i);
             }
+            idx += self.globals.len();
 
             // Index function parameters
-            for param in f.get_param_iter() {
-                self.value_indices.insert(param.as_value_ref(), idx);
-                idx += 1;
+            for (i, param) in f.get_param_iter().enumerate() {
+                self.value_indices.insert(param.as_value_ref(), idx + i);
             }
+            idx += f.count_params() as usize;
 
             // Index all instructions and analyze function properties
             for bb in f.get_basic_blocks() {

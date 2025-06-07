@@ -338,11 +338,8 @@ impl<A: IrAdaptor> Analyzer<A> {
 
             // Sort the pushed children by their original block index
             // This ensures blocks appearing earlier in the IR are visited in the correct order
-            let len = stack.len() - start_idx;
-            if len > 1 {
-                // Sort the portion of the stack we just added
-                let slice = &mut stack[start_idx..];
-                slice.sort_by_key(|(block, _)| {
+            if stack.len() - start_idx > 1 {
+                stack[start_idx..].sort_by_key(|(block, _)| {
                     block_order_map.get(block).copied().unwrap_or(u32::MAX)
                 });
             }
