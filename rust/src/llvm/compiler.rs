@@ -3624,7 +3624,6 @@ where
 
         // Process arguments and assign them according to System V ABI
         let mut arg_assignments = Vec::new();
-        let mut xmm_count_for_varargs = 0u8;
 
         for i in 0..arg_count {
             let arg_value = instruction.get_operand(i).unwrap().left().unwrap();
@@ -3682,11 +3681,6 @@ where
             let mut assignment = CCAssignment::with_attribute(bank, size, align, final_attr);
             cc_assigner.assign_arg(&mut assignment);
 
-            // Track XMM register usage for varargs
-            if is_varargs && i < fixed_arg_count && bank == RegBank::Xmm && assignment.reg.is_some()
-            {
-                xmm_count_for_varargs += 1;
-            }
 
             log::debug!(
                 "   Arg {}: v{} -> {:?} (attr: {:?})",
@@ -3841,19 +3835,22 @@ where
             }
         }
 
-        // For varargs functions, set AL register with XMM count
-        if is_varargs && xmm_count_for_varargs > 0 {
-            let encoder = self.codegen.encoder_mut();
-            let al = AsmReg::new(0, 0); // AL register
-            encoder
-                .mov_reg_imm(al, xmm_count_for_varargs as i64)
-                .map_err(|e| {
-                    LlvmCompilerError::CodeGeneration(format!(
-                        "Failed to set AL for varargs: {:?}",
-                        e
-                    ))
-                })?;
-            log::trace!("   Set AL={} for varargs XMM count", xmm_count_for_varargs);
+        // For varargs functions, set AL register with XMM register count
+        if is_varargs {
+            let used_xmm = cc_assigner.xmm_used();
+            if used_xmm > 0 {
+                let encoder = self.codegen.encoder_mut();
+                let al = AsmReg::new(0, 0); // AL register
+                encoder
+                    .mov_reg_imm(al, used_xmm as i64)
+                    .map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!(
+                            "Failed to set AL for varargs: {:?}",
+                            e
+                        ))
+                    })?;
+                log::trace!("   Set AL={} for varargs XMM count", used_xmm);
+            }
         }
 
         // Emit the actual call instruction

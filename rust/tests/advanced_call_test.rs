@@ -63,6 +63,7 @@ fn create_byval_test(context: &Context) -> inkwell::module::Module {
 
     builder.build_return(None).unwrap();
 
+    // Caller that invokes make_pair
     module
 }
 
@@ -103,6 +104,21 @@ fn create_sret_test(context: &Context) -> inkwell::module::Module {
         .unwrap();
     builder.build_store(gep1, val2).unwrap();
 
+    builder.build_return(None).unwrap();
+
+    // Caller that invokes make_pair
+    let caller_ty = context.void_type().fn_type(&[], false);
+    let caller = module.add_function("call_make_pair", caller_ty, None);
+    let caller_entry = context.append_basic_block(caller, "entry");
+    builder.position_at_end(caller_entry);
+
+    let tmp = builder.build_alloca(struct_type, "tmp_pair").unwrap();
+    let v1 = i32_type.const_int(1, false);
+    let v2 = i32_type.const_int(2, false);
+    let call = builder
+        .build_call(function, &[tmp.into(), v1.into(), v2.into()], "call")
+        .unwrap();
+    call.add_attribute(AttributeLoc::Param(0), sret_attr);
     builder.build_return(None).unwrap();
 
     module
@@ -195,12 +211,15 @@ fn test_sret_compilation() {
     // Create compiler
     let mut compiler = LlvmCompiler::new(module, &session).unwrap();
 
-    // Compile the function with sret
-    compiler.compile_function_by_name("make_pair").unwrap();
+    // Compile the caller which triggers the sret call
+    compiler.compile_function_by_name("call_make_pair").unwrap();
 
     // Verify function was compiled
     let compiled_functions = compiler.compiled_functions();
-    assert!(compiled_functions.contains_key("make_pair"));
+    assert!(compiled_functions.contains_key("call_make_pair"));
+
+    let stats = compiler.session().stats();
+    assert!(stats.instruction_counts.contains_key("Call"));
 
     println!("✅ sret test passed!");
 }
