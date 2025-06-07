@@ -21,8 +21,47 @@ use bumpalo::Bump;
 use hashbrown::{DefaultHashBuilder, HashMap};
 use std::cell::RefCell;
 use std::fmt;
+use std::time::{Duration, Instant};
+use thiserror::Error;
 
 // LLVM types not needed for the arena-based session management
+
+/// Session-specific errors.
+#[derive(Error, Debug, Clone)]
+pub enum SessionError {
+    #[error("Memory limit exceeded: used {used} bytes, limit {limit} bytes")]
+    MemoryLimitExceeded { used: usize, limit: usize },
+    
+    #[error("Arena allocation failed")]
+    AllocationFailed,
+    
+    #[error("Invalid session state: {0}")]
+    InvalidState(String),
+    
+    #[error("Function not found: {0}")]
+    FunctionNotFound(String),
+    
+    #[error("Block not found: {0}")]
+    BlockNotFound(usize),
+    
+    #[error("Value not found: {0}")]
+    ValueNotFound(usize),
+}
+
+/// Compilation metrics for monitoring and debugging.
+#[derive(Debug, Clone)]
+pub struct CompilationMetrics {
+    /// Current memory usage in bytes.
+    pub memory_used: usize,
+    /// Number of memory chunks allocated.
+    pub memory_chunks: usize,
+    /// Time elapsed since session start.
+    pub elapsed_time: Duration,
+    /// Number of functions compiled.
+    pub functions_compiled: usize,
+    /// Number of instructions compiled.
+    pub instructions_compiled: usize,
+}
 
 /// Value location information stored in the session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,6 +94,9 @@ pub struct PhiNodeInfo<'arena> {
 /// This manages the lifetime of all compilation objects, using arena allocation
 /// to simplify memory management. All compilation data structures are allocated
 /// in the arena and have the same lifetime as the compilation session.
+///
+/// In a database context, each query compilation gets its own session with
+/// bounded memory usage, ensuring predictable resource consumption.
 pub struct CompilationSession<'arena> {
     /// Arena allocator for compilation objects.
     arena: &'arena Bump,
@@ -77,6 +119,12 @@ pub struct CompilationSession<'arena> {
 
     /// Current function being compiled.
     current_function: RefCell<Option<BString<'arena>>>,
+
+    /// Optional memory limit for this session (in bytes).
+    memory_limit: Option<usize>,
+
+    /// Start time for compilation metrics.
+    start_time: Instant,
 }
 
 impl<'arena> CompilationSession<'arena> {
@@ -90,12 +138,59 @@ impl<'arena> CompilationSession<'arena> {
             phi_nodes: RefCell::new(HashMap::new_in(arena)),
             interned_strings: RefCell::new(HashMap::new_in(arena)),
             current_function: RefCell::new(None),
+            memory_limit: None,
+            start_time: Instant::now(),
         }
+    }
+
+    /// Create a new compilation session with a memory limit.
+    ///
+    /// This is ideal for database-embedded scenarios where memory
+    /// usage must be strictly controlled.
+    pub fn with_memory_limit(arena: &'arena Bump, limit: usize) -> Self {
+        let mut session = Self::new(arena);
+        session.memory_limit = Some(limit);
+        session
     }
 
     /// Get access to the arena allocator.
     pub fn arena(&self) -> &'arena Bump {
         self.arena
+    }
+
+    /// Check if memory limit has been exceeded.
+    ///
+    /// This should be called at major compilation stages to fail fast
+    /// if memory consumption exceeds the configured limit.
+    pub fn check_memory_limit(&self) -> Result<(), SessionError> {
+        if let Some(limit) = self.memory_limit {
+            let used = self.arena.allocated_bytes();
+            if used > limit {
+                return Err(SessionError::MemoryLimitExceeded { used, limit });
+            }
+        }
+        Ok(())
+    }
+
+    /// Get current memory usage in bytes.
+    pub fn memory_used(&self) -> usize {
+        self.arena.allocated_bytes()
+    }
+
+    /// Get configured memory limit (if any).
+    pub fn memory_limit(&self) -> Option<usize> {
+        self.memory_limit
+    }
+
+    /// Get compilation metrics including memory usage.
+    pub fn metrics(&self) -> CompilationMetrics {
+        CompilationMetrics {
+            memory_used: self.arena.allocated_bytes(),
+            memory_chunks: 0, // bumpalo doesn't expose chunk count
+            elapsed_time: self.start_time.elapsed(),
+            functions_compiled: self.stats.borrow().functions_compiled,
+            instructions_compiled: self.stats.borrow().instructions_compiled,
+        }
     }
 
     /// Allocate an object in the session arena.
@@ -313,38 +408,6 @@ impl<'arena> fmt::Display for SessionStats<'arena> {
     }
 }
 
-/// Error types for compilation session operations.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SessionError {
-    /// Arena allocation failed.
-    AllocationFailed,
-
-    /// Invalid session state.
-    InvalidState(String),
-
-    /// Function not found.
-    FunctionNotFound(String),
-
-    /// Block not found.
-    BlockNotFound(usize),
-
-    /// Value not found.
-    ValueNotFound(usize),
-}
-
-impl fmt::Display for SessionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SessionError::AllocationFailed => write!(f, "Arena allocation failed"),
-            SessionError::InvalidState(msg) => write!(f, "Invalid session state: {}", msg),
-            SessionError::FunctionNotFound(name) => write!(f, "Function not found: {}", name),
-            SessionError::BlockNotFound(idx) => write!(f, "Block not found: {}", idx),
-            SessionError::ValueNotFound(idx) => write!(f, "Value not found: {}", idx),
-        }
-    }
-}
-
-impl std::error::Error for SessionError {}
 
 #[cfg(test)]
 mod tests {

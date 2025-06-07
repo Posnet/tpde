@@ -42,6 +42,9 @@ pub enum CompileError {
 
     #[error("Block layout error: {reason}")]
     BlockLayout { reason: String },
+
+    #[error("Memory limit exceeded: used {used} bytes, limit {limit} bytes")]
+    MemoryLimitExceeded { used: usize, limit: usize },
 }
 
 /// Result type alias for compile operations.

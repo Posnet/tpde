@@ -63,9 +63,9 @@ impl<'arena> FunctionCodegen<'arena> {
     }
 
     /// Process function arguments according to calling convention.
-    pub fn process_arguments(
+    pub fn process_arguments<'s>(
         &mut self,
-        session: &'arena crate::core::session::CompilationSession<'arena>,
+        session: &'s crate::core::session::CompilationSession<'arena>,
         args: &[ArgInfo],
     ) -> Result<&'arena [CCAssignment], FunctionCodegenError> {
         use bumpalo::collections::Vec as BumpVec;
@@ -86,9 +86,9 @@ impl<'arena> FunctionCodegen<'arena> {
     }
 
     /// Process return values according to calling convention.
-    pub fn process_return_values(
+    pub fn process_return_values<'s>(
         &mut self,
-        session: &'arena crate::core::session::CompilationSession<'arena>,
+        session: &'s crate::core::session::CompilationSession<'arena>,
         rets: &[ArgInfo],
     ) -> Result<&'arena [CCAssignment], FunctionCodegenError> {
         use bumpalo::collections::Vec as BumpVec;

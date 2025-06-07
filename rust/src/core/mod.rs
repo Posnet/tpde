@@ -60,9 +60,13 @@ pub mod session;
 pub mod value_assignment;
 pub mod value_ref;
 
+#[cfg(test)]
+pub mod test_utils;
+
 // Re-export core components
 pub use session::{
-    BlockInfo, CompilationSession, PhiNodeInfo, SessionError, SessionStats, ValueLocation,
+    BlockInfo, CompilationMetrics, CompilationSession, PhiNodeInfo, SessionError, SessionStats,
+    ValueLocation,
 };
 
 pub use register_file::{AsmReg, RegAllocError, RegBitSet, RegisterFile};

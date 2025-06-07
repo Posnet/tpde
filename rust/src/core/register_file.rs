@@ -222,8 +222,8 @@ impl<'arena> RegisterFile<'arena> {
     /// * `regs_per_bank` - Number of registers per bank (max 64)
     /// * `num_banks` - Number of register banks (max 4)
     /// * `allocatable_regs` - Which registers are available for allocation
-    pub fn new(
-        session: &'arena CompilationSession<'arena>,
+    pub fn new<'s>(
+        session: &'s CompilationSession<'arena>,
         regs_per_bank: usize,
         num_banks: usize,
         allocatable_regs: RegBitSet,
@@ -526,11 +526,11 @@ impl<'arena> RegisterFile<'arena> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::test_utils::test::TestContext;
     use crate::core::CompilationSession;
-    use bumpalo::Bump;
 
-    fn create_test_regfile<'arena>(
-        session: &'arena CompilationSession<'arena>,
+    fn create_test_regfile<'arena, 's>(
+        session: &'s CompilationSession<'arena>,
     ) -> RegisterFile<'arena> {
         // Create register file with 8 GP regs (bank 0) and 8 FP regs (bank 1)
         let mut allocatable = RegBitSet::new();
@@ -554,95 +554,100 @@ mod tests {
 
     #[test]
     fn test_register_allocation() {
-        let arena = Box::leak(Box::new(Bump::new()));
-        let session = Box::leak(Box::new(CompilationSession::new(arena)));
-        let mut regfile = create_test_regfile(session);
+        let ctx = TestContext::new();
+        ctx.with_session(|session| {
+            let mut regfile = create_test_regfile(session);
 
-        // Allocate first register in GP bank
-        let reg1 = regfile.allocate_reg(0, 100, 0, None).unwrap();
-        assert_eq!(reg1.bank, 0);
-        assert!(regfile.is_allocated(reg1));
+            // Allocate first register in GP bank
+            let reg1 = regfile.allocate_reg(0, 100, 0, None).unwrap();
+            assert_eq!(reg1.bank, 0);
+            assert!(regfile.is_allocated(reg1));
 
-        // Allocate second register
-        let reg2 = regfile.allocate_reg(0, 101, 0, None).unwrap();
-        assert_eq!(reg2.bank, 0);
-        assert_ne!(reg1.id, reg2.id);
+            // Allocate second register
+            let reg2 = regfile.allocate_reg(0, 101, 0, None).unwrap();
+            assert_eq!(reg2.bank, 0);
+            assert_ne!(reg1.id, reg2.id);
 
-        // Check assignments
-        assert_eq!(regfile.get_assignment(reg1).unwrap().local_idx, 100);
-        assert_eq!(regfile.get_assignment(reg2).unwrap().local_idx, 101);
+            // Check assignments
+            assert_eq!(regfile.get_assignment(reg1).unwrap().local_idx, 100);
+            assert_eq!(regfile.get_assignment(reg2).unwrap().local_idx, 101);
+        });
     }
 
     #[test]
     fn test_register_locking() {
-        let arena = Box::leak(Box::new(Bump::new()));
-        let session = Box::leak(Box::new(CompilationSession::new(arena)));
-        let mut regfile = create_test_regfile(session);
-        let reg = regfile.allocate_reg(0, 100, 0, None).unwrap();
+        let ctx = TestContext::new();
+        ctx.with_session(|session| {
+            let mut regfile = create_test_regfile(session);
+            let reg = regfile.allocate_reg(0, 100, 0, None).unwrap();
 
-        assert!(!regfile.is_locked(reg));
-        regfile.lock_register(reg).unwrap();
-        assert!(regfile.is_locked(reg));
+            assert!(!regfile.is_locked(reg));
+            regfile.lock_register(reg).unwrap();
+            assert!(regfile.is_locked(reg));
 
-        regfile.unlock_register(reg).unwrap();
-        assert!(!regfile.is_locked(reg));
+            regfile.unlock_register(reg).unwrap();
+            assert!(!regfile.is_locked(reg));
+        });
     }
 
     #[test]
     fn test_register_eviction() {
-        let arena = Box::leak(Box::new(Bump::new()));
-        let session = Box::leak(Box::new(CompilationSession::new(arena)));
-        let mut regfile = create_test_regfile(session);
+        let ctx = TestContext::new();
+        ctx.with_session(|session| {
+            let mut regfile = create_test_regfile(session);
 
-        // Fill all GP registers
-        let mut regs = Vec::new();
-        for i in 0..8 {
-            let reg = regfile.allocate_reg(0, i as ValLocalIdx, 0, None).unwrap();
-            regs.push(reg);
-        }
+            // Fill all GP registers
+            let mut regs = Vec::new();
+            for i in 0..8 {
+                let reg = regfile.allocate_reg(0, i as ValLocalIdx, 0, None).unwrap();
+                regs.push(reg);
+            }
 
-        // All 8 registers should be allocated
-        let (used, _, total) = regfile.bank_usage(0);
-        assert_eq!(used, 8);
-        assert_eq!(total, 8);
+            // All 8 registers should be allocated
+            let (used, _, total) = regfile.bank_usage(0);
+            assert_eq!(used, 8);
+            assert_eq!(total, 8);
 
-        // Next allocation should trigger eviction
-        let new_reg = regfile.allocate_reg(0, 100, 0, None).unwrap();
-        assert!(regfile.is_allocated(new_reg));
+            // Next allocation should trigger eviction
+            let new_reg = regfile.allocate_reg(0, 100, 0, None).unwrap();
+            assert!(regfile.is_allocated(new_reg));
 
-        // Should still have exactly 8 registers allocated total
-        let (used_after, _, _) = regfile.bank_usage(0);
-        assert_eq!(used_after, 8);
+            // Should still have exactly 8 registers allocated total
+            let (used_after, _, _) = regfile.bank_usage(0);
+            assert_eq!(used_after, 8);
 
-        // The new register should be one that was previously allocated to another value
-        assert!(regs.contains(&new_reg));
+            // The new register should be one that was previously allocated to another value
+            assert!(regs.contains(&new_reg));
+        });
     }
 
     #[test]
     fn test_find_register_for_value() {
-        let arena = Box::leak(Box::new(Bump::new()));
-        let session = Box::leak(Box::new(CompilationSession::new(arena)));
-        let mut regfile = create_test_regfile(session);
-        let reg = regfile.allocate_reg(0, 100, 1, None).unwrap();
+        let ctx = TestContext::new();
+        ctx.with_session(|session| {
+            let mut regfile = create_test_regfile(session);
+            let reg = regfile.allocate_reg(0, 100, 1, None).unwrap();
 
-        assert_eq!(regfile.find_register_for_value(100, 1), Some(reg));
-        assert_eq!(regfile.find_register_for_value(100, 0), None);
-        assert_eq!(regfile.find_register_for_value(99, 1), None);
+            assert_eq!(regfile.find_register_for_value(100, 1), Some(reg));
+            assert_eq!(regfile.find_register_for_value(100, 0), None);
+            assert_eq!(regfile.find_register_for_value(99, 1), None);
+        });
     }
 
     #[test]
     fn test_bank_usage_stats() {
-        let arena = Box::leak(Box::new(Bump::new()));
-        let session = Box::leak(Box::new(CompilationSession::new(arena)));
-        let mut regfile = create_test_regfile(session);
+        let ctx = TestContext::new();
+        ctx.with_session(|session| {
+            let mut regfile = create_test_regfile(session);
 
-        let reg1 = regfile.allocate_reg(0, 100, 0, None).unwrap();
-        let _reg2 = regfile.allocate_reg(0, 101, 0, None).unwrap();
-        regfile.lock_register(reg1).unwrap();
+            let reg1 = regfile.allocate_reg(0, 100, 0, None).unwrap();
+            let _reg2 = regfile.allocate_reg(0, 101, 0, None).unwrap();
+            regfile.lock_register(reg1).unwrap();
 
-        let (used, fixed, total) = regfile.bank_usage(0);
-        assert_eq!(used, 2); // Two registers allocated
-        assert_eq!(fixed, 1); // One register locked
-        assert_eq!(total, 8); // Eight total registers available
+            let (used, fixed, total) = regfile.bank_usage(0);
+            assert_eq!(used, 2); // Two registers allocated
+            assert_eq!(fixed, 1); // One register locked
+            assert_eq!(total, 8); // Eight total registers available
+        });
     }
 }

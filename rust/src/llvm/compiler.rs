@@ -143,12 +143,12 @@ struct BinaryOpContext {
 ///
 /// This implementation provides direct LLVM IR compilation using arena allocation
 /// to simplify lifetimes and direct access to LLVM functionality.
-pub struct LlvmCompiler<'ctx, 'arena> {
+pub struct LlvmCompiler<'ctx, 'arena, 'session> {
     /// LLVM module being compiled.
     module: inkwell::module::Module<'ctx>,
 
     /// Compilation session for arena allocation.
-    session: &'arena CompilationSession<'arena>,
+    session: &'session CompilationSession<'arena>,
 
     /// Value assignment and tracking.
     value_mgr: ValueAssignmentManager<'arena>,
@@ -216,6 +216,9 @@ pub enum LlvmCompilerError {
 
     /// Session error.
     Session(crate::core::session::SessionError),
+
+    /// Memory limit exceeded.
+    MemoryLimit(String),
 }
 
 impl std::fmt::Display for LlvmCompilerError {
@@ -229,17 +232,18 @@ impl std::fmt::Display for LlvmCompilerError {
             FunctionNotFound(msg) => write!(f, "Function not found: {msg}"),
             InvalidInstruction(msg) => write!(f, "Invalid instruction: {msg}"),
             Session(err) => write!(f, "Session error: {err}"),
+            MemoryLimit(msg) => write!(f, "Memory limit exceeded: {msg}"),
         }
     }
 }
 
 impl std::error::Error for LlvmCompilerError {}
 
-impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
+impl<'ctx, 'arena, 'session> LlvmCompiler<'ctx, 'arena, 'session> {
     /// Create a new LLVM compiler.
     pub fn new(
         module: inkwell::module::Module<'ctx>,
-        session: &'arena CompilationSession<'arena>,
+        session: &'session CompilationSession<'arena>,
     ) -> Result<Self, LlvmCompilerError> {
         let value_mgr = ValueAssignmentManager::new_in(session.arena());
         // Create register file with GP and XMM registers
@@ -325,6 +329,14 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
 
         let analysis = map_err!(analyzer.analyze(), LlvmError, "Function analysis failed")?;
 
+        // Check memory limit after analysis phase
+        if let Err(e) = self.session.check_memory_limit() {
+            return Err(LlvmCompilerError::MemoryLimit(format!(
+                "Memory limit exceeded during analysis: {}",
+                e
+            )));
+        }
+
         log::debug!("📊 Function analysis complete:");
         log::debug!("   - {} blocks", analysis.num_blocks);
         log::trace!("   - {} instructions", analysis.instruction_count);
@@ -342,6 +354,14 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
 
         // Compile function body with analysis
         self.compile_function_body_with_analysis(function, analysis)?;
+
+        // Check memory limit after instruction compilation
+        if let Err(e) = self.session.check_memory_limit() {
+            return Err(LlvmCompilerError::MemoryLimit(format!(
+                "Memory limit exceeded during code generation: {}",
+                e
+            )));
+        }
 
         // Generate epilogue
         map_err!(
@@ -4606,25 +4626,31 @@ mod tests {
 
     #[test]
     fn test_llvm_compiler_creation() {
-        let context = Context::create();
-        let module = create_simple_module(&context);
-        let arena = Box::leak(Box::new(Bump::new()));
-        let session = Box::leak(Box::new(CompilationSession::new(arena)));
-        let _compiler = LlvmCompiler::new(module, session);
+        use crate::core::test_utils::test::TestContext;
+        
+        let ctx = TestContext::new();
+        ctx.with_session(|session| {
+            let context = Context::create();
+            let module = create_simple_module(&context);
+            let _compiler = LlvmCompiler::new(module, session);
+        });
     }
 
     #[test]
     fn test_function_compilation() {
-        let context = Context::create();
-        let module = create_simple_module(&context);
-        let arena = Box::leak(Box::new(Bump::new()));
-        let session = Box::leak(Box::new(CompilationSession::new(arena)));
-        let mut compiler = LlvmCompiler::new(module, session).unwrap();
-        compiler.compile_function_by_name("add").unwrap();
+        use crate::core::test_utils::test::TestContext;
+        
+        let ctx = TestContext::new();
+        ctx.with_session(|session| {
+            let context = Context::create();
+            let module = create_simple_module(&context);
+            let mut compiler = LlvmCompiler::new(module, session).unwrap();
+            compiler.compile_function_by_name("add").unwrap();
 
-        let compiled = compiler.compiled_functions().get("add").unwrap();
-        assert_eq!(compiled.name, "add");
-        assert!(compiled.code_size > 0);
+            let compiled = compiler.compiled_functions().get("add").unwrap();
+            assert_eq!(compiled.name, "add");
+            assert!(compiled.code_size > 0);
+        });
     }
 
     #[test]

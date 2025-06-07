@@ -95,7 +95,6 @@ pub struct PhiIncoming {
 
 /// Builder that consumes itself to produce analysis results.
 pub struct FunctionAnalyzer<'ctx, 'arena> {
-    _session: &'arena CompilationSession<'arena>,
     blocks: Vec<BasicBlock<'ctx>>,
 
     // Working data - will be moved to results
@@ -120,8 +119,8 @@ impl<'ctx, 'arena> FunctionAnalyzer<'ctx, 'arena> {
     const MAX_PHI_INCOMING: usize = 512;
 
     /// Create a new analyzer that borrows the arena.
-    pub fn new(
-        session: &'arena CompilationSession<'arena>,
+    pub fn new<'s>(
+        session: &'s CompilationSession<'arena>,
         function: FunctionValue<'ctx>,
     ) -> CompileResult<Self> {
         let blocks = function.get_basic_blocks();
@@ -134,7 +133,6 @@ impl<'ctx, 'arena> FunctionAnalyzer<'ctx, 'arena> {
         }
 
         Ok(Self {
-            _session: session,
             blocks,
             block_layout: {
                 let mut v = BumpVec::with_capacity_in(num_blocks, session.arena());
