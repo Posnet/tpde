@@ -24,6 +24,8 @@ pub struct LivenessInfo {
     pub ref_count: u32,
     /// Whether the value must stay allocated until the end of `last`.
     pub last_full: bool,
+    /// The lowest common loop containing all uses of this value.
+    pub lowest_common_loop: u32,
 }
 
 /// Loop information for the analyzer.
@@ -156,58 +158,127 @@ impl<A: IrAdaptor> Analyzer<A> {
             }
         }
 
-        // Post-process to set last_full correctly
-        // For now, use a simple heuristic: if a value spans multiple blocks
-        // and the last block has successors (not terminating), set last_full = true
-        for idx in 0..self.order.len() {
-            let block = self.order[idx];
-            let has_successors = adaptor.block_succs(block).count() > 0;
-
-            // Update last_full for values whose last block is this one
-            for info in &mut self.liveness {
-                if info.last == idx && info.first != info.last && has_successors {
-                    info.last_full = true;
-                }
-            }
-        }
+        // No post-processing needed - the C++ algorithm handles everything in the record function
     }
 
     fn record(&mut self, adaptor: &A, val: A::ValueRef, block_idx: usize) {
         if adaptor.val_ignore_liveness(val) {
             return;
         }
-        let idx = adaptor.val_local_idx(val);
-        // Debug logging
-        // eprintln!("Recording value with local_idx {} in block {}", idx, block_idx);
-        if idx >= self.liveness.len() {
-            self.liveness.resize(
-                idx + 1,
-                LivenessInfo {
-                    first: block_idx,
-                    last: block_idx,
-                    ref_count: 0,
-                    last_full: false,
-                },
-            );
+        let val_idx = adaptor.val_local_idx(val);
+        
+        // Ensure liveness vector is large enough
+        if val_idx >= self.liveness.len() {
+            self.liveness.resize(val_idx + 1, LivenessInfo::default());
         }
-        let info = &mut self.liveness[idx];
+        
+        // Get the loop containing this block
+        let block_loop_idx = self.block_loop_map.get(block_idx).copied().unwrap_or(0);
+        
+        let info = &mut self.liveness[val_idx];
+        
+        // First time seeing this value - initialize
         if info.ref_count == 0 {
-            // First time seeing this value - initialize with ref_count 1
             info.ref_count = 1;
             info.first = block_idx;
             info.last = block_idx;
-        } else {
-            info.ref_count += 1;
-            if block_idx < info.first {
-                info.first = block_idx;
+            info.lowest_common_loop = block_loop_idx;
+            info.last_full = false;
+            return;
+        }
+        
+        // Increment reference count
+        info.ref_count += 1;
+        
+        // Helper to update liveness for block only
+        let update_for_block_only = |info: &mut LivenessInfo, block_idx: usize| {
+            let old_first = info.first;
+            let old_last = info.last;
+            
+            info.first = old_first.min(block_idx);
+            info.last = old_last.max(block_idx);
+            
+            // If last changed, we don't need to extend lifetime to end of last block
+            info.last_full = if old_last == info.last { info.last_full } else { false };
+        };
+        
+        // Helper to update liveness for an entire loop
+        let update_for_loop = |info: &mut LivenessInfo, loop_info: &Loop| {
+            let old_first = info.first;
+            let old_last = info.last;
+            
+            info.first = old_first.min(loop_info.begin as usize);
+            info.last = old_last.max((loop_info.end as usize).saturating_sub(1));
+            
+            // If last changed, set last_full to true since values need to be allocated when loop is active
+            info.last_full = if old_last == info.last { info.last_full } else { true };
+        };
+        
+        // If the value's lowest common loop is the same as the current block's loop,
+        // just extend the liveness interval
+        if info.lowest_common_loop == block_loop_idx {
+            update_for_block_only(info, block_idx);
+            return;
+        }
+        
+        let liveness_loop = self.loops[info.lowest_common_loop as usize];
+        let block_loop = self.loops[block_loop_idx as usize];
+        
+        // Check if the current use is nested inside the loop of the liveness interval
+        if liveness_loop.level < block_loop.level && 
+           (block_loop.begin as usize) < (liveness_loop.end as usize) {
+            
+            // Find the loop at level (liveness_loop.level + 1) that contains block_loop
+            let target_level = liveness_loop.level + 1;
+            let mut cur_loop_idx = block_loop_idx as usize;
+            let mut cur_level = block_loop.level;
+            
+            while cur_level != target_level {
+                cur_loop_idx = self.loops[cur_loop_idx].parent as usize;
+                cur_level -= 1;
             }
-            if block_idx > info.last {
-                info.last = block_idx;
+            
+            update_for_loop(info, &self.loops[cur_loop_idx]);
+            return;
+        }
+        
+        // Need to update the lowest common loop to contain both liveness_loop and block_loop
+        let mut lhs_idx = info.lowest_common_loop as usize;
+        let mut rhs_idx = block_loop_idx as usize;
+        let mut prev_lhs = lhs_idx;
+        let mut prev_rhs = rhs_idx;
+        
+        // Find the lowest common ancestor loop
+        while lhs_idx != rhs_idx {
+            let lhs_level = self.loops[lhs_idx].level;
+            let rhs_level = self.loops[rhs_idx].level;
+            
+            if lhs_level > rhs_level {
+                prev_lhs = lhs_idx;
+                lhs_idx = self.loops[lhs_idx].parent as usize;
+            } else if lhs_level < rhs_level {
+                prev_rhs = rhs_idx;
+                rhs_idx = self.loops[rhs_idx].parent as usize;
+            } else {
+                prev_lhs = lhs_idx;
+                prev_rhs = rhs_idx;
+                lhs_idx = self.loops[lhs_idx].parent as usize;
+                rhs_idx = self.loops[rhs_idx].parent as usize;
             }
         }
-        // last_full should be false for now - it will be updated based on block type
-        // when we have proper loop analysis
-        info.last_full = false;
+        
+        // Update lowest common loop
+        info.lowest_common_loop = lhs_idx as u32;
+        
+        // Extend for the full loop that contains liveness_loop and is nested directly in lcl
+        update_for_loop(info, &self.loops[prev_lhs]);
+        
+        // Extend by block if the block_loop is the lcl, or by prev_rhs otherwise
+        if lhs_idx == block_loop_idx as usize {
+            update_for_block_only(info, block_idx);
+        } else {
+            update_for_loop(info, &self.loops[prev_rhs]);
+        }
     }
 
     /// Build the complete block layout including loop detection.
