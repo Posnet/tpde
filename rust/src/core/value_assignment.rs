@@ -18,6 +18,7 @@
 //! register allocation system.
 
 use std::collections::HashMap;
+use bumpalo::{Bump, collections::Vec as BumpVec};
 
 /// Index type for local values within a function.
 pub type ValLocalIdx = usize;
@@ -121,7 +122,7 @@ impl PartData {
 /// the lifecycle of that storage. Values can be split into multiple parts
 /// for efficient handling of large or complex types.
 #[derive(Debug)]
-pub struct ValueAssignment {
+pub struct ValueAssignment<'arena> {
     /// Storage location (stack offset or variable reference index).
     pub location: Option<StorageLocation>,
     /// Number of parts this value is split into.
@@ -133,32 +134,43 @@ pub struct ValueAssignment {
     /// Control flags for assignment behavior.
     pub flags: AssignmentFlags,
     /// Per-part register assignment and state.
-    pub parts: Vec<PartData>,
+    pub parts: BumpVec<'arena, PartData>,
 }
 
-impl ValueAssignment {
-    /// Create a new value assignment with the given number of parts.
-    pub fn new(part_count: u32, max_part_size: u8) -> Self {
+impl<'arena> ValueAssignment<'arena> {
+    /// Create a new value assignment with the given number of parts in the provided arena.
+    pub fn new_in(arena: &'arena Bump, part_count: u32, max_part_size: u8) -> Self {
         Self {
             location: None,
             part_count,
             max_part_size,
             references_left: 0,
             flags: AssignmentFlags::default(),
-            parts: vec![PartData::new(0, 0, 0); part_count as usize],
+            parts: {
+                let mut v = BumpVec::with_capacity_in(part_count as usize, arena);
+                for _ in 0..part_count {
+                    v.push(PartData::new(0, 0, 0));
+                }
+                v
+            },
         }
     }
 
     /// Create a stack-based assignment at the given frame offset.
-    pub fn new_stack(frame_offset: i32, part_count: u32, max_part_size: u8) -> Self {
-        let mut assignment = Self::new(part_count, max_part_size);
+    pub fn new_stack_in(
+        arena: &'arena Bump,
+        frame_offset: i32,
+        part_count: u32,
+        max_part_size: u8,
+    ) -> Self {
+        let mut assignment = Self::new_in(arena, part_count, max_part_size);
         assignment.location = Some(StorageLocation::Stack(frame_offset));
         assignment
     }
 
     /// Create a variable reference assignment.
-    pub fn new_var_ref(var_idx: u32, stack_variable: bool) -> Self {
-        let mut assignment = Self::new(1, 8); // Single-part, pointer-sized
+    pub fn new_var_ref_in(arena: &'arena Bump, var_idx: u32, stack_variable: bool) -> Self {
+        let mut assignment = Self::new_in(arena, 1, 8); // Single-part, pointer-sized
         assignment.location = Some(StorageLocation::VarRef(var_idx));
         assignment.flags.variable_ref = true;
         assignment.flags.stack_variable = stack_variable;
@@ -206,20 +218,32 @@ impl ValueAssignment {
 ///
 /// Uses a combination of free lists and bump allocation for optimal performance
 /// in the common case of single-part assignments.
-#[derive(Debug, Default)]
-pub struct AssignmentAllocator {
+#[derive(Debug)]
+pub struct AssignmentAllocator<'arena> {
+    arena: &'arena Bump,
     /// Storage pool for assignments.
-    assignments: Vec<ValueAssignment>,
+    assignments: BumpVec<'arena, ValueAssignment<'arena>>,
     /// Free list indices by part count (up to 4 parts, then use general list).
-    free_lists: [Vec<usize>; 5],
+    free_lists: [BumpVec<'arena, usize>; 5],
     /// Free list for assignments with >4 parts.
-    large_free_list: Vec<usize>,
+    large_free_list: BumpVec<'arena, usize>,
 }
 
-impl AssignmentAllocator {
-    /// Create a new assignment allocator.
-    pub fn new() -> Self {
-        Self::default()
+impl<'arena> AssignmentAllocator<'arena> {
+    /// Create a new assignment allocator using the provided arena.
+    pub fn new_in(arena: &'arena Bump) -> Self {
+        Self {
+            arena,
+            assignments: BumpVec::new_in(arena),
+            free_lists: [
+                BumpVec::new_in(arena),
+                BumpVec::new_in(arena),
+                BumpVec::new_in(arena),
+                BumpVec::new_in(arena),
+                BumpVec::new_in(arena),
+            ],
+            large_free_list: BumpVec::new_in(arena),
+        }
     }
 
     /// Allocate a new assignment with the given number of parts.
@@ -233,13 +257,13 @@ impl AssignmentAllocator {
         if let Some(idx) = free_list.pop() {
             // Reuse existing assignment
             let assignment = &mut self.assignments[idx];
-            *assignment = ValueAssignment::new(part_count, max_part_size);
+            *assignment = ValueAssignment::new_in(self.arena, part_count, max_part_size);
             idx
         } else {
             // Allocate new assignment
             let idx = self.assignments.len();
             self.assignments
-                .push(ValueAssignment::new(part_count, max_part_size));
+                .push(ValueAssignment::new_in(self.arena, part_count, max_part_size));
             idx
         }
     }
@@ -267,12 +291,12 @@ impl AssignmentAllocator {
     }
 
     /// Get a reference to an assignment.
-    pub fn get(&self, idx: usize) -> Option<&ValueAssignment> {
+    pub fn get(&self, idx: usize) -> Option<&ValueAssignment<'arena>> {
         self.assignments.get(idx)
     }
 
     /// Get a mutable reference to an assignment.
-    pub fn get_mut(&mut self, idx: usize) -> Option<&mut ValueAssignment> {
+    pub fn get_mut(&mut self, idx: usize) -> Option<&mut ValueAssignment<'arena>> {
         self.assignments.get_mut(idx)
     }
 }
@@ -282,29 +306,23 @@ impl AssignmentAllocator {
 /// Tracks assignments for each local value and provides the interface
 /// for register allocation and stack management.
 #[derive(Debug)]
-pub struct ValueAssignmentManager {
+pub struct ValueAssignmentManager<'arena> {
     /// Assignment allocator for memory management.
-    allocator: AssignmentAllocator,
+    allocator: AssignmentAllocator<'arena>,
     /// Mapping from local value index to assignment index.
     assignments: HashMap<ValLocalIdx, usize>,
     /// List of assignments pending delayed freeing.
-    delayed_free_list: Vec<usize>,
+    delayed_free_list: BumpVec<'arena, usize>,
 }
 
-impl Default for ValueAssignmentManager {
-    fn default() -> Self {
+impl<'arena> ValueAssignmentManager<'arena> {
+    /// Create a new value assignment manager backed by the given arena.
+    pub fn new_in(arena: &'arena Bump) -> Self {
         Self {
-            allocator: AssignmentAllocator::new(),
+            allocator: AssignmentAllocator::new_in(arena),
             assignments: HashMap::new(),
-            delayed_free_list: Vec::new(),
+            delayed_free_list: BumpVec::new_in(arena),
         }
-    }
-}
-
-impl ValueAssignmentManager {
-    /// Create a new value assignment manager.
-    pub fn new() -> Self {
-        Self::default()
     }
 
     /// Create an assignment for the given local value.
@@ -313,21 +331,21 @@ impl ValueAssignmentManager {
         local_idx: ValLocalIdx,
         part_count: u32,
         max_part_size: u8,
-    ) -> &mut ValueAssignment {
+    ) -> &mut ValueAssignment<'arena> {
         let assignment_idx = self.allocator.allocate(part_count, max_part_size);
         self.assignments.insert(local_idx, assignment_idx);
         self.allocator.get_mut(assignment_idx).unwrap()
     }
 
     /// Get the assignment for a local value.
-    pub fn get_assignment(&self, local_idx: ValLocalIdx) -> Option<&ValueAssignment> {
+    pub fn get_assignment(&self, local_idx: ValLocalIdx) -> Option<&ValueAssignment<'arena>> {
         self.assignments
             .get(&local_idx)
             .and_then(|&idx| self.allocator.get(idx))
     }
 
     /// Get a mutable reference to the assignment for a local value.
-    pub fn get_assignment_mut(&mut self, local_idx: ValLocalIdx) -> Option<&mut ValueAssignment> {
+    pub fn get_assignment_mut(&mut self, local_idx: ValLocalIdx) -> Option<&mut ValueAssignment<'arena>> {
         self.assignments
             .get(&local_idx)
             .and_then(|&idx| self.allocator.get_mut(idx))
@@ -353,7 +371,7 @@ impl ValueAssignmentManager {
 
     /// Process delayed free list, freeing assignments that are no longer live.
     pub fn process_delayed_free(&mut self) {
-        let mut remaining = Vec::new();
+        let mut remaining = BumpVec::new_in(self.allocator.arena);
 
         for assignment_idx in self.delayed_free_list.drain(..) {
             if let Some(assignment) = self.allocator.get_mut(assignment_idx) {
@@ -417,7 +435,8 @@ mod tests {
 
     #[test]
     fn test_value_assignment_creation() {
-        let assignment = ValueAssignment::new(2, 8);
+        let arena = Bump::new();
+        let assignment = ValueAssignment::new_in(&arena, 2, 8);
         assert_eq!(assignment.part_count, 2);
         assert_eq!(assignment.max_part_size, 8);
         assert_eq!(assignment.size(), 16);
@@ -426,7 +445,8 @@ mod tests {
 
     #[test]
     fn test_stack_assignment() {
-        let assignment = ValueAssignment::new_stack(-16, 1, 4);
+        let arena = Bump::new();
+        let assignment = ValueAssignment::new_stack_in(&arena, -16, 1, 4);
         match assignment.location {
             Some(StorageLocation::Stack(offset)) => assert_eq!(offset, -16),
             _ => panic!("Expected stack location"),
@@ -435,7 +455,8 @@ mod tests {
 
     #[test]
     fn test_reference_counting() {
-        let mut assignment = ValueAssignment::new(1, 4);
+        let arena = Bump::new();
+        let mut assignment = ValueAssignment::new_in(&arena, 1, 4);
         assignment.add_ref();
         assignment.add_ref();
         assert_eq!(assignment.references_left, 2);
@@ -449,7 +470,8 @@ mod tests {
 
     #[test]
     fn test_assignment_manager() {
-        let mut manager = ValueAssignmentManager::new();
+        let arena = Bump::new();
+        let mut manager = ValueAssignmentManager::new_in(&arena);
 
         let assignment = manager.create_assignment(0, 1, 8);
         assignment.add_ref();
