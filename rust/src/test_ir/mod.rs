@@ -258,11 +258,11 @@ impl TestIR {
         for func in self.functions.iter() {
             // Handle function declarations vs definitions
             if func.declaration {
-                output.push_str(&format!("Extern function {}", func.name));
+                output.push_str(&format!("\nExtern function {}", func.name));
             } else if func.local_only {
-                output.push_str(&format!("Local function {}", func.name));
+                output.push_str(&format!("\nLocal function {}", func.name));
             } else {
-                output.push_str(&format!("Function {}", func.name));
+                output.push_str(&format!("\nFunction {}", func.name));
             }
 
             // Print arguments

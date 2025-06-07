@@ -136,7 +136,11 @@ impl TestRunner {
 
         if print_ir {
             output.push("Printing IR".to_string());
-            output.push(format!("{}", ir));
+            // The TestIR Display implementation includes its own newlines
+            let ir_output = format!("{}", ir);
+            // Remove the trailing newline if present, as we'll join with newlines later
+            let ir_output = ir_output.trim_end();
+            output.push(ir_output.to_string());
         }
 
         if print_rpo || print_liveness || run_until == "analyzer" {
@@ -173,25 +177,29 @@ impl TestRunner {
                     // First, function arguments
                     for _arg in adaptor.cur_args() {
                         if let Some(liveness) = analyzer.liveness(value_idx) {
-                            let first_block = block_names
-                                .get(liveness.first)
-                                .map(|s| s.as_str())
-                                .unwrap_or("?");
-                            let last_block = block_names
-                                .get(liveness.last)
-                                .map(|s| s.as_str())
-                                .unwrap_or("?");
+                            if liveness.ref_count == 0 {
+                                output.push(format!("{}: ignored", value_idx));
+                            } else {
+                                let first_block = block_names
+                                    .get(liveness.first)
+                                    .map(|s| s.as_str())
+                                    .unwrap_or("?");
+                                let last_block = block_names
+                                    .get(liveness.last)
+                                    .map(|s| s.as_str())
+                                    .unwrap_or("?");
 
-                            output.push(format!(
-                                "{}: {} refs, {}->{} ({}->{}), lf: {}",
-                                value_idx,
-                                liveness.ref_count,
-                                liveness.first,
-                                liveness.last,
-                                first_block,
-                                last_block,
-                                liveness.last_full
-                            ));
+                                output.push(format!(
+                                    "{}: {} refs, {}->{} ({}->{}), lf: {}",
+                                    value_idx,
+                                    liveness.ref_count,
+                                    liveness.first,
+                                    liveness.last,
+                                    first_block,
+                                    last_block,
+                                    liveness.last_full
+                                ));
+                            }
                         } else {
                             output.push(format!("{}: ignored", value_idx));
                         }
@@ -203,25 +211,29 @@ impl TestRunner {
                         // PHIs
                         for _phi in adaptor.block_phis(*block) {
                             if let Some(liveness) = analyzer.liveness(value_idx) {
-                                let first_block = block_names
-                                    .get(liveness.first)
-                                    .map(|s| s.as_str())
-                                    .unwrap_or("?");
-                                let last_block = block_names
-                                    .get(liveness.last)
-                                    .map(|s| s.as_str())
-                                    .unwrap_or("?");
+                                if liveness.ref_count == 0 {
+                                    output.push(format!("{}: ignored", value_idx));
+                                } else {
+                                    let first_block = block_names
+                                        .get(liveness.first)
+                                        .map(|s| s.as_str())
+                                        .unwrap_or("?");
+                                    let last_block = block_names
+                                        .get(liveness.last)
+                                        .map(|s| s.as_str())
+                                        .unwrap_or("?");
 
-                                output.push(format!(
-                                    "{}: {} refs, {}->{} ({}->{}), lf: {}",
-                                    value_idx,
-                                    liveness.ref_count,
-                                    liveness.first,
-                                    liveness.last,
-                                    first_block,
-                                    last_block,
-                                    liveness.last_full
-                                ));
+                                    output.push(format!(
+                                        "{}: {} refs, {}->{} ({}->{}), lf: {}",
+                                        value_idx,
+                                        liveness.ref_count,
+                                        liveness.first,
+                                        liveness.last,
+                                        first_block,
+                                        last_block,
+                                        liveness.last_full
+                                    ));
+                                }
                             } else {
                                 output.push(format!("{}: ignored", value_idx));
                             }
@@ -231,25 +243,29 @@ impl TestRunner {
                         // Instructions
                         for _inst in adaptor.block_insts(*block) {
                             if let Some(liveness) = analyzer.liveness(value_idx) {
-                                let first_block = block_names
-                                    .get(liveness.first)
-                                    .map(|s| s.as_str())
-                                    .unwrap_or("?");
-                                let last_block = block_names
-                                    .get(liveness.last)
-                                    .map(|s| s.as_str())
-                                    .unwrap_or("?");
+                                if liveness.ref_count == 0 {
+                                    output.push(format!("{}: ignored", value_idx));
+                                } else {
+                                    let first_block = block_names
+                                        .get(liveness.first)
+                                        .map(|s| s.as_str())
+                                        .unwrap_or("?");
+                                    let last_block = block_names
+                                        .get(liveness.last)
+                                        .map(|s| s.as_str())
+                                        .unwrap_or("?");
 
-                                output.push(format!(
-                                    "{}: {} refs, {}->{} ({}->{}), lf: {}",
-                                    value_idx,
-                                    liveness.ref_count,
-                                    liveness.first,
-                                    liveness.last,
-                                    first_block,
-                                    last_block,
-                                    liveness.last_full
-                                ));
+                                    output.push(format!(
+                                        "{}: {} refs, {}->{} ({}->{}), lf: {}",
+                                        value_idx,
+                                        liveness.ref_count,
+                                        liveness.first,
+                                        liveness.last,
+                                        first_block,
+                                        last_block,
+                                        liveness.last_full
+                                    ));
+                                }
                             } else {
                                 output.push(format!("{}: ignored", value_idx));
                             }
