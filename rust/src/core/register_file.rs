@@ -196,7 +196,7 @@ pub struct RegisterFile {
     regs_per_bank: usize,
     /// Total number of registers across all banks.
     total_regs: usize,
-    
+
     /// Registers available for allocation (excludes SP, BP, etc.).
     allocatable: RegBitSet,
     /// Currently allocated registers.
@@ -205,14 +205,14 @@ pub struct RegisterFile {
     fixed: RegBitSet,
     /// Registers that have been modified (for save/restore).
     clobbered: RegBitSet,
-    
+
     /// Clock position for allocation in each bank.
     clocks: [RegId; MAX_REGISTER_BANKS],
     /// Which value owns each register.
     assignments: Vec<Option<Assignment>>,
     /// Lock count for each register (prevents eviction).
     lock_counts: Vec<u8>,
-    
+
     /// Callback for spilling register contents.
     spill_callback: Option<SpillCallback>,
 }
@@ -224,16 +224,12 @@ impl RegisterFile {
     /// * `regs_per_bank` - Number of registers per bank (max 64)
     /// * `num_banks` - Number of register banks (max 4)
     /// * `allocatable_regs` - Which registers are available for allocation
-    pub fn new(
-        regs_per_bank: usize,
-        num_banks: usize,
-        allocatable_regs: RegBitSet,
-    ) -> Self {
+    pub fn new(regs_per_bank: usize, num_banks: usize, allocatable_regs: RegBitSet) -> Self {
         assert!(regs_per_bank <= 64, "Too many registers per bank");
         assert!(num_banks <= MAX_REGISTER_BANKS, "Too many register banks");
-        
+
         let total_regs = regs_per_bank * num_banks;
-        
+
         Self {
             regs_per_bank,
             total_regs,
@@ -292,11 +288,11 @@ impl RegisterFile {
         // Free registers are allocatable but not used
         let mut free_regs = self.allocatable.clone();
         free_regs.intersect(&RegBitSet::all_in_bank(bank, self.regs_per_bank as u8));
-        
+
         // Remove used and excluded registers
         let mut unavailable = self.used.clone();
         unavailable.union(exclude);
-        
+
         for i in 0..MAX_REGISTER_BANKS {
             free_regs.banks[i] &= !unavailable.banks[i];
         }
@@ -311,18 +307,20 @@ impl RegisterFile {
         }
 
         let _start_clock = self.clocks[bank as usize];
-        
+
         for _ in 0..self.regs_per_bank {
             let reg = AsmReg::new(bank, self.clocks[bank as usize]);
-            
+
             // Advance clock for next allocation
-            self.clocks[bank as usize] = (self.clocks[bank as usize] + 1) % (self.regs_per_bank as RegId);
-            
+            self.clocks[bank as usize] =
+                (self.clocks[bank as usize] + 1) % (self.regs_per_bank as RegId);
+
             // Check if this register can be evicted
-            if self.allocatable.contains(reg) &&
-               self.used.contains(reg) &&
-               !self.fixed.contains(reg) &&
-               !exclude.contains(reg) {
+            if self.allocatable.contains(reg)
+                && self.used.contains(reg)
+                && !self.fixed.contains(reg)
+                && !exclude.contains(reg)
+            {
                 return Some(reg);
             }
         }
@@ -331,7 +329,12 @@ impl RegisterFile {
     }
 
     /// Assign a register to a value.
-    fn assign_register(&mut self, reg: AsmReg, local_idx: ValLocalIdx, part: u32) -> Result<(), RegAllocError> {
+    fn assign_register(
+        &mut self,
+        reg: AsmReg,
+        local_idx: ValLocalIdx,
+        part: u32,
+    ) -> Result<(), RegAllocError> {
         let linear_idx = reg.linear_index(self.regs_per_bank);
         if linear_idx >= self.total_regs {
             return Err(RegAllocError::InvalidRegister);
@@ -467,7 +470,11 @@ impl RegisterFile {
     /// Find a register currently assigned to the given value/part.
     pub fn find_register_for_value(&self, local_idx: ValLocalIdx, part: u32) -> Option<AsmReg> {
         for (i, assignment) in self.assignments.iter().enumerate() {
-            if let Some(Assignment { local_idx: idx, part: p }) = assignment {
+            if let Some(Assignment {
+                local_idx: idx,
+                part: p,
+            }) = assignment
+            {
                 if *idx == local_idx && *p == part {
                     return Some(AsmReg::from_linear_index(i, self.regs_per_bank));
                 }
@@ -486,7 +493,7 @@ mod tests {
         let mut allocatable = RegBitSet::new();
         allocatable.union(&RegBitSet::all_in_bank(0, 8)); // GP regs 0-7
         allocatable.union(&RegBitSet::all_in_bank(1, 8)); // FP regs 0-7
-        
+
         RegisterFile::new(8, 2, allocatable)
     }
 
@@ -494,7 +501,7 @@ mod tests {
     fn test_regbitset_operations() {
         let mut set = RegBitSet::new();
         let reg = AsmReg::new(0, 5);
-        
+
         assert!(!set.contains(reg));
         set.set(reg);
         assert!(set.contains(reg));
@@ -505,17 +512,17 @@ mod tests {
     #[test]
     fn test_register_allocation() {
         let mut regfile = create_test_regfile();
-        
+
         // Allocate first register in GP bank
         let reg1 = regfile.allocate_reg(0, 100, 0, None).unwrap();
         assert_eq!(reg1.bank, 0);
         assert!(regfile.is_allocated(reg1));
-        
+
         // Allocate second register
         let reg2 = regfile.allocate_reg(0, 101, 0, None).unwrap();
         assert_eq!(reg2.bank, 0);
         assert_ne!(reg1.id, reg2.id);
-        
+
         // Check assignments
         assert_eq!(regfile.get_assignment(reg1).unwrap().local_idx, 100);
         assert_eq!(regfile.get_assignment(reg2).unwrap().local_idx, 101);
@@ -525,11 +532,11 @@ mod tests {
     fn test_register_locking() {
         let mut regfile = create_test_regfile();
         let reg = regfile.allocate_reg(0, 100, 0, None).unwrap();
-        
+
         assert!(!regfile.is_locked(reg));
         regfile.lock_register(reg).unwrap();
         assert!(regfile.is_locked(reg));
-        
+
         regfile.unlock_register(reg).unwrap();
         assert!(!regfile.is_locked(reg));
     }
@@ -537,27 +544,27 @@ mod tests {
     #[test]
     fn test_register_eviction() {
         let mut regfile = create_test_regfile();
-        
+
         // Fill all GP registers
         let mut regs = Vec::new();
         for i in 0..8 {
             let reg = regfile.allocate_reg(0, i as ValLocalIdx, 0, None).unwrap();
             regs.push(reg);
         }
-        
+
         // All 8 registers should be allocated
         let (used, _, total) = regfile.bank_usage(0);
         assert_eq!(used, 8);
         assert_eq!(total, 8);
-        
+
         // Next allocation should trigger eviction
         let new_reg = regfile.allocate_reg(0, 100, 0, None).unwrap();
         assert!(regfile.is_allocated(new_reg));
-        
+
         // Should still have exactly 8 registers allocated total
         let (used_after, _, _) = regfile.bank_usage(0);
         assert_eq!(used_after, 8);
-        
+
         // The new register should be one that was previously allocated to another value
         assert!(regs.contains(&new_reg));
     }
@@ -566,7 +573,7 @@ mod tests {
     fn test_find_register_for_value() {
         let mut regfile = create_test_regfile();
         let reg = regfile.allocate_reg(0, 100, 1, None).unwrap();
-        
+
         assert_eq!(regfile.find_register_for_value(100, 1), Some(reg));
         assert_eq!(regfile.find_register_for_value(100, 0), None);
         assert_eq!(regfile.find_register_for_value(99, 1), None);
@@ -575,13 +582,13 @@ mod tests {
     #[test]
     fn test_bank_usage_stats() {
         let mut regfile = create_test_regfile();
-        
+
         let reg1 = regfile.allocate_reg(0, 100, 0, None).unwrap();
         let _reg2 = regfile.allocate_reg(0, 101, 0, None).unwrap();
         regfile.lock_register(reg1).unwrap();
-        
+
         let (used, fixed, total) = regfile.bank_usage(0);
-        assert_eq!(used, 2);  // Two registers allocated
+        assert_eq!(used, 2); // Two registers allocated
         assert_eq!(fixed, 1); // One register locked
         assert_eq!(total, 8); // Eight total registers available
     }

@@ -15,15 +15,13 @@
 //! infrastructure with the x64_encoder. It demonstrates end-to-end compilation
 //! from SSA IR through register allocation to machine code generation.
 
+use super::encoder::{EncodingError, InstructionSelector};
 use crate::core::{
-    IrAdaptor,
     assembler::ElfAssembler,
-    register_file::{RegisterFile, RegAllocError, RegBitSet},
+    register_file::{RegAllocError, RegBitSet, RegisterFile},
     value_assignment::ValueAssignmentManager,
-    Backend, CompilerBase,
-    CompilerContext, ValuePartRef, ValueRefError,
+    Backend, CompilerBase, CompilerContext, IrAdaptor, ValuePartRef, ValueRefError,
 };
-use super::encoder::{InstructionSelector, EncodingError};
 
 /// Error types for the x86-64 backend.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,34 +95,34 @@ impl X64Backend {
         // Get operands - assume binary operation has exactly 2 operands + 1 result
         let operands: Vec<_> = base.adaptor.inst_operands(inst).collect();
         let results: Vec<_> = base.adaptor.inst_results(inst).collect();
-        
+
         if operands.len() != 2 || results.len() != 1 {
             return Err(X64BackendError::InvalidOperands);
         }
-        
+
         let left_val = operands[0];
         let right_val = operands[1];
         let result_val = results[0];
-        
+
         // Create compiler context for managing borrows
         let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
-        
+
         // Get value references for operands
         let left_idx = base.adaptor.val_local_idx(left_val);
         let right_idx = base.adaptor.val_local_idx(right_val);
         let result_idx = base.adaptor.val_local_idx(result_val);
-        
+
         let mut left_ref = ValuePartRef::new(left_idx, 0)?;
         let mut right_ref = ValuePartRef::new(right_idx, 0)?;
         let mut result_ref = ValuePartRef::new(result_idx, 0)?;
-        
+
         // Load operands to registers
         let left_reg = left_ref.load_to_reg(&mut ctx)?;
         let right_reg = right_ref.load_to_reg(&mut ctx)?;
-        
+
         // Try to reuse left operand register for result if possible
         let result_reg = result_ref.alloc_try_reuse(&mut left_ref, &mut ctx)?;
-        
+
         // Emit the operation
         match op_type {
             BinaryOpType::Add => {
@@ -134,7 +132,7 @@ impl X64Backend {
                 self.encoder.compile_sub(result_reg, left_reg, right_reg)?;
             }
         }
-        
+
         Ok(())
     }
 
@@ -200,12 +198,12 @@ impl<A: IrAdaptor> Backend<A, ElfAssembler> for X64Backend {
     ) -> bool {
         // In a real implementation, this would dispatch based on instruction opcode
         // For demonstration, we'll assume specific instruction patterns
-        
+
         // This is a simplified dispatch - real implementation would examine
         // instruction opcodes from the IR adaptor
         let operand_count = base.adaptor.inst_operands(inst).count();
         let result_count = base.adaptor.inst_results(inst).count();
-        
+
         let result = match (operand_count, result_count) {
             (2, 1) => {
                 // Binary operation - assume add for demonstration
@@ -221,7 +219,7 @@ impl<A: IrAdaptor> Backend<A, ElfAssembler> for X64Backend {
             }
             _ => Err(X64BackendError::UnsupportedInstruction),
         };
-        
+
         match result {
             Ok(()) => true,
             Err(_err) => {
@@ -275,17 +273,17 @@ mod tests {
                 instructions: Vec::new(),
                 values: Vec::new(),
             };
-            
+
             // Create a simple add operation: %2 = add %0, %1
             adaptor.values.push(TestValue { local_idx: 0 }); // %0
             adaptor.values.push(TestValue { local_idx: 1 }); // %1
             adaptor.values.push(TestValue { local_idx: 2 }); // %2
-            
+
             adaptor.instructions.push(TestInstruction {
                 operands: vec![0, 1], // %0, %1
                 results: vec![2],     // %2
             });
-            
+
             adaptor
         }
     }
@@ -333,15 +331,24 @@ mod tests {
             Box::new(std::iter::once(0))
         }
 
-        fn block_insts(&self, _block: Self::BlockRef) -> Box<dyn Iterator<Item = Self::InstRef> + '_> {
+        fn block_insts(
+            &self,
+            _block: Self::BlockRef,
+        ) -> Box<dyn Iterator<Item = Self::InstRef> + '_> {
             Box::new(0..self.instructions.len())
         }
 
-        fn block_succs(&self, _block: Self::BlockRef) -> Box<dyn Iterator<Item = Self::BlockRef> + '_> {
+        fn block_succs(
+            &self,
+            _block: Self::BlockRef,
+        ) -> Box<dyn Iterator<Item = Self::BlockRef> + '_> {
             Box::new(std::iter::empty())
         }
 
-        fn inst_operands(&self, inst: Self::InstRef) -> Box<dyn Iterator<Item = Self::ValueRef> + '_> {
+        fn inst_operands(
+            &self,
+            inst: Self::InstRef,
+        ) -> Box<dyn Iterator<Item = Self::ValueRef> + '_> {
             if inst < self.instructions.len() {
                 Box::new(self.instructions[inst].operands.clone().into_iter())
             } else {
@@ -349,7 +356,10 @@ mod tests {
             }
         }
 
-        fn inst_results(&self, inst: Self::InstRef) -> Box<dyn Iterator<Item = Self::ValueRef> + '_> {
+        fn inst_results(
+            &self,
+            inst: Self::InstRef,
+        ) -> Box<dyn Iterator<Item = Self::ValueRef> + '_> {
             if inst < self.instructions.len() {
                 Box::new(self.instructions[inst].results.clone().into_iter())
             } else {
@@ -368,7 +378,7 @@ mod tests {
         fn val_ignore_liveness(&self, _val: Self::ValueRef) -> bool {
             false
         }
-        
+
         fn set_block_idx(&self, _block: Self::BlockRef, _idx: usize) {
             // Not needed for test adaptor
         }

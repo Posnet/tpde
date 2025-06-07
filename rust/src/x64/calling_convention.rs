@@ -71,7 +71,7 @@ impl CCAssignment {
             attribute: ArgAttribute::None,
         }
     }
-    
+
     /// Create a new assignment with attribute.
     pub fn with_attribute(bank: RegBank, size: u32, align: u32, attribute: ArgAttribute) -> Self {
         Self {
@@ -101,16 +101,16 @@ pub struct CCInfo {
 pub trait CCAssigner {
     /// Get calling convention information.
     fn get_ccinfo(&self) -> &CCInfo;
-    
+
     /// Assign an argument according to the calling convention.
     fn assign_arg(&mut self, arg: &mut CCAssignment);
-    
+
     /// Assign a return value according to the calling convention.
     fn assign_ret(&mut self, arg: &mut CCAssignment);
-    
+
     /// Reset state for a new function.
     fn reset(&mut self);
-    
+
     /// Get the total stack space needed for arguments.
     fn get_stack_size(&self) -> u32;
 }
@@ -144,7 +144,8 @@ impl Default for SysVAssigner {
         // Build allocatable register set (all except RSP, RBP)
         let mut allocatable = RegBitSet::new();
         for i in 0..16 {
-            if i != 4 && i != 5 { // Skip RSP(4) and RBP(5)
+            if i != 4 && i != 5 {
+                // Skip RSP(4) and RBP(5)
                 allocatable.set(AsmReg::new(0, i));
             }
         }
@@ -152,14 +153,14 @@ impl Default for SysVAssigner {
         for i in 0..16 {
             allocatable.set(AsmReg::new(1, i));
         }
-        
+
         // Build callee-saved register set
         let mut callee_saved = RegBitSet::new();
         let callee_saved_ids = [3, 12, 13, 14, 15]; // RBX, R12-R15
         for &id in &callee_saved_ids {
             callee_saved.set(AsmReg::new(0, id));
         }
-        
+
         // Build argument register set
         let mut arg_regs = RegBitSet::new();
         for &reg in &Self::GP_ARG_REGS {
@@ -168,13 +169,13 @@ impl Default for SysVAssigner {
         for &reg in &Self::XMM_ARG_REGS {
             arg_regs.set(reg);
         }
-        
+
         let cc_info = CCInfo {
             allocatable_regs: allocatable,
             callee_saved_regs: callee_saved,
             arg_regs,
         };
-        
+
         Self {
             cc_info,
             gp_cnt: 0,
@@ -190,47 +191,47 @@ impl Default for SysVAssigner {
 impl SysVAssigner {
     /// System V x86-64 GP argument registers.
     const GP_ARG_REGS: [AsmReg; 6] = [
-        AsmReg::new(0, 7),  // RDI
-        AsmReg::new(0, 6),  // RSI  
-        AsmReg::new(0, 2),  // RDX
-        AsmReg::new(0, 1),  // RCX
-        AsmReg::new(0, 8),  // R8
-        AsmReg::new(0, 9),  // R9
+        AsmReg::new(0, 7), // RDI
+        AsmReg::new(0, 6), // RSI
+        AsmReg::new(0, 2), // RDX
+        AsmReg::new(0, 1), // RCX
+        AsmReg::new(0, 8), // R8
+        AsmReg::new(0, 9), // R9
     ];
-    
+
     /// System V x86-64 XMM argument registers.
     const XMM_ARG_REGS: [AsmReg; 8] = [
-        AsmReg::new(1, 0),  // XMM0
-        AsmReg::new(1, 1),  // XMM1
-        AsmReg::new(1, 2),  // XMM2
-        AsmReg::new(1, 3),  // XMM3
-        AsmReg::new(1, 4),  // XMM4
-        AsmReg::new(1, 5),  // XMM5
-        AsmReg::new(1, 6),  // XMM6
-        AsmReg::new(1, 7),  // XMM7
+        AsmReg::new(1, 0), // XMM0
+        AsmReg::new(1, 1), // XMM1
+        AsmReg::new(1, 2), // XMM2
+        AsmReg::new(1, 3), // XMM3
+        AsmReg::new(1, 4), // XMM4
+        AsmReg::new(1, 5), // XMM5
+        AsmReg::new(1, 6), // XMM6
+        AsmReg::new(1, 7), // XMM7
     ];
-    
+
     /// Return value registers.
     const RET_GP_REGS: [AsmReg; 2] = [
-        AsmReg::new(0, 0),  // RAX
-        AsmReg::new(0, 2),  // RDX
+        AsmReg::new(0, 0), // RAX
+        AsmReg::new(0, 2), // RDX
     ];
-    
+
     const RET_XMM_REGS: [AsmReg; 2] = [
-        AsmReg::new(1, 0),  // XMM0
-        AsmReg::new(1, 1),  // XMM1
+        AsmReg::new(1, 0), // XMM0
+        AsmReg::new(1, 1), // XMM1
     ];
 
     /// Create a new System V calling convention assigner.
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Force remaining arguments to be assigned to stack (for varargs).
     pub fn set_must_assign_stack(&mut self) {
         self.must_assign_stack = true;
     }
-    
+
     /// Align a value up to the specified alignment.
     fn align_up(value: u32, align: u32) -> u32 {
         (value + align - 1) & !(align - 1)
@@ -241,7 +242,7 @@ impl CCAssigner for SysVAssigner {
     fn get_ccinfo(&self) -> &CCInfo {
         &self.cc_info
     }
-    
+
     fn assign_arg(&mut self, arg: &mut CCAssignment) {
         // Handle special attributes
         match arg.attribute {
@@ -269,11 +270,12 @@ impl CCAssigner for SysVAssigner {
             }
             _ => {} // Handle normally
         }
-        
+
         match arg.bank {
             RegBank::GeneralPurpose => {
-                if !self.must_assign_stack && 
-                   self.gp_cnt + arg.consecutive as usize <= Self::GP_ARG_REGS.len() {
+                if !self.must_assign_stack
+                    && self.gp_cnt + arg.consecutive as usize <= Self::GP_ARG_REGS.len()
+                {
                     // Assign to GP register
                     arg.reg = Some(Self::GP_ARG_REGS[self.gp_cnt]);
                     self.gp_cnt += arg.consecutive as usize;
@@ -286,8 +288,9 @@ impl CCAssigner for SysVAssigner {
                 }
             }
             RegBank::Xmm => {
-                if !self.must_assign_stack && 
-                   self.xmm_cnt + arg.consecutive as usize <= Self::XMM_ARG_REGS.len() {
+                if !self.must_assign_stack
+                    && self.xmm_cnt + arg.consecutive as usize <= Self::XMM_ARG_REGS.len()
+                {
                     // Assign to XMM register
                     arg.reg = Some(Self::XMM_ARG_REGS[self.xmm_cnt]);
                     self.xmm_cnt += arg.consecutive as usize;
@@ -301,7 +304,7 @@ impl CCAssigner for SysVAssigner {
             }
         }
     }
-    
+
     fn assign_ret(&mut self, arg: &mut CCAssignment) {
         match arg.bank {
             RegBank::GeneralPurpose => {
@@ -318,7 +321,7 @@ impl CCAssigner for SysVAssigner {
             }
         }
     }
-    
+
     fn reset(&mut self) {
         self.gp_cnt = 0;
         self.xmm_cnt = 0;
@@ -327,7 +330,7 @@ impl CCAssigner for SysVAssigner {
         self.ret_gp_cnt = 0;
         self.ret_xmm_cnt = 0;
     }
-    
+
     fn get_stack_size(&self) -> u32 {
         // Align stack to 16-byte boundary as required by System V ABI
         Self::align_up(self.stack, 16)
@@ -372,7 +375,7 @@ impl FunctionFrame {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Add a callee-saved register that needs preservation.
     pub fn add_saved_register(&mut self, reg: AsmReg) {
         if !self.saved_registers.contains(&reg) {
@@ -380,7 +383,7 @@ impl FunctionFrame {
             self.spill_offset -= 8; // Each saved register takes 8 bytes
         }
     }
-    
+
     /// Allocate a new spill slot and return its offset.
     pub fn allocate_spill_slot(&mut self, size: u32) -> i32 {
         let aligned_size = size.div_ceil(8) * 8; // Align to 8 bytes
@@ -389,23 +392,23 @@ impl FunctionFrame {
         self.spill_slots.push(offset);
         offset
     }
-    
+
     /// Calculate the final frame size.
     pub fn calculate_frame_size(&mut self) {
         // Frame layout:
         // rbp + 8:  return address
-        // rbp:      saved rbp  
+        // rbp:      saved rbp
         // rbp - 8:  saved registers (callee-saved)
         // rbp - X:  local variables and spill slots
         // rbp - Y:  outgoing call arguments
-        
+
         let saved_reg_size = self.saved_registers.len() as u32 * 8;
-        let spill_size = if self.spill_offset < -16 { 
-            (-self.spill_offset - 16) as u32 
-        } else { 
-            0 
+        let spill_size = if self.spill_offset < -16 {
+            (-self.spill_offset - 16) as u32
+        } else {
+            0
         };
-        
+
         // Total frame size must be 16-byte aligned for System V ABI
         let total_size = saved_reg_size + spill_size;
         self.frame_size = total_size.div_ceil(16) * 16;
@@ -420,21 +423,21 @@ mod tests {
     #[test]
     fn test_sysv_gp_argument_assignment() {
         let mut assigner = SysVAssigner::new();
-        
+
         // Test first 6 GP arguments go to registers
         for i in 0..6 {
             let mut arg = CCAssignment::new(RegBank::GeneralPurpose, 8, 8);
             assigner.assign_arg(&mut arg);
-            
+
             assert!(arg.reg.is_some());
             assert!(arg.stack_off.is_none());
             assert_eq!(arg.reg.unwrap(), SysVAssigner::GP_ARG_REGS[i]);
         }
-        
+
         // 7th argument should go to stack
         let mut arg7 = CCAssignment::new(RegBank::GeneralPurpose, 8, 8);
         assigner.assign_arg(&mut arg7);
-        
+
         assert!(arg7.reg.is_none());
         assert!(arg7.stack_off.is_some());
         assert_eq!(arg7.stack_off.unwrap(), 0);
@@ -443,21 +446,21 @@ mod tests {
     #[test]
     fn test_sysv_xmm_argument_assignment() {
         let mut assigner = SysVAssigner::new();
-        
+
         // Test first 8 XMM arguments go to registers
         for i in 0..8 {
             let mut arg = CCAssignment::new(RegBank::Xmm, 8, 8);
             assigner.assign_arg(&mut arg);
-            
+
             assert!(arg.reg.is_some());
             assert!(arg.stack_off.is_none());
             assert_eq!(arg.reg.unwrap(), SysVAssigner::XMM_ARG_REGS[i]);
         }
-        
+
         // 9th XMM argument should go to stack
         let mut arg9 = CCAssignment::new(RegBank::Xmm, 8, 8);
         assigner.assign_arg(&mut arg9);
-        
+
         assert!(arg9.reg.is_none());
         assert!(arg9.stack_off.is_some());
     }
@@ -465,18 +468,18 @@ mod tests {
     #[test]
     fn test_sysv_return_value_assignment() {
         let mut assigner = SysVAssigner::new();
-        
+
         // Test GP return value
         let mut ret_gp = CCAssignment::new(RegBank::GeneralPurpose, 8, 8);
         assigner.assign_ret(&mut ret_gp);
-        
+
         assert!(ret_gp.reg.is_some());
         assert_eq!(ret_gp.reg.unwrap(), SysVAssigner::RET_GP_REGS[0]); // RAX
-        
+
         // Test XMM return value
         let mut ret_xmm = CCAssignment::new(RegBank::Xmm, 8, 8);
         assigner.assign_ret(&mut ret_xmm);
-        
+
         assert!(ret_xmm.reg.is_some());
         assert_eq!(ret_xmm.reg.unwrap(), SysVAssigner::RET_XMM_REGS[0]); // XMM0
     }
@@ -485,11 +488,11 @@ mod tests {
     fn test_must_assign_stack() {
         let mut assigner = SysVAssigner::new();
         assigner.set_must_assign_stack();
-        
+
         // Even first argument should go to stack when must_assign_stack is set
         let mut arg = CCAssignment::new(RegBank::GeneralPurpose, 8, 8);
         assigner.assign_arg(&mut arg);
-        
+
         assert!(arg.reg.is_none());
         assert!(arg.stack_off.is_some());
     }
@@ -497,16 +500,16 @@ mod tests {
     #[test]
     fn test_function_frame_spill_allocation() {
         let mut frame = FunctionFrame::new();
-        
+
         // Allocate some spill slots
         let slot1 = frame.allocate_spill_slot(8);
         let slot2 = frame.allocate_spill_slot(4);
         let slot3 = frame.allocate_spill_slot(16);
-        
+
         // Slots should be allocated in descending order
         assert!(slot1 > slot2);
         assert!(slot2 > slot3);
-        
+
         // All slots should be 8-byte aligned
         assert_eq!(slot1 % 8, 0);
         assert_eq!(slot2 % 8, 0);
@@ -516,14 +519,14 @@ mod tests {
     #[test]
     fn test_function_frame_saved_registers() {
         let mut frame = FunctionFrame::new();
-        
+
         let rbx = AsmReg::new(0, 3);
         let r12 = AsmReg::new(0, 12);
-        
+
         frame.add_saved_register(rbx);
         frame.add_saved_register(r12);
         frame.add_saved_register(rbx); // Should not duplicate
-        
+
         assert_eq!(frame.saved_registers.len(), 2);
         assert!(frame.saved_registers.contains(&rbx));
         assert!(frame.saved_registers.contains(&r12));

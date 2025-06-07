@@ -19,13 +19,12 @@
 //! }
 //! ```
 
-
-pub mod parser;
 pub mod adaptor;
 pub mod check;
+pub mod parser;
 
 pub use adaptor::TestIRAdaptor;
-pub use check::{TestRunner, TestSpec, CheckDirective};
+pub use check::{CheckDirective, TestRunner, TestSpec};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TestIR {
@@ -103,19 +102,110 @@ impl Operation {
     pub const fn info(self) -> OpInfo {
         use Operation::*;
         match self {
-            None => OpInfo { name: "<none>", is_terminator: false, is_def: false, op_count: 0, succ_count: 0, imm_count: 0 },
-            Any => OpInfo { name: "any", is_terminator: false, is_def: true, op_count: !0, succ_count: 0, imm_count: 0 },
-            Add => OpInfo { name: "add", is_terminator: false, is_def: true, op_count: 2, succ_count: 0, imm_count: 0 },
-            Sub => OpInfo { name: "sub", is_terminator: false, is_def: true, op_count: 2, succ_count: 0, imm_count: 0 },
-            Alloca => OpInfo { name: "alloca", is_terminator: false, is_def: true, op_count: 0, succ_count: 0, imm_count: 2 },
-            Terminate => OpInfo { name: "terminate", is_terminator: true, is_def: false, op_count: 0, succ_count: 0, imm_count: 0 },
-            Ret => OpInfo { name: "ret", is_terminator: true, is_def: false, op_count: 1, succ_count: 0, imm_count: 0 },
-            Br => OpInfo { name: "br", is_terminator: true, is_def: false, op_count: 0, succ_count: 1, imm_count: 0 },
-            CondBr => OpInfo { name: "condbr", is_terminator: true, is_def: false, op_count: 1, succ_count: 2, imm_count: 0 },
-            Tbz => OpInfo { name: "tbz", is_terminator: true, is_def: false, op_count: 1, succ_count: 2, imm_count: 1 },
-            Jump => OpInfo { name: "jump", is_terminator: true, is_def: false, op_count: 0, succ_count: !0, imm_count: 0 },
-            Call => OpInfo { name: "call", is_terminator: false, is_def: true, op_count: !0, succ_count: 0, imm_count: 0 },
-            ZeroFill => OpInfo { name: "zerofill", is_terminator: false, is_def: false, op_count: 0, succ_count: 0, imm_count: 1 },
+            None => OpInfo {
+                name: "<none>",
+                is_terminator: false,
+                is_def: false,
+                op_count: 0,
+                succ_count: 0,
+                imm_count: 0,
+            },
+            Any => OpInfo {
+                name: "any",
+                is_terminator: false,
+                is_def: true,
+                op_count: !0,
+                succ_count: 0,
+                imm_count: 0,
+            },
+            Add => OpInfo {
+                name: "add",
+                is_terminator: false,
+                is_def: true,
+                op_count: 2,
+                succ_count: 0,
+                imm_count: 0,
+            },
+            Sub => OpInfo {
+                name: "sub",
+                is_terminator: false,
+                is_def: true,
+                op_count: 2,
+                succ_count: 0,
+                imm_count: 0,
+            },
+            Alloca => OpInfo {
+                name: "alloca",
+                is_terminator: false,
+                is_def: true,
+                op_count: 0,
+                succ_count: 0,
+                imm_count: 2,
+            },
+            Terminate => OpInfo {
+                name: "terminate",
+                is_terminator: true,
+                is_def: false,
+                op_count: 0,
+                succ_count: 0,
+                imm_count: 0,
+            },
+            Ret => OpInfo {
+                name: "ret",
+                is_terminator: true,
+                is_def: false,
+                op_count: 1,
+                succ_count: 0,
+                imm_count: 0,
+            },
+            Br => OpInfo {
+                name: "br",
+                is_terminator: true,
+                is_def: false,
+                op_count: 0,
+                succ_count: 1,
+                imm_count: 0,
+            },
+            CondBr => OpInfo {
+                name: "condbr",
+                is_terminator: true,
+                is_def: false,
+                op_count: 1,
+                succ_count: 2,
+                imm_count: 0,
+            },
+            Tbz => OpInfo {
+                name: "tbz",
+                is_terminator: true,
+                is_def: false,
+                op_count: 1,
+                succ_count: 2,
+                imm_count: 1,
+            },
+            Jump => OpInfo {
+                name: "jump",
+                is_terminator: true,
+                is_def: false,
+                op_count: 0,
+                succ_count: !0,
+                imm_count: 0,
+            },
+            Call => OpInfo {
+                name: "call",
+                is_terminator: false,
+                is_def: true,
+                op_count: !0,
+                succ_count: 0,
+                imm_count: 0,
+            },
+            ZeroFill => OpInfo {
+                name: "zerofill",
+                is_terminator: false,
+                is_def: false,
+                op_count: 0,
+                succ_count: 0,
+                imm_count: 1,
+            },
         }
     }
 
@@ -174,7 +264,7 @@ impl TestIR {
             } else {
                 output.push_str(&format!("Function {}", func.name));
             }
-            
+
             // Print arguments
             for arg_idx in func.arg_begin_idx..func.arg_end_idx {
                 let arg = &self.values[arg_idx as usize];
@@ -200,16 +290,20 @@ impl TestIR {
                     for inst_idx in block.inst_begin_idx..block.phi_end_idx {
                         let phi = &self.values[inst_idx as usize];
                         output.push_str(&format!("\nPHI {}", phi.name));
-                        
+
                         // Print incoming values
                         let incoming_count = phi.op_count;
                         for i in 0..incoming_count {
                             let val_idx = self.value_operands[(phi.op_begin_idx + i) as usize];
-                            let block_idx = self.value_operands[(phi.op_begin_idx + incoming_count + i) as usize];
-                            if val_idx < self.values.len() as u32 && block_idx < self.blocks.len() as u32 {
+                            let block_idx = self.value_operands
+                                [(phi.op_begin_idx + incoming_count + i) as usize];
+                            if val_idx < self.values.len() as u32
+                                && block_idx < self.blocks.len() as u32
+                            {
                                 let val = &self.values[val_idx as usize];
                                 let from_block = &self.blocks[block_idx as usize];
-                                output.push_str(&format!("\n{} from {}", val.name, from_block.name));
+                                output
+                                    .push_str(&format!("\n{} from {}", val.name, from_block.name));
                             }
                         }
                     }
@@ -218,7 +312,7 @@ impl TestIR {
                     for inst_idx in block.phi_end_idx..block.inst_end_idx {
                         let inst = &self.values[inst_idx as usize];
                         let info = inst.op.info();
-                        
+
                         if info.is_def {
                             output.push_str(&format!("\nValue {} ({})", inst.name, info.name));
                         } else {
@@ -230,10 +324,11 @@ impl TestIR {
                             // For call instructions, print target function name
                             // TODO: Once we track function references, print actual function name
                             output.push_str("\nTarget ext_func2"); // Placeholder for now
-                            
+
                             // Then print regular operands
                             for op_idx in 0..inst.op_count {
-                                let operand_idx = self.value_operands[(inst.op_begin_idx + op_idx) as usize];
+                                let operand_idx =
+                                    self.value_operands[(inst.op_begin_idx + op_idx) as usize];
                                 if operand_idx < self.values.len() as u32 {
                                     let operand = &self.values[operand_idx as usize];
                                     output.push_str(&format!("\nOp {}", operand.name));
@@ -242,7 +337,8 @@ impl TestIR {
                         } else {
                             // Normal operands
                             for op_idx in 0..inst.op_count {
-                                let operand_idx = self.value_operands[(inst.op_begin_idx + op_idx) as usize];
+                                let operand_idx =
+                                    self.value_operands[(inst.op_begin_idx + op_idx) as usize];
                                 if operand_idx < self.values.len() as u32 {
                                     let operand = &self.values[operand_idx as usize];
                                     output.push_str(&format!("\nOp {}", operand.name));
@@ -264,7 +360,12 @@ impl TestIR {
                         }
 
                         // Print immediates
-                        let imm_start = block_op_start + if block_op_count == !0 { 0 } else { block_op_count };
+                        let imm_start = block_op_start
+                            + if block_op_count == !0 {
+                                0
+                            } else {
+                                block_op_count
+                            };
                         for i in 0..info.imm_count {
                             if (imm_start + i) < self.value_operands.len() as u32 {
                                 let imm = self.value_operands[(imm_start + i) as usize];

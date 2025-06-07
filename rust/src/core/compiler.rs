@@ -53,13 +53,13 @@ use super::{adaptor::IrAdaptor, analyzer::Analyzer, assembler::Assembler};
 /// and epilogue around each function.  Methods receive a mutable reference
 /// to the [`CompilerBase`] so they can use register allocation helpers.
 pub trait Backend<A: IrAdaptor, ASM: Assembler<A>> {
-    fn gen_prologue(&mut self, base: &mut CompilerBase<A, ASM, Self>) where Self: Sized;
-    fn gen_epilogue(&mut self, base: &mut CompilerBase<A, ASM, Self>) where Self: Sized;
-    fn compile_inst(
-        &mut self,
-        base: &mut CompilerBase<A, ASM, Self>,
-        inst: A::InstRef,
-    ) -> bool
+    fn gen_prologue(&mut self, base: &mut CompilerBase<A, ASM, Self>)
+    where
+        Self: Sized;
+    fn gen_epilogue(&mut self, base: &mut CompilerBase<A, ASM, Self>)
+    where
+        Self: Sized;
+    fn compile_inst(&mut self, base: &mut CompilerBase<A, ASM, Self>, inst: A::InstRef) -> bool
     where
         Self: Sized;
 }

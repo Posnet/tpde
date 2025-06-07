@@ -18,8 +18,8 @@
 //! access to registers while abstracting the complexity of the underlying
 //! ValueAssignment and RegisterFile systems.
 
+use super::register_file::{AsmReg, RegAllocError, RegisterFile};
 use super::value_assignment::{ValLocalIdx, ValueAssignmentManager};
-use super::register_file::{RegisterFile, AsmReg, RegAllocError};
 
 /// Error types for value reference operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,7 +109,7 @@ impl ValueRef {
         if let Some(assignment) = ctx.assignments.get_assignment_mut(local_idx) {
             assignment.add_ref();
         }
-        
+
         Self {
             local_idx,
             ownership: OwnershipMode::Owned,
@@ -136,7 +136,11 @@ impl ValueRef {
     }
 
     /// Access a specific part of this multi-part value.
-    pub fn part(&self, part_idx: u32, ctx: &mut CompilerContext) -> Result<ValuePartRef, ValueRefError> {
+    pub fn part(
+        &self,
+        part_idx: u32,
+        ctx: &mut CompilerContext,
+    ) -> Result<ValuePartRef, ValueRefError> {
         let part_count = self.part_count(ctx)?;
         if part_idx >= part_count {
             return Err(ValueRefError::InvalidPart);
@@ -213,10 +217,7 @@ pub struct ValuePartRef {
 
 impl ValuePartRef {
     /// Create a new ValuePartRef for the specified value part.
-    pub fn new(
-        local_idx: ValLocalIdx,
-        part_idx: u32,
-    ) -> Result<Self, ValueRefError> {
+    pub fn new(local_idx: ValLocalIdx, part_idx: u32) -> Result<Self, ValueRefError> {
         Ok(Self {
             local_idx,
             part_idx,
@@ -234,7 +235,8 @@ impl ValuePartRef {
         // Check if already in a register
         if let Some(reg) = self.current_register(ctx) {
             // Lock the register to prevent eviction
-            ctx.register_file.lock_register(reg)
+            ctx.register_file
+                .lock_register(reg)
                 .map_err(ValueRefError::RegisterAllocationFailed)?;
             self.locked_register = Some(reg);
             return Ok(reg);
@@ -246,7 +248,8 @@ impl ValuePartRef {
 
     /// Allocate a register for this part.
     fn allocate_register(&mut self, ctx: &mut CompilerContext) -> Result<AsmReg, ValueRefError> {
-        let assignment = ctx.assignments
+        let assignment = ctx
+            .assignments
             .get_assignment(self.local_idx)
             .ok_or(ValueRefError::ValueNotFound)?;
 
@@ -256,9 +259,10 @@ impl ValuePartRef {
 
         // Determine register bank based on value type/size
         let reg_bank = part_data.reg_bank();
-        
+
         // Allocate register
-        let reg = ctx.register_file
+        let reg = ctx
+            .register_file
             .allocate_reg(reg_bank, self.local_idx, self.part_idx, None)
             .map_err(ValueRefError::RegisterAllocationFailed)?;
 
@@ -266,16 +270,17 @@ impl ValuePartRef {
         if let Some(assignment) = ctx.assignments.get_assignment_mut(self.local_idx) {
             if let Some(part_data) = assignment.part_mut(self.part_idx) {
                 *part_data = crate::core::value_assignment::PartData::new(
-                    reg.bank, 
-                    reg.id, 
-                    part_data.size_log2()
+                    reg.bank,
+                    reg.id,
+                    part_data.size_log2(),
                 );
                 part_data.set_register_valid(true);
             }
         }
 
         // Lock the register
-        ctx.register_file.lock_register(reg)
+        ctx.register_file
+            .lock_register(reg)
             .map_err(ValueRefError::RegisterAllocationFailed)?;
         self.locked_register = Some(reg);
 
@@ -285,7 +290,11 @@ impl ValuePartRef {
     /// Try to reuse a register from another ValuePartRef.
     ///
     /// This enables efficient register reuse patterns in instruction selection.
-    pub fn alloc_try_reuse(&mut self, other: &mut ValuePartRef, ctx: &mut CompilerContext) -> Result<AsmReg, ValueRefError> {
+    pub fn alloc_try_reuse(
+        &mut self,
+        other: &mut ValuePartRef,
+        ctx: &mut CompilerContext,
+    ) -> Result<AsmReg, ValueRefError> {
         if let Some(other_reg) = other.current_register(ctx) {
             // Check if we can take ownership of the other register
             if other.can_transfer_ownership(ctx) {
@@ -312,17 +321,20 @@ impl ValuePartRef {
     /// Check if this part can transfer ownership of its register.
     fn can_transfer_ownership(&self, ctx: &CompilerContext) -> bool {
         // Can transfer if we have exclusive access and the register isn't shared
-        self.locked_register.is_some() &&
-        ctx.assignments.get_assignment(self.local_idx)
-            .map(|a| a.references_left <= 1)
-            .unwrap_or(false)
+        self.locked_register.is_some()
+            && ctx
+                .assignments
+                .get_assignment(self.local_idx)
+                .map(|a| a.references_left <= 1)
+                .unwrap_or(false)
     }
 
     /// Release ownership of the current register.
     fn release_register(&mut self, ctx: &mut CompilerContext) -> Result<(), ValueRefError> {
         if let Some(reg) = self.locked_register.take() {
             // Unlock the register
-            ctx.register_file.unlock_register(reg)
+            ctx.register_file
+                .unlock_register(reg)
                 .map_err(ValueRefError::RegisterAllocationFailed)?;
 
             // Mark register as invalid in assignment
@@ -336,21 +348,26 @@ impl ValuePartRef {
     }
 
     /// Claim ownership of a register.
-    fn claim_register(&mut self, reg: AsmReg, ctx: &mut CompilerContext) -> Result<(), ValueRefError> {
+    fn claim_register(
+        &mut self,
+        reg: AsmReg,
+        ctx: &mut CompilerContext,
+    ) -> Result<(), ValueRefError> {
         // Update our assignment
         if let Some(assignment) = ctx.assignments.get_assignment_mut(self.local_idx) {
             if let Some(part_data) = assignment.part_mut(self.part_idx) {
                 *part_data = crate::core::value_assignment::PartData::new(
                     reg.bank,
                     reg.id,
-                    part_data.size_log2()
+                    part_data.size_log2(),
                 );
                 part_data.set_register_valid(true);
             }
         }
 
         // Lock the register
-        ctx.register_file.lock_register(reg)
+        ctx.register_file
+            .lock_register(reg)
             .map_err(ValueRefError::RegisterAllocationFailed)?;
         self.locked_register = Some(reg);
 
@@ -432,10 +449,7 @@ impl ValueRefBuilder {
     }
 
     /// Create a ValueRef for a result value (always owned).
-    pub fn build_for_result(
-        local_idx: ValLocalIdx,
-        ctx: &mut CompilerContext,
-    ) -> ValueRef {
+    pub fn build_for_result(local_idx: ValLocalIdx, ctx: &mut CompilerContext) -> ValueRef {
         ValueRef::owned(local_idx, ctx)
     }
 }
@@ -446,11 +460,11 @@ mod tests {
 
     fn create_test_setup() -> (ValueAssignmentManager, RegisterFile) {
         let assignments = ValueAssignmentManager::new();
-        
+
         let mut allocatable = crate::core::register_file::RegBitSet::new();
         allocatable.union(&crate::core::register_file::RegBitSet::all_in_bank(0, 8));
         let register_file = RegisterFile::new(8, 1, allocatable);
-        
+
         (assignments, register_file)
     }
 
@@ -458,15 +472,15 @@ mod tests {
     fn test_value_ref_creation() {
         let (mut assignments, mut register_file) = create_test_setup();
         let mut ctx = CompilerContext::new(&mut assignments, &mut register_file);
-        
+
         // Create an assignment
         let assignment = ctx.assignments.create_assignment(42, 1, 8);
         assignment.add_ref();
-        
+
         let value_ref = ValueRef::ref_counted(42, &mut ctx);
         assert_eq!(value_ref.local_idx(), 42);
         assert_eq!(value_ref.part_count(&ctx).unwrap(), 1);
-        
+
         // Manual cleanup to test the context pattern
         value_ref.drop_with_context(&mut ctx);
     }
@@ -475,19 +489,19 @@ mod tests {
     fn test_value_part_ref_allocation() {
         let (mut assignments, mut register_file) = create_test_setup();
         let mut ctx = CompilerContext::new(&mut assignments, &mut register_file);
-        
+
         // Create an assignment
         ctx.assignments.create_assignment(42, 1, 8);
-        
+
         let value_ref = ValueRef::owned(42, &mut ctx);
         let mut part_ref = value_ref.single_part(&mut ctx).unwrap();
-        
+
         // Load to register should succeed
         let reg = part_ref.load_to_reg(&mut ctx).unwrap();
         assert_eq!(reg.bank, 0);
         assert!(ctx.register_file.is_allocated(reg));
         assert!(ctx.register_file.is_locked(reg));
-        
+
         // Manual cleanup
         part_ref.drop_with_context(&mut ctx);
         value_ref.drop_with_context(&mut ctx);
@@ -497,19 +511,19 @@ mod tests {
     fn test_modification_tracking() {
         let (mut assignments, mut register_file) = create_test_setup();
         let mut ctx = CompilerContext::new(&mut assignments, &mut register_file);
-        
+
         ctx.assignments.create_assignment(42, 1, 8);
         let value_ref = ValueRef::owned(42, &mut ctx);
         let mut part_ref = value_ref.single_part(&mut ctx).unwrap();
-        
+
         assert!(!part_ref.is_modified());
-        
+
         let reg = part_ref.load_to_reg(&mut ctx).unwrap();
         part_ref.set_modified(&mut ctx);
-        
+
         assert!(part_ref.is_modified());
         assert!(ctx.register_file.is_clobbered(reg));
-        
+
         // Manual cleanup
         part_ref.drop_with_context(&mut ctx);
         value_ref.drop_with_context(&mut ctx);

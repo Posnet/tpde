@@ -50,59 +50,33 @@
 //! 3. **Type Safety**: Leverage Rust's type system to prevent bugs
 //! 4. **Zero-Cost Abstractions**: No runtime overhead for safety features
 
-pub mod session;
-pub mod register_file;
-pub mod value_assignment;
-pub mod error;
-pub mod assembler;
-pub mod value_ref;
 pub mod adaptor;
 pub mod analyzer;
+pub mod assembler;
 pub mod compiler;
+pub mod error;
+pub mod register_file;
+pub mod session;
+pub mod value_assignment;
+pub mod value_ref;
 
 // Re-export core components
 pub use session::{
-    CompilationSession,
-    SessionStats,
-    SessionError,
-    ValueLocation,
-    BlockInfo,
-    PhiNodeInfo,
+    BlockInfo, CompilationSession, PhiNodeInfo, SessionError, SessionStats, ValueLocation,
 };
 
-pub use register_file::{
-    RegisterFile,
-    AsmReg,
-    RegBitSet,
-    RegAllocError,
-};
+pub use register_file::{AsmReg, RegAllocError, RegBitSet, RegisterFile};
 
 pub use value_assignment::{
-    ValueAssignment,
+    AssignmentAllocator, AssignmentFlags, StorageLocation, ValLocalIdx, ValueAssignment,
     ValueAssignmentManager,
-    ValLocalIdx,
-    AssignmentFlags,
-    AssignmentAllocator,
-    StorageLocation,
 };
 
-pub use error::{
-    CompileError,
-    CompileResult,
-};
+pub use error::{CompileError, CompileResult};
 
-pub use assembler::{
-    Assembler,
-    ElfAssembler,
-};
+pub use assembler::{Assembler, ElfAssembler};
 
-pub use value_ref::{
-    ValueRef,
-    ValuePartRef,
-    ValueRefBuilder,
-    ValueRefError,
-    CompilerContext,
-};
+pub use value_ref::{CompilerContext, ValuePartRef, ValueRef, ValueRefBuilder, ValueRefError};
 
 pub use adaptor::IrAdaptor;
 pub use analyzer::Analyzer;

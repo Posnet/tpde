@@ -10,7 +10,7 @@ use tpde::encodegen;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
-    
+
     let ir_text = if args.len() > 1 {
         // Read from file
         fs::read_to_string(&args[1])?
@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         io::stdin().read_to_string(&mut buffer)?;
         buffer
     };
-    
+
     let context = Context::create();
     match encodegen::parse_and_generate(&context, &ir_text) {
         Ok(tokens) => {

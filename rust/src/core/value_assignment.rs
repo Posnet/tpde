@@ -60,10 +60,8 @@ impl PartData {
         assert!(reg_bank < 8, "Register bank must fit in 3 bits");
         assert!(reg_id < 32, "Register ID must fit in 5 bits");
         assert!(size_log2 < 8, "Size log2 must fit in 3 bits");
-        
-        let packed = ((reg_bank as u16) << 13) | 
-                    ((reg_id as u16) << 8) | 
-                    ((size_log2 as u16) << 5);
+
+        let packed = ((reg_bank as u16) << 13) | ((reg_id as u16) << 8) | ((size_log2 as u16) << 5);
         Self { packed }
     }
 
@@ -168,7 +166,10 @@ impl ValueAssignment {
 
     /// Get the total size of this assignment in bytes.
     pub fn size(&self) -> u32 {
-        assert!(!self.flags.variable_ref, "Variable references have no allocation size");
+        assert!(
+            !self.flags.variable_ref,
+            "Variable references have no allocation size"
+        );
         self.part_count * self.max_part_size as u32
     }
 
@@ -236,7 +237,8 @@ impl AssignmentAllocator {
         } else {
             // Allocate new assignment
             let idx = self.assignments.len();
-            self.assignments.push(ValueAssignment::new(part_count, max_part_size));
+            self.assignments
+                .push(ValueAssignment::new(part_count, max_part_size));
             idx
         }
     }
@@ -249,7 +251,7 @@ impl AssignmentAllocator {
 
         let assignment = &mut self.assignments[idx];
         let part_count = assignment.part_count;
-        
+
         // Reset assignment state
         assignment.references_left = 0;
         assignment.flags.pending_free = false;
@@ -305,7 +307,12 @@ impl ValueAssignmentManager {
     }
 
     /// Create an assignment for the given local value.
-    pub fn create_assignment(&mut self, local_idx: ValLocalIdx, part_count: u32, max_part_size: u8) -> &mut ValueAssignment {
+    pub fn create_assignment(
+        &mut self,
+        local_idx: ValLocalIdx,
+        part_count: u32,
+        max_part_size: u8,
+    ) -> &mut ValueAssignment {
         let assignment_idx = self.allocator.allocate(part_count, max_part_size);
         self.assignments.insert(local_idx, assignment_idx);
         self.allocator.get_mut(assignment_idx).unwrap()
@@ -313,7 +320,8 @@ impl ValueAssignmentManager {
 
     /// Get the assignment for a local value.
     pub fn get_assignment(&self, local_idx: ValLocalIdx) -> Option<&ValueAssignment> {
-        self.assignments.get(&local_idx)
+        self.assignments
+            .get(&local_idx)
             .and_then(|&idx| self.allocator.get(idx))
     }
 
@@ -347,13 +355,16 @@ impl ValueAssignmentManager {
     /// Process delayed free list, freeing assignments that are no longer live.
     pub fn process_delayed_free(&mut self) {
         let mut remaining = Vec::new();
-        
+
         for assignment_idx in self.delayed_free_list.drain(..) {
             if let Some(assignment) = self.allocator.get_mut(assignment_idx) {
                 if assignment.references_left == 0 {
                     // Free the assignment
-                    if let Some((&local_idx, _)) = self.assignments.iter()
-                        .find(|&(_, &idx)| idx == assignment_idx) {
+                    if let Some((&local_idx, _)) = self
+                        .assignments
+                        .iter()
+                        .find(|&(_, &idx)| idx == assignment_idx)
+                    {
                         self.assignments.remove(&local_idx);
                     }
                     self.allocator.free(assignment_idx);
@@ -363,7 +374,7 @@ impl ValueAssignmentManager {
                 }
             }
         }
-        
+
         self.delayed_free_list = remaining;
     }
 
@@ -393,13 +404,13 @@ mod tests {
     #[test]
     fn test_part_data_flags() {
         let mut part = PartData::new(0, 0, 0);
-        
+
         part.set_register_valid(true);
         assert!(part.register_valid());
-        
+
         part.set_modified(true);
         assert!(part.is_modified());
-        
+
         part.set_register_valid(false);
         assert!(!part.register_valid());
         assert!(part.is_modified()); // Should still be modified
@@ -429,10 +440,10 @@ mod tests {
         assignment.add_ref();
         assignment.add_ref();
         assert_eq!(assignment.references_left, 2);
-        
+
         assert!(!assignment.remove_ref());
         assert_eq!(assignment.references_left, 1);
-        
+
         assert!(assignment.remove_ref());
         assert_eq!(assignment.references_left, 0);
     }
@@ -440,13 +451,13 @@ mod tests {
     #[test]
     fn test_assignment_manager() {
         let mut manager = ValueAssignmentManager::new();
-        
+
         let assignment = manager.create_assignment(0, 1, 8);
         assignment.add_ref();
-        
+
         assert!(manager.get_assignment(0).is_some());
         assert_eq!(manager.get_assignment(0).unwrap().part_count, 1);
-        
+
         manager.remove_ref(0);
         assert!(manager.get_assignment(0).is_none());
     }

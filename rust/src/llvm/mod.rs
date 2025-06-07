@@ -69,15 +69,15 @@
 //! use tpde::core::CompilationSession;
 //! use bumpalo::Bump;
 //! use inkwell::context::Context;
-//! 
+//!
 //! let context = Context::create();
 //! let module = context.create_module("example");
 //! // ... populate module with LLVM IR ...
-//! 
+//!
 //! let arena = Bump::new();
 //! let session = CompilationSession::new(&arena);
 //! let mut compiler = LlvmCompiler::new(&module, &session);
-//! 
+//!
 //! let func = module.get_function("main").unwrap();
 //! let compiled = compiler.compile_function(func)?;
 //! ```
@@ -85,12 +85,12 @@
 pub mod adaptor;
 pub mod compiler;
 // pub mod phi_resolution; // Not yet implemented - needs FunctionAnalyzer API updates
-pub mod function_analysis;
 pub mod analysis_result;
-pub mod traits;
 pub mod call_support;
+pub mod function_analysis;
+pub mod traits;
 
 // Main exports
-pub use compiler::{LlvmCompiler, CompiledFunction, LlvmCompilerError};
 pub use adaptor::{EnhancedLlvmAdaptor as LlvmAdaptor, PhiInfo};
+pub use compiler::{CompiledFunction, LlvmCompiler, LlvmCompilerError};
 pub use traits::{InstructionCategory, LlvmAdaptorInterface};

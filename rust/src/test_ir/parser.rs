@@ -12,11 +12,11 @@ struct Parser<'a> {
     text: &'a str,
     pos: usize,
     ir: TestIR,
-    
+
     // Global maps
     funcs: HashMap<&'a str, u32>,
     func_resolves: Vec<Resolve<'a>>,
-    
+
     // Per-function maps
     blocks: HashMap<&'a str, u32>,
     values: HashMap<&'a str, u32>,
@@ -47,10 +47,10 @@ impl<'a> Parser<'a> {
 
     fn parse(mut self) -> Result<TestIR, String> {
         self.skip_whitespace(true);
-        
+
         while !self.is_eof() {
             match self.parse_function() {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(e) => {
                     eprintln!("Error parsing function at position {}: {}", self.pos, e);
                     if self.pos < self.text.len() {
@@ -64,10 +64,10 @@ impl<'a> Parser<'a> {
             }
             self.skip_whitespace(true);
         }
-        
+
         // Resolve all references
         self.resolve_all_references()?;
-        
+
         Ok(self.ir)
     }
 
@@ -78,7 +78,6 @@ impl<'a> Parser<'a> {
     fn current_char(&self) -> Option<char> {
         self.text.chars().nth(self.pos)
     }
-
 
     fn advance(&mut self) {
         if let Some(ch) = self.current_char() {
@@ -119,7 +118,11 @@ impl<'a> Parser<'a> {
 
     fn expect(&mut self, ch: char) -> Result<(), String> {
         if !self.try_read(ch) {
-            return Err(format!("Expected '{}' but found {:?}", ch, self.current_char()));
+            return Err(format!(
+                "Expected '{}' but found {:?}",
+                ch,
+                self.current_char()
+            ));
         }
         Ok(())
     }
@@ -127,7 +130,7 @@ impl<'a> Parser<'a> {
     fn read_identifier(&mut self) -> Result<&'a str, String> {
         self.skip_whitespace(true);
         let start = self.pos;
-        
+
         if let Some(ch) = self.current_char() {
             if !ch.is_alphabetic() {
                 return Err(format!("Expected identifier but found '{}'", ch));
@@ -135,7 +138,7 @@ impl<'a> Parser<'a> {
         } else {
             return Err("Expected identifier but found EOF".to_string());
         }
-        
+
         while let Some(ch) = self.current_char() {
             if ch.is_alphanumeric() || ch == '_' {
                 self.advance();
@@ -143,7 +146,7 @@ impl<'a> Parser<'a> {
                 break;
             }
         }
-        
+
         let result = &self.text[start..self.pos];
         if result.is_empty() {
             return Err("Expected identifier but got empty string".to_string());
@@ -155,7 +158,7 @@ impl<'a> Parser<'a> {
         self.skip_whitespace(true);
         self.expect('%')?;
         let name = self.read_identifier()?;
-        
+
         // Check for force fixed assignment marker
         let force_fixed = if self.current_char() == Some('!') {
             self.advance();
@@ -163,7 +166,7 @@ impl<'a> Parser<'a> {
         } else {
             false
         };
-        
+
         Ok((name, force_fixed))
     }
 
@@ -176,7 +179,7 @@ impl<'a> Parser<'a> {
     fn read_number(&mut self) -> Result<u32, String> {
         self.skip_whitespace(true);
         let start = self.pos;
-        
+
         while let Some(ch) = self.current_char() {
             if ch.is_ascii_digit() {
                 self.advance();
@@ -184,11 +187,11 @@ impl<'a> Parser<'a> {
                 break;
             }
         }
-        
+
         if start == self.pos {
             return Err("Expected number".to_string());
         }
-        
+
         self.text[start..self.pos]
             .parse()
             .map_err(|e| format!("Failed to parse number: {}", e))
@@ -197,21 +200,21 @@ impl<'a> Parser<'a> {
     fn parse_function(&mut self) -> Result<(), String> {
         let func_name = self.read_identifier()?;
         let func_idx = self.ir.functions.len() as u32;
-        
+
         // Reset per-function state
         self.blocks.clear();
         self.values.clear();
         self.block_resolves.clear();
         self.value_resolves.clear();
-        
+
         // Parse arguments
         self.expect('(')?;
         let arg_begin_idx = self.ir.values.len() as u32;
-        
+
         while !self.try_read(')') {
             let (arg_name, _) = self.read_value_name()?;
             let arg_idx = self.ir.values.len() as u32;
-            
+
             self.values.insert(arg_name, arg_idx);
             self.ir.values.push(Value {
                 name: arg_name.to_string(),
@@ -223,18 +226,18 @@ impl<'a> Parser<'a> {
                 op_begin_idx: 0,
                 op_end_idx: 0,
             });
-            
+
             if !self.try_read(',') && self.current_char() != Some(')') {
                 return Err("Expected ',' or ')' in argument list".to_string());
             }
         }
-        
+
         let arg_end_idx = self.ir.values.len() as u32;
-        
+
         // Check for function declaration (ends with !)
         let is_declaration = self.try_read('!');
         let mut is_local = false;
-        
+
         // If not a declaration, check for modifiers and body
         if !is_declaration {
             // Check for "local" modifier
@@ -253,22 +256,22 @@ impl<'a> Parser<'a> {
                     self.pos = saved_pos;
                 }
             }
-            
+
             // Parse function body
             self.expect('{')?;
-            
+
             let block_begin_idx = self.ir.blocks.len() as u32;
-            
+
             // Parse blocks
             while !self.try_read('}') {
                 self.parse_block()?;
             }
-            
+
             let block_end_idx = self.ir.blocks.len() as u32;
-            
+
             // Resolve references for this function
             self.resolve_function_references()?;
-            
+
             // Add function
             self.funcs.insert(func_name, func_idx);
             self.ir.functions.push(Function {
@@ -285,7 +288,7 @@ impl<'a> Parser<'a> {
             // Function declaration - no body
             let block_begin_idx = self.ir.blocks.len() as u32;
             let block_end_idx = block_begin_idx;
-            
+
             self.funcs.insert(func_name, func_idx);
             self.ir.functions.push(Function {
                 name: func_name.to_string(),
@@ -298,7 +301,7 @@ impl<'a> Parser<'a> {
                 arg_end_idx,
             });
         }
-        
+
         Ok(())
     }
 
@@ -306,24 +309,24 @@ impl<'a> Parser<'a> {
         self.skip_whitespace(true);
         let block_name = self.read_identifier()?;
         self.expect(':')?;
-        
+
         let block_idx = self.ir.blocks.len() as u32;
         self.blocks.insert(block_name, block_idx);
-        
+
         let inst_begin_idx = self.ir.values.len() as u32;
         let mut phi_end_idx = inst_begin_idx;
-        
+
         // We'll collect successors after parsing all instructions
         let mut successor_refs = Vec::new();
-        
+
         // Parse instructions
         while !self.is_at_block_end() {
             self.skip_whitespace(true);
-            
+
             if self.is_eof() {
                 break;
             }
-            
+
             // Check if this is a PHI
             if self.peek_phi() {
                 // Only allow PHIs if we haven't parsed any non-PHI instructions yet
@@ -338,9 +341,9 @@ impl<'a> Parser<'a> {
                 successor_refs.extend(succs);
             }
         }
-        
+
         let inst_end_idx = self.ir.values.len() as u32;
-        
+
         // Now add successor references to value_operands
         let succ_begin_idx = self.ir.value_operands.len() as u32;
         for succ_name in &successor_refs {
@@ -351,7 +354,7 @@ impl<'a> Parser<'a> {
             self.ir.value_operands.push(0); // Placeholder
         }
         let succ_end_idx = self.ir.value_operands.len() as u32;
-        
+
         // Create block
         self.ir.blocks.push(Block {
             name: block_name.to_string(),
@@ -363,33 +366,33 @@ impl<'a> Parser<'a> {
             block_info: 0,
             block_info2: 0,
         });
-        
+
         Ok(())
     }
 
     fn is_at_block_end(&mut self) -> bool {
         self.skip_whitespace(true);
-        
+
         // At end of function
         if self.current_char() == Some('}') {
             return true;
         }
-        
+
         // Next block starts
         if let Ok(name) = self.read_identifier() {
             // Backtrack
             self.pos -= name.len();
-            
+
             // Check if followed by ':'
             let saved_pos = self.pos;
             self.pos += name.len();
             self.skip_whitespace(true);
             let has_colon = self.current_char() == Some(':');
             self.pos = saved_pos;
-            
+
             return has_colon;
         }
-        
+
         false
     }
 
@@ -409,7 +412,7 @@ impl<'a> Parser<'a> {
     fn peek_phi(&mut self) -> bool {
         let saved_pos = self.pos;
         self.skip_whitespace(true);
-        
+
         // Try to parse "%name = phi"
         if self.current_char() == Some('%') {
             self.advance();
@@ -429,7 +432,7 @@ impl<'a> Parser<'a> {
                 }
             }
         }
-        
+
         self.pos = saved_pos;
         false
     }
@@ -437,22 +440,22 @@ impl<'a> Parser<'a> {
     fn parse_phi(&mut self) -> Result<(), String> {
         let (name, force_fixed) = self.read_value_name()?;
         self.expect('=')?;
-        
+
         let op_name = self.read_identifier()?;
         if op_name != "phi" {
             return Err(format!("Expected 'phi' but found '{}'", op_name));
         }
-        
+
         let val_idx = self.ir.values.len() as u32;
         self.values.insert(name, val_idx);
-        
+
         let op_begin_idx = self.ir.value_operands.len() as u32;
         let mut incoming_count = 0;
-        
+
         // Temporarily store values and blocks
         let mut temp_values = Vec::new();
         let mut temp_blocks = Vec::new();
-        
+
         // Parse incoming values: [^block, %value], ...
         self.expect('[')?;
         loop {
@@ -460,19 +463,22 @@ impl<'a> Parser<'a> {
             self.expect(',')?;
             let (val_name, _) = self.read_value_name()?;
             self.expect(']')?;
-            
+
             temp_values.push((val_name, self.ir.value_operands.len() as u32));
-            temp_blocks.push((block_name, self.ir.value_operands.len() as u32 + incoming_count));
-            
+            temp_blocks.push((
+                block_name,
+                self.ir.value_operands.len() as u32 + incoming_count,
+            ));
+
             incoming_count += 1;
-            
+
             if !self.try_read(',') {
                 break;
             }
             self.skip_whitespace(true);
             self.expect('[')?;
         }
-        
+
         // Now push values first, then blocks, in the correct order
         // Push value placeholders and create resolves
         for (val_name, _) in &temp_values {
@@ -482,7 +488,7 @@ impl<'a> Parser<'a> {
             });
             self.ir.value_operands.push(0); // Placeholder
         }
-        
+
         // Push block placeholders and create resolves
         for (block_name, _) in &temp_blocks {
             self.block_resolves.push(Resolve {
@@ -491,9 +497,9 @@ impl<'a> Parser<'a> {
             });
             self.ir.value_operands.push(0); // Placeholder
         }
-        
+
         let op_end_idx = self.ir.value_operands.len() as u32;
-        
+
         self.ir.values.push(Value {
             name: name.to_string(),
             value_type: ValueType::Phi,
@@ -504,7 +510,7 @@ impl<'a> Parser<'a> {
             op_begin_idx,
             op_end_idx,
         });
-        
+
         Ok(())
     }
 
@@ -516,18 +522,18 @@ impl<'a> Parser<'a> {
 
     fn parse_instruction(&mut self, successors: &mut Vec<&'a str>) -> Result<(), String> {
         self.skip_whitespace(true);
-        
+
         // Check for value definition
         let (has_result, name, force_fixed, op) = if self.current_char() == Some('%') {
             let (name, force_fixed) = self.read_value_name()?;
             self.expect('=')?;
-            
+
             // Check if there's an operation or just empty value definition
             self.skip_whitespace(false);
-            
+
             // Check if we're at the end of the line
             let at_eol = self.current_char() == Some('\n') || self.is_at_line_end();
-            
+
             let op = if at_eol {
                 // Empty value definition ("any" operation) with no operands
                 Operation::Any
@@ -537,36 +543,38 @@ impl<'a> Parser<'a> {
             } else {
                 // Read operation
                 let op_str = self.read_identifier()?;
-                Operation::parse(op_str)
-                    .ok_or_else(|| format!("Unknown operation: {}", op_str))?
+                Operation::parse(op_str).ok_or_else(|| format!("Unknown operation: {}", op_str))?
             };
-            
+
             (true, Some(name), force_fixed, op)
         } else {
             // No value definition, read operation directly
             let op_str = self.read_identifier()?;
-            let op = Operation::parse(op_str)
-                .ok_or_else(|| format!("Unknown operation: {}", op_str))?;
+            let op =
+                Operation::parse(op_str).ok_or_else(|| format!("Unknown operation: {}", op_str))?;
             (false, None, false, op)
         };
-        
+
         let info = op.info();
-        
+
         // Check consistency
         if has_result && !info.is_def {
-            return Err(format!("Operation '{}' does not produce a value", info.name));
+            return Err(format!(
+                "Operation '{}' does not produce a value",
+                info.name
+            ));
         }
         if !has_result && info.is_def && op != Operation::Call {
             return Err(format!("Operation '{}' requires a result value", info.name));
         }
-        
+
         let val_idx = self.ir.values.len() as u32;
         if let Some(name) = name {
             self.values.insert(name, val_idx);
         }
-        
+
         let op_begin_idx = self.ir.value_operands.len() as u32;
-        
+
         // Parse operands based on operation type
         match op {
             Operation::Alloca => {
@@ -588,7 +596,7 @@ impl<'a> Parser<'a> {
                     index: self.ir.value_operands.len() as u32,
                 });
                 self.ir.value_operands.push(0); // Placeholder
-                
+
                 // Add to successors
                 successors.push(block_name);
             }
@@ -600,24 +608,24 @@ impl<'a> Parser<'a> {
                     index: self.ir.value_operands.len() as u32,
                 });
                 self.ir.value_operands.push(0); // Placeholder
-                
+
                 self.expect(',')?;
                 let true_block = self.read_block_name()?;
                 self.expect(',')?;
                 let false_block = self.read_block_name()?;
-                
+
                 self.block_resolves.push(Resolve {
                     name: true_block,
                     index: self.ir.value_operands.len() as u32,
                 });
                 self.ir.value_operands.push(0); // Placeholder
-                
+
                 self.block_resolves.push(Resolve {
                     name: false_block,
                     index: self.ir.value_operands.len() as u32,
                 });
                 self.ir.value_operands.push(0); // Placeholder
-                
+
                 // Add to successors
                 successors.push(true_block);
                 successors.push(false_block);
@@ -631,10 +639,10 @@ impl<'a> Parser<'a> {
                         index: self.ir.value_operands.len() as u32,
                     });
                     self.ir.value_operands.push(0); // Placeholder
-                    
+
                     // Add to successors
                     successors.push(block_name);
-                    
+
                     if !self.try_read(',') {
                         break;
                     }
@@ -654,13 +662,13 @@ impl<'a> Parser<'a> {
                 let (a_name, _) = self.read_value_name()?;
                 self.expect(',')?;
                 let (b_name, _) = self.read_value_name()?;
-                
+
                 self.value_resolves.push(Resolve {
                     name: a_name,
                     index: self.ir.value_operands.len() as u32,
                 });
                 self.ir.value_operands.push(0); // Placeholder
-                
+
                 self.value_resolves.push(Resolve {
                     name: b_name,
                     index: self.ir.value_operands.len() as u32,
@@ -675,28 +683,28 @@ impl<'a> Parser<'a> {
                     index: self.ir.value_operands.len() as u32,
                 });
                 self.ir.value_operands.push(0); // Placeholder
-                
+
                 self.expect(',')?;
                 let zero_block = self.read_block_name()?;
                 self.expect(',')?;
                 let nonzero_block = self.read_block_name()?;
                 self.expect(',')?;
                 let bit = self.read_number()?;
-                
+
                 self.block_resolves.push(Resolve {
                     name: zero_block,
                     index: self.ir.value_operands.len() as u32,
                 });
                 self.ir.value_operands.push(0); // Placeholder
-                
+
                 self.block_resolves.push(Resolve {
                     name: nonzero_block,
                     index: self.ir.value_operands.len() as u32,
                 });
                 self.ir.value_operands.push(0); // Placeholder
-                
+
                 self.ir.value_operands.push(bit);
-                
+
                 // Add to successors
                 successors.push(zero_block);
                 successors.push(nonzero_block);
@@ -704,32 +712,32 @@ impl<'a> Parser<'a> {
             Operation::Call => {
                 // call @func_name or call @func_name, %arg1, %arg2
                 self.skip_whitespace(false);
-                
+
                 let _func_name = if self.current_char() == Some('@') {
                     self.advance(); // Skip '@'
                     self.read_identifier()?
                 } else {
                     return Err("Expected '@' before function name in call".to_string());
                 };
-                
+
                 // TODO: Resolve function reference
                 let call_func_idx = 0;
-                
+
                 // Parse arguments if any
                 let mut arg_count = 0;
                 self.skip_whitespace(false);
-                
+
                 // Check if there are arguments
                 if self.current_char() == Some(',') {
                     self.advance(); // Skip comma
                     self.skip_whitespace(false);
-                    
+
                     // Parse arguments
                     loop {
                         if self.current_char() != Some('%') {
                             break;
                         }
-                        
+
                         let (arg_name, _) = self.read_value_name()?;
                         self.value_resolves.push(Resolve {
                             name: arg_name,
@@ -737,7 +745,7 @@ impl<'a> Parser<'a> {
                         });
                         self.ir.value_operands.push(0); // Placeholder
                         arg_count += 1;
-                        
+
                         self.skip_whitespace(false);
                         if self.current_char() == Some(',') {
                             self.advance();
@@ -747,10 +755,14 @@ impl<'a> Parser<'a> {
                         }
                     }
                 }
-                
+
                 self.ir.values.push(Value {
                     name: name.map(|n| n.to_string()).unwrap_or_default(),
-                    value_type: if info.is_terminator { ValueType::Terminator } else { ValueType::Normal },
+                    value_type: if info.is_terminator {
+                        ValueType::Terminator
+                    } else {
+                        ValueType::Normal
+                    },
                     op,
                     force_fixed_assignment: force_fixed,
                     call_func_idx,
@@ -758,7 +770,7 @@ impl<'a> Parser<'a> {
                     op_begin_idx,
                     op_end_idx: self.ir.value_operands.len() as u32,
                 });
-                
+
                 return Ok(());
             }
             Operation::ZeroFill => {
@@ -780,11 +792,11 @@ impl<'a> Parser<'a> {
                             }
                             self.skip_whitespace(false);
                         }
-                        
+
                         if self.current_char() != Some('%') {
                             break;
                         }
-                        
+
                         first = false;
                         let (val_name, _) = self.read_value_name()?;
                         self.value_resolves.push(Resolve {
@@ -796,12 +808,16 @@ impl<'a> Parser<'a> {
                 }
             }
         }
-        
+
         let op_end_idx = self.ir.value_operands.len() as u32;
-        
+
         self.ir.values.push(Value {
             name: name.map(|n| n.to_string()).unwrap_or_default(),
-            value_type: if info.is_terminator { ValueType::Terminator } else { ValueType::Normal },
+            value_type: if info.is_terminator {
+                ValueType::Terminator
+            } else {
+                ValueType::Normal
+            },
             op,
             force_fixed_assignment: force_fixed,
             call_func_idx: 0,
@@ -813,10 +829,9 @@ impl<'a> Parser<'a> {
             op_begin_idx,
             op_end_idx,
         });
-        
+
         Ok(())
     }
-
 
     fn resolve_function_references(&mut self) -> Result<(), String> {
         // Resolve value references
@@ -827,7 +842,7 @@ impl<'a> Parser<'a> {
                 return Err(format!("Undefined value reference: {}", resolve.name));
             }
         }
-        
+
         // Resolve block references
         for resolve in &self.block_resolves {
             if let Some(&idx) = self.blocks.get(resolve.name) {
@@ -836,7 +851,7 @@ impl<'a> Parser<'a> {
                 return Err(format!("Undefined block reference: {}", resolve.name));
             }
         }
-        
+
         Ok(())
     }
 
@@ -849,7 +864,7 @@ impl<'a> Parser<'a> {
                 return Err(format!("Undefined function reference: {}", resolve.name));
             }
         }
-        
+
         Ok(())
     }
 }
@@ -870,7 +885,7 @@ entry:
   terminate
 }
 "#;
-        
+
         let ir = match TestIR::parse(tir) {
             Ok(ir) => ir,
             Err(e) => {
@@ -878,13 +893,13 @@ entry:
                 panic!("Failed to parse");
             }
         };
-        
+
         assert_eq!(ir.functions.len(), 1);
         assert_eq!(ir.functions[0].name, "func");
-        
+
         assert_eq!(ir.blocks.len(), 1);
         assert_eq!(ir.blocks[0].name, "entry");
-        
+
         assert_eq!(ir.values.len(), 4);
         assert_eq!(ir.values[0].name, "a");
         assert_eq!(ir.values[1].name, "b");
@@ -904,9 +919,9 @@ retBlock:
   terminate
 }
 "#;
-        
+
         let ir = TestIR::parse(tir).unwrap();
-        
+
         assert_eq!(ir.functions.len(), 1);
         assert_eq!(ir.blocks.len(), 3);
         assert_eq!(ir.blocks[0].name, "entry");
@@ -927,12 +942,12 @@ ret2:
   terminate
 }
 "#;
-        
+
         let ir = TestIR::parse(tir).unwrap();
-        
+
         assert_eq!(ir.functions.len(), 1);
         assert_eq!(ir.blocks.len(), 3);
-        
+
         // Check conditional branch instruction
         let condbr = &ir.values[1];
         assert_eq!(condbr.op, Operation::CondBr);
@@ -954,11 +969,15 @@ ret:
   terminate
 }
 "#;
-        
+
         let ir = TestIR::parse(tir).unwrap();
-        
+
         // Find the phi node
-        let phi = ir.values.iter().find(|v| v.value_type == ValueType::Phi).unwrap();
+        let phi = ir
+            .values
+            .iter()
+            .find(|v| v.value_type == ValueType::Phi)
+            .unwrap();
         assert_eq!(phi.name, "phi");
         assert_eq!(phi.op_count, 2); // Two incoming values
     }
@@ -972,12 +991,12 @@ entry:
   terminate
 }
 "#;
-        
+
         let ir = TestIR::parse(tir).unwrap();
-        
+
         let alloca = &ir.values[0];
         assert_eq!(alloca.op, Operation::Alloca);
-        
+
         // Check immediate values
         let size = ir.value_operands[alloca.op_begin_idx as usize];
         let align = ir.value_operands[(alloca.op_begin_idx + 1) as usize];
@@ -996,10 +1015,10 @@ entry:
   terminate
 }
 "#;
-        
+
         let ir = TestIR::parse(tir).unwrap();
         let output = ir.print();
-        
+
         assert!(output.contains("Printing IR"));
         assert!(output.contains("Function func"));
         assert!(output.contains("Block entry"));

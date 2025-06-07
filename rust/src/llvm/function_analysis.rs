@@ -15,40 +15,40 @@
 //! This design avoids copies and heap allocations by using arena allocation
 //! throughout and moving ownership when producing results.
 
-use crate::core::session::CompilationSession;
 use crate::core::error::{CompileError, CompileResult};
+use crate::core::session::CompilationSession;
 use inkwell::basic_block::BasicBlock;
-use inkwell::values::{FunctionValue, InstructionValue, InstructionOpcode};
+use inkwell::values::{FunctionValue, InstructionOpcode, InstructionValue};
 
 /// Analysis results that own arena-allocated data.
 pub struct FunctionAnalysis<'arena> {
     /// Number of blocks analyzed.
     pub num_blocks: usize,
-    
+
     /// Block layout order (reverse post-order).
     pub block_layout: &'arena [usize],
-    
+
     /// PHI node information per block: (count, start_index).
     pub block_phi_info: &'arena [(usize, usize)],
-    
+
     /// All PHI nodes in the function.
     pub phi_nodes: &'arena [PhiNode],
-    
+
     /// Incoming values for PHI nodes.
     pub phi_incoming: &'arena [PhiIncoming],
-    
+
     /// Total PHI count.
     pub phi_count: usize,
-    
+
     /// Total instruction count.
     pub instruction_count: usize,
-    
+
     /// Block successor information.
     pub block_successors: &'arena [BlockSuccessors],
-    
+
     /// Successor indices array.
     pub successor_indices: &'arena [usize],
-    
+
     /// Block predecessor count (for identifying join blocks).
     pub block_predecessor_count: &'arena [usize],
 }
@@ -58,10 +58,10 @@ pub struct FunctionAnalysis<'arena> {
 pub struct BlockSuccessors {
     /// Index of first successor in successors array.
     pub start_idx: usize,
-    
+
     /// Number of successors.
     pub count: usize,
-    
+
     /// Whether this block has conditional control flow.
     pub is_conditional: bool,
 }
@@ -71,13 +71,13 @@ pub struct BlockSuccessors {
 pub struct PhiNode {
     /// Block containing this PHI.
     pub block_idx: usize,
-    
+
     /// Result value index.
     pub result_idx: usize,
-    
+
     /// Start index in incoming_values array.
     pub incoming_start: usize,
-    
+
     /// Number of incoming values.
     pub incoming_count: usize,
 }
@@ -87,7 +87,7 @@ pub struct PhiNode {
 pub struct PhiIncoming {
     /// Value index.
     pub value_idx: usize,
-    
+
     /// Predecessor block index.
     pub pred_block_idx: usize,
 }
@@ -96,7 +96,7 @@ pub struct PhiIncoming {
 pub struct FunctionAnalyzer<'ctx, 'arena> {
     session: &'arena CompilationSession<'arena>,
     blocks: Vec<BasicBlock<'ctx>>,
-    
+
     // Working data - will be moved to results
     block_layout: Vec<usize>,
     block_phi_info: Vec<(usize, usize)>,
@@ -105,7 +105,7 @@ pub struct FunctionAnalyzer<'ctx, 'arena> {
     block_successors: Vec<BlockSuccessors>,
     successor_indices: Vec<usize>,
     block_predecessor_count: Vec<usize>,
-    
+
     // Counters
     phi_count: usize,
     phi_incoming_count: usize,
@@ -117,21 +117,21 @@ impl<'ctx, 'arena> FunctionAnalyzer<'ctx, 'arena> {
     const MAX_BLOCKS: usize = 256;
     const MAX_PHI_NODES: usize = 128;
     const MAX_PHI_INCOMING: usize = 512;
-    
+
     /// Create a new analyzer that borrows the arena.
     pub fn new(
         session: &'arena CompilationSession<'arena>,
-        function: FunctionValue<'ctx>
+        function: FunctionValue<'ctx>,
     ) -> CompileResult<Self> {
         let blocks = function.get_basic_blocks();
         let num_blocks = blocks.len();
-        
+
         if num_blocks > Self::MAX_BLOCKS {
             return Err(CompileError::BlockLayout {
                 reason: format!("Too many blocks: {}", num_blocks),
             });
         }
-        
+
         Ok(Self {
             session,
             blocks,
@@ -139,7 +139,14 @@ impl<'ctx, 'arena> FunctionAnalyzer<'ctx, 'arena> {
             block_phi_info: vec![(0, 0); num_blocks],
             phi_nodes: Vec::with_capacity(Self::MAX_PHI_NODES),
             phi_incoming: Vec::with_capacity(Self::MAX_PHI_INCOMING),
-            block_successors: vec![BlockSuccessors { start_idx: 0, count: 0, is_conditional: false }; num_blocks],
+            block_successors: vec![
+                BlockSuccessors {
+                    start_idx: 0,
+                    count: 0,
+                    is_conditional: false
+                };
+                num_blocks
+            ],
             successor_indices: Vec::with_capacity(num_blocks * 2), // Most blocks have <= 2 successors
             block_predecessor_count: vec![0; num_blocks],
             phi_count: 0,
@@ -148,28 +155,36 @@ impl<'ctx, 'arena> FunctionAnalyzer<'ctx, 'arena> {
             successor_count: 0,
         })
     }
-    
+
     /// Perform analysis and consume self to produce results.
     pub fn analyze(mut self) -> CompileResult<FunctionAnalysis<'arena>> {
         // First pass: analyze instructions, PHI nodes, and successors
         self.analyze_instructions()?;
-        
+
         // Second pass: extract block successors
         self.extract_block_successors()?;
-        
+
         // Third pass: compute block layout
         self.compute_block_layout()?;
-        
+
         // Allocate results in arena
         let num_blocks = self.blocks.len();
         let block_layout = self.session.alloc_slice(&self.block_layout[..num_blocks]);
         let block_phi_info = self.session.alloc_slice(&self.block_phi_info[..num_blocks]);
         let phi_nodes = self.session.alloc_slice(&self.phi_nodes[..self.phi_count]);
-        let phi_incoming = self.session.alloc_slice(&self.phi_incoming[..self.phi_incoming_count]);
-        let block_successors = self.session.alloc_slice(&self.block_successors[..num_blocks]);
-        let successor_indices = self.session.alloc_slice(&self.successor_indices[..self.successor_count]);
-        let block_predecessor_count = self.session.alloc_slice(&self.block_predecessor_count[..num_blocks]);
-        
+        let phi_incoming = self
+            .session
+            .alloc_slice(&self.phi_incoming[..self.phi_incoming_count]);
+        let block_successors = self
+            .session
+            .alloc_slice(&self.block_successors[..num_blocks]);
+        let successor_indices = self
+            .session
+            .alloc_slice(&self.successor_indices[..self.successor_count]);
+        let block_predecessor_count = self
+            .session
+            .alloc_slice(&self.block_predecessor_count[..num_blocks]);
+
         Ok(FunctionAnalysis {
             num_blocks,
             block_layout,
@@ -183,51 +198,51 @@ impl<'ctx, 'arena> FunctionAnalyzer<'ctx, 'arena> {
             block_predecessor_count,
         })
     }
-    
+
     fn analyze_instructions(&mut self) -> CompileResult<()> {
         for block_idx in 0..self.blocks.len() {
             let block = self.blocks[block_idx];
             let phi_start = self.phi_count;
             let mut block_phi_count = 0;
-            
+
             for instruction in block.get_instructions() {
                 self.instruction_count += 1;
-                
+
                 if instruction.get_opcode() == InstructionOpcode::Phi {
                     self.process_phi_node(instruction, block_idx)?;
                     block_phi_count += 1;
                 }
             }
-            
+
             self.block_phi_info[block_idx] = (block_phi_count, phi_start);
         }
-        
+
         Ok(())
     }
-    
+
     fn process_phi_node(
         &mut self,
         phi: InstructionValue<'ctx>,
-        block_idx: usize
+        block_idx: usize,
     ) -> CompileResult<()> {
         if self.phi_count >= Self::MAX_PHI_NODES {
             return Err(CompileError::BlockLayout {
                 reason: "Too many PHI nodes".to_string(),
             });
         }
-        
+
         // Get result index
         use inkwell::values::AsValueRef;
         let result_idx = phi.as_value_ref() as usize % 1024;
-        
+
         let incoming_start = self.phi_incoming_count;
         let mut incoming_count = 0;
-        
+
         // Process incoming values using PhiValue methods
         use inkwell::values::PhiValue;
         if let Ok(phi_value) = PhiValue::try_from(phi) {
             let num_incoming = phi_value.count_incoming();
-            
+
             for i in 0..num_incoming {
                 if let Some((value, block)) = phi_value.get_incoming(i) {
                     if self.phi_incoming_count >= Self::MAX_PHI_INCOMING {
@@ -235,10 +250,10 @@ impl<'ctx, 'arena> FunctionAnalyzer<'ctx, 'arena> {
                             reason: "Too many PHI incoming values".to_string(),
                         });
                     }
-                    
+
                     let value_idx = value.as_value_ref() as usize % 1024;
                     let pred_idx = self.find_block_index(block)?;
-                    
+
                     self.phi_incoming.push(PhiIncoming {
                         value_idx,
                         pred_block_idx: pred_idx,
@@ -253,17 +268,17 @@ impl<'ctx, 'arena> FunctionAnalyzer<'ctx, 'arena> {
             for i in (0..num_operands).step_by(2) {
                 if let (Some(value), Some(block)) = (
                     phi.get_operand(i).and_then(|op| op.left()),
-                    phi.get_operand(i + 1).and_then(|op| op.right())
+                    phi.get_operand(i + 1).and_then(|op| op.right()),
                 ) {
                     if self.phi_incoming_count >= Self::MAX_PHI_INCOMING {
                         return Err(CompileError::BlockLayout {
                             reason: "Too many PHI incoming values".to_string(),
                         });
                     }
-                    
+
                     let value_idx = value.as_value_ref() as usize % 1024;
                     let pred_idx = self.find_block_index(block)?;
-                    
+
                     self.phi_incoming.push(PhiIncoming {
                         value_idx,
                         pred_block_idx: pred_idx,
@@ -273,7 +288,7 @@ impl<'ctx, 'arena> FunctionAnalyzer<'ctx, 'arena> {
                 }
             }
         }
-        
+
         self.phi_nodes.push(PhiNode {
             block_idx,
             result_idx,
@@ -281,34 +296,38 @@ impl<'ctx, 'arena> FunctionAnalyzer<'ctx, 'arena> {
             incoming_count,
         });
         self.phi_count += 1;
-        
+
         Ok(())
     }
-    
+
     fn find_block_index(&self, block: BasicBlock<'ctx>) -> CompileResult<usize> {
-        self.blocks.iter().position(|&b| b == block)
+        self.blocks
+            .iter()
+            .position(|&b| b == block)
             .ok_or_else(|| CompileError::BlockLayout {
                 reason: "PHI references unknown block".to_string(),
             })
     }
-    
+
     fn extract_block_successors(&mut self) -> CompileResult<()> {
         for block_idx in 0..self.blocks.len() {
             let block = self.blocks[block_idx];
-            
+
             // Get terminator instruction
             if let Some(terminator) = block.get_terminator() {
                 let start_idx = self.successor_count;
                 let mut count = 0;
                 let mut is_conditional = false;
-                
+
                 match terminator.get_opcode() {
                     InstructionOpcode::Br => {
                         let num_operands = terminator.get_num_operands();
-                        
+
                         if num_operands == 1 {
                             // Unconditional branch
-                            if let Some(target) = terminator.get_operand(0).and_then(|op| op.right()) {
+                            if let Some(target) =
+                                terminator.get_operand(0).and_then(|op| op.right())
+                            {
                                 let target_idx = self.find_block_index(target)?;
                                 self.successor_indices.push(target_idx);
                                 self.block_predecessor_count[target_idx] += 1;
@@ -317,17 +336,21 @@ impl<'ctx, 'arena> FunctionAnalyzer<'ctx, 'arena> {
                         } else if num_operands == 3 {
                             // Conditional branch
                             is_conditional = true;
-                            
+
                             // True target (operand 2 in LLVM)
-                            if let Some(true_target) = terminator.get_operand(2).and_then(|op| op.right()) {
+                            if let Some(true_target) =
+                                terminator.get_operand(2).and_then(|op| op.right())
+                            {
                                 let target_idx = self.find_block_index(true_target)?;
                                 self.successor_indices.push(target_idx);
                                 self.block_predecessor_count[target_idx] += 1;
                                 count += 1;
                             }
-                            
+
                             // False target (operand 1 in LLVM)
-                            if let Some(false_target) = terminator.get_operand(1).and_then(|op| op.right()) {
+                            if let Some(false_target) =
+                                terminator.get_operand(1).and_then(|op| op.right())
+                            {
                                 let target_idx = self.find_block_index(false_target)?;
                                 self.successor_indices.push(target_idx);
                                 self.block_predecessor_count[target_idx] += 1;
@@ -338,18 +361,22 @@ impl<'ctx, 'arena> FunctionAnalyzer<'ctx, 'arena> {
                     InstructionOpcode::Switch => {
                         // Switch instruction has multiple targets
                         is_conditional = true;
-                        
+
                         // Default target is operand 1
-                        if let Some(default_target) = terminator.get_operand(1).and_then(|op| op.right()) {
+                        if let Some(default_target) =
+                            terminator.get_operand(1).and_then(|op| op.right())
+                        {
                             let target_idx = self.find_block_index(default_target)?;
                             self.successor_indices.push(target_idx);
                             self.block_predecessor_count[target_idx] += 1;
                             count += 1;
                         }
-                        
+
                         // Case targets are at operands 3, 5, 7, ...
                         for i in (3..terminator.get_num_operands()).step_by(2) {
-                            if let Some(case_target) = terminator.get_operand(i).and_then(|op| op.right()) {
+                            if let Some(case_target) =
+                                terminator.get_operand(i).and_then(|op| op.right())
+                            {
                                 let target_idx = self.find_block_index(case_target)?;
                                 self.successor_indices.push(target_idx);
                                 self.block_predecessor_count[target_idx] += 1;
@@ -360,9 +387,11 @@ impl<'ctx, 'arena> FunctionAnalyzer<'ctx, 'arena> {
                     InstructionOpcode::IndirectBr => {
                         // Indirect branch - all operands after the address are potential targets
                         is_conditional = true;
-                        
+
                         for i in 1..terminator.get_num_operands() {
-                            if let Some(target) = terminator.get_operand(i).and_then(|op| op.right()) {
+                            if let Some(target) =
+                                terminator.get_operand(i).and_then(|op| op.right())
+                            {
                                 let target_idx = self.find_block_index(target)?;
                                 self.successor_indices.push(target_idx);
                                 self.block_predecessor_count[target_idx] += 1;
@@ -373,7 +402,7 @@ impl<'ctx, 'arena> FunctionAnalyzer<'ctx, 'arena> {
                     InstructionOpcode::Invoke => {
                         // Invoke has normal and exception destinations
                         is_conditional = true;
-                        
+
                         // Normal destination
                         if let Some(normal) = terminator.get_operand(1).and_then(|op| op.right()) {
                             let target_idx = self.find_block_index(normal)?;
@@ -381,9 +410,10 @@ impl<'ctx, 'arena> FunctionAnalyzer<'ctx, 'arena> {
                             self.block_predecessor_count[target_idx] += 1;
                             count += 1;
                         }
-                        
+
                         // Exception destination
-                        if let Some(exception) = terminator.get_operand(2).and_then(|op| op.right()) {
+                        if let Some(exception) = terminator.get_operand(2).and_then(|op| op.right())
+                        {
                             let target_idx = self.find_block_index(exception)?;
                             self.successor_indices.push(target_idx);
                             self.block_predecessor_count[target_idx] += 1;
@@ -397,11 +427,14 @@ impl<'ctx, 'arena> FunctionAnalyzer<'ctx, 'arena> {
                     _ => {
                         // Unknown terminator
                         return Err(CompileError::BlockLayout {
-                            reason: format!("Unknown terminator opcode: {:?}", terminator.get_opcode()),
+                            reason: format!(
+                                "Unknown terminator opcode: {:?}",
+                                terminator.get_opcode()
+                            ),
                         });
                     }
                 }
-                
+
                 self.block_successors[block_idx] = BlockSuccessors {
                     start_idx,
                     count,
@@ -410,10 +443,10 @@ impl<'ctx, 'arena> FunctionAnalyzer<'ctx, 'arena> {
                 self.successor_count += count;
             }
         }
-        
+
         Ok(())
     }
-    
+
     fn compute_block_layout(&mut self) -> CompileResult<()> {
         // For now, use natural order
         // TODO: Implement reverse post-order
@@ -430,46 +463,44 @@ impl<'arena> FunctionAnalysis<'arena> {
         if block_idx >= self.block_phi_info.len() {
             return &[];
         }
-        
+
         let (count, start) = self.block_phi_info[block_idx];
         if count == 0 || start >= self.phi_nodes.len() {
             return &[];
         }
-        
+
         let end = (start + count).min(self.phi_nodes.len());
         &self.phi_nodes[start..end]
     }
-    
+
     /// Get incoming values for a PHI node.
     pub fn get_phi_incoming(&self, phi: &PhiNode) -> &[PhiIncoming] {
         &self.phi_incoming[phi.incoming_start..phi.incoming_start + phi.incoming_count]
     }
-    
+
     /// Get successor blocks for a specific block.
     pub fn get_block_successors(&self, block_idx: usize) -> &[usize] {
         if block_idx >= self.block_successors.len() {
             return &[];
         }
-        
+
         let info = &self.block_successors[block_idx];
         if info.count == 0 {
             return &[];
         }
-        
+
         let end_idx = (info.start_idx + info.count).min(self.successor_indices.len());
         &self.successor_indices[info.start_idx..end_idx]
     }
-    
+
     /// Check if a block has multiple predecessors (is a join block).
     pub fn is_join_block(&self, block_idx: usize) -> bool {
-        block_idx < self.block_predecessor_count.len() && 
-        self.block_predecessor_count[block_idx] > 1
+        block_idx < self.block_predecessor_count.len()
+            && self.block_predecessor_count[block_idx] > 1
     }
-    
+
     /// Check if a block has conditional control flow.
     pub fn has_conditional_branch(&self, block_idx: usize) -> bool {
-        block_idx < self.block_successors.len() && 
-        self.block_successors[block_idx].is_conditional
+        block_idx < self.block_successors.len() && self.block_successors[block_idx].is_conditional
     }
 }
-

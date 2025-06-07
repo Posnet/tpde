@@ -11,8 +11,8 @@
 
 //! TPDE Rust Implementation - Fast LLVM IR Compilation
 //!
-//! TPDE (Turbo-Powered Direct Execution) provides extremely fast compilation 
-//! of LLVM IR with a focus on low-latency code generation. It compiles 10-20x 
+//! TPDE (Turbo-Powered Direct Execution) provides extremely fast compilation
+//! of LLVM IR with a focus on low-latency code generation. It compiles 10-20x
 //! faster than LLVM -O0 while maintaining reasonable code quality.
 
 // Allow uninlined format args for now - too many instances to fix individually
@@ -26,21 +26,21 @@
 //! and comprehensive x86-64 instruction support.
 //!
 //! # Primary Usage
-//! 
+//!
 //! ```ignore
 //! use tpde::llvm::LlvmCompiler;
 //! use tpde::core::CompilationSession;
 //! use bumpalo::Bump;
 //! use inkwell::context::Context;
-//! 
+//!
 //! // Create LLVM context and module
 //! let context = Context::create();
 //! let module = context.create_module("example");
-//! 
+//!
 //! // Create compilation session with arena allocation
 //! let arena = Bump::new();
 //! let session = CompilationSession::new(&arena);
-//! 
+//!
 //! // Compile LLVM IR module directly
 //! let mut compiler = LlvmCompiler::new(&module, &session);
 //! let func = module.get_function("main").unwrap();
@@ -48,7 +48,7 @@
 //! ```
 //!
 //! # Architecture
-//! 
+//!
 //! The implementation uses a concrete, LLVM-specific design that eliminates
 //! trait bound complexity:
 //!
@@ -91,10 +91,10 @@
 //! - `docs/tpde/` - Framework architecture and design
 
 // Main modules
-pub mod llvm;
 pub mod core;
-pub mod x64;
 pub mod experimental;
+pub mod llvm;
+pub mod x64;
 
 // Utility modules
 pub mod encodegen;
@@ -104,15 +104,28 @@ pub mod test_ir;
 
 // Re-export common types from organized modules
 pub use core::{
+    Analyzer,
+    AsmReg,
     // Framework traits
-    Backend, CompilerBase, IrAdaptor, Analyzer,
-    // Value management
-    ValueAssignment, ValueAssignmentManager, ValLocalIdx,
-    ValueRef, ValuePartRef, ValueRefBuilder, ValueRefError, CompilerContext,
-    // Register allocation
-    RegisterFile, AsmReg, RegBitSet, RegAllocError,
+    Backend,
     // Session management
-    CompilationSession, SessionStats, SessionError,
+    CompilationSession,
+    CompilerBase,
+    CompilerContext,
+    IrAdaptor,
+    RegAllocError,
+    RegBitSet,
+    // Register allocation
+    RegisterFile,
+    SessionError,
+    SessionStats,
+    ValLocalIdx,
+    // Value management
+    ValueAssignment,
+    ValueAssignmentManager,
+    ValuePartRef,
+    ValueRef,
+    ValueRefBuilder,
+    ValueRefError,
 };
-pub use llvm::{LlvmCompiler as LlvmCompilerConcrete, CompiledFunction, LlvmCompilerError};
-
+pub use llvm::{CompiledFunction, LlvmCompiler as LlvmCompilerConcrete, LlvmCompilerError};

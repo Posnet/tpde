@@ -38,14 +38,18 @@ pub enum InstructionCategory {
 /// methods needed for proper instruction selection.
 pub trait LlvmAdaptorInterface: crate::core::IrAdaptor {
     /// Get instruction opcode information for classification.
-    fn get_instruction_category(&self, inst: <Self as crate::core::IrAdaptor>::InstRef) -> InstructionCategory;
-    
+    fn get_instruction_category(
+        &self,
+        inst: <Self as crate::core::IrAdaptor>::InstRef,
+    ) -> InstructionCategory;
+
     /// Get comparison predicate for ICMP instructions.
-    fn get_icmp_predicate(&self, inst: <Self as crate::core::IrAdaptor>::InstRef) -> Option<String>;
-    
+    fn get_icmp_predicate(&self, inst: <Self as crate::core::IrAdaptor>::InstRef)
+        -> Option<String>;
+
     /// Check if the current function makes calls.
     fn makes_calls(&self) -> bool;
-    
+
     /// Check if the current function has allocas.
     fn has_allocas(&self) -> bool;
 }

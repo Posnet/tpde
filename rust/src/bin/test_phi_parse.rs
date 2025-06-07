@@ -18,7 +18,7 @@ ret:
   terminate
 }
 "#;
-    
+
     match TestIR::parse(tir) {
         Ok(ir) => {
             println!("Parse successful!");

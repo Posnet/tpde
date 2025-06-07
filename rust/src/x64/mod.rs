@@ -16,32 +16,18 @@
 //! - System V calling convention implementation
 //! - x86-64 backend for code generation
 
-pub mod encoder;
 pub mod backend;
 pub mod calling_convention;
+pub mod encoder;
 pub mod function_codegen;
 
 // Re-export x64 components
-pub use encoder::{
-    X64Encoder as Encoder,
-    EncodingError,
-    JumpCondition,
-    InstructionSelector,
-};
+pub use encoder::{EncodingError, InstructionSelector, JumpCondition, X64Encoder as Encoder};
 
-pub use backend::{
-    X64Backend as Backend,
-};
+pub use backend::X64Backend as Backend;
 
 pub use calling_convention::{
-    SysVAssigner as CallingConvention,
-    CCAssigner,
-    CCAssignment,
-    RegBank,
-    FunctionFrame,
+    CCAssigner, CCAssignment, FunctionFrame, RegBank, SysVAssigner as CallingConvention,
 };
 
-pub use function_codegen::{
-    FunctionCodegen,
-    FunctionCodegenError,
-};
+pub use function_codegen::{FunctionCodegen, FunctionCodegenError};

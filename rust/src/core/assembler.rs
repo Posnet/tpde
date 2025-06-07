@@ -46,9 +46,11 @@ pub trait Assembler<A: IrAdaptor> {
         F: FnMut(&str) -> *const u8;
 }
 
-use object::write::{Object, SectionId, StandardSection, SymbolId, Symbol, SymbolSection, SymbolScope, SymbolKind};
+use object::write::{
+    Object, SectionId, StandardSection, Symbol, SymbolId, SymbolKind, SymbolScope, SymbolSection,
+};
+use object::{Architecture, BinaryFormat, Endianness};
 use std::collections::HashMap;
-use object::{BinaryFormat, Architecture, Endianness};
 
 /// Label identifier used by [`ElfAssembler`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -72,7 +74,9 @@ pub struct ElfAssembler {
 impl ElfAssembler {
     /// Create a new section returning its identifier.
     pub fn add_section(&mut self, name: &str, kind: object::SectionKind) -> SectionId {
-        let id = self.obj.add_section(Vec::new(), name.as_bytes().to_vec(), kind);
+        let id = self
+            .obj
+            .add_section(Vec::new(), name.as_bytes().to_vec(), kind);
         self.offsets.insert(id, 0);
         id
     }
@@ -146,7 +150,10 @@ impl<A: IrAdaptor> Assembler<A> for ElfAssembler {
 
     fn label_create(&mut self) -> Self::Label {
         let id = self.labels.len();
-        self.labels.push(LabelInfo { section: self.current, offset: None });
+        self.labels.push(LabelInfo {
+            section: self.current,
+            offset: None,
+        });
         ElfLabel(id)
     }
 
@@ -159,7 +166,11 @@ impl<A: IrAdaptor> Assembler<A> for ElfAssembler {
     }
 
     fn sym_predef_func(&mut self, name: &str, local: bool, weak: bool) -> Self::SymRef {
-        let scope = if local { SymbolScope::Compilation } else { SymbolScope::Linkage };
+        let scope = if local {
+            SymbolScope::Compilation
+        } else {
+            SymbolScope::Linkage
+        };
         self.obj.add_symbol(Symbol {
             name: name.as_bytes().to_vec(),
             value: 0,
@@ -173,7 +184,11 @@ impl<A: IrAdaptor> Assembler<A> for ElfAssembler {
     }
 
     fn sym_add_undef(&mut self, name: &str, local: bool, weak: bool) {
-        let scope = if local { SymbolScope::Compilation } else { SymbolScope::Linkage };
+        let scope = if local {
+            SymbolScope::Compilation
+        } else {
+            SymbolScope::Linkage
+        };
         self.obj.add_symbol(Symbol {
             name: name.as_bytes().to_vec(),
             value: 0,
@@ -188,7 +203,9 @@ impl<A: IrAdaptor> Assembler<A> for ElfAssembler {
 
     fn finalize(&mut self) {}
 
-    fn build_object_file(&mut self) -> Vec<u8> { self.obj.write().expect("emit object") }
+    fn build_object_file(&mut self) -> Vec<u8> {
+        self.obj.write().expect("emit object")
+    }
 
     fn map<F>(&mut self, _resolve: F) -> bool
     where
@@ -197,4 +214,3 @@ impl<A: IrAdaptor> Assembler<A> for ElfAssembler {
         true
     }
 }
-

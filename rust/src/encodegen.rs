@@ -11,15 +11,11 @@
 //! Encoding snippet generator module.
 //!
 //! This module contains the functionality that was previously in the
-//! tpde-encodegen crate. It transforms short high level functions 
-//! (typically written in C and compiled to LLVM IR) into Rust routines 
+//! tpde-encodegen crate. It transforms short high level functions
+//! (typically written in C and compiled to LLVM IR) into Rust routines
 //! that emit the matching machine instructions.
 
-use inkwell::{
-    context::Context,
-    memory_buffer::MemoryBuffer,
-    module::Module,
-};
+use inkwell::{context::Context, memory_buffer::MemoryBuffer, module::Module};
 
 /// Parse a text LLVM IR module into an [`inkwell::Module`].
 pub fn parse_module<'ctx>(context: &'ctx Context, ir: &str) -> Result<Module<'ctx>, String> {
@@ -40,7 +36,10 @@ pub fn generate_tokens(module: &Module) -> Vec<String> {
             let name = f.get_name().to_str().ok()?;
             if let Some(rest) = name.strip_prefix("pattern_") {
                 let body = analyze_function(&f);
-                Some(format!("pub fn {}(asm: &mut dyn Assembler) {{\n{}\n}}", rest, body))
+                Some(format!(
+                    "pub fn {}(asm: &mut dyn Assembler) {{\n{}\n}}",
+                    rest, body
+                ))
             } else {
                 None
             }
@@ -51,7 +50,7 @@ pub fn generate_tokens(module: &Module) -> Vec<String> {
 /// Analyze a function and generate appropriate encoding code.
 fn analyze_function(func: &inkwell::values::FunctionValue) -> String {
     let mut lines = vec!["    // Generated from LLVM IR pattern".to_string()];
-    
+
     for bb in func.get_basic_blocks() {
         for inst in bb.get_instructions() {
             let analysis = analyze_instruction(&inst);
@@ -60,21 +59,21 @@ fn analyze_function(func: &inkwell::values::FunctionValue) -> String {
             }
         }
     }
-    
+
     if lines.len() == 1 {
         lines.push("    // Empty pattern - no instructions to encode".to_string());
     }
-    
+
     lines.join("\n")
 }
 
 /// Analyze a single instruction and generate encoding suggestions.
 fn analyze_instruction(inst: &inkwell::values::InstructionValue) -> String {
     use inkwell::values::InstructionOpcode;
-    
+
     match inst.get_opcode() {
         InstructionOpcode::Add => "// Add instruction - could emit x86 ADD",
-        InstructionOpcode::Sub => "// Sub instruction - could emit x86 SUB", 
+        InstructionOpcode::Sub => "// Sub instruction - could emit x86 SUB",
         InstructionOpcode::Mul => "// Mul instruction - could emit x86 IMUL",
         InstructionOpcode::Return => "// Return instruction - emit x86 RET",
         InstructionOpcode::Store => "// Store instruction - emit x86 MOV to memory",
@@ -82,14 +81,12 @@ fn analyze_instruction(inst: &inkwell::values::InstructionValue) -> String {
         InstructionOpcode::Call => "// Call instruction - emit x86 CALL",
         InstructionOpcode::Br => "// Branch instruction - emit x86 JMP",
         _ => "// Unhandled instruction type",
-    }.to_string()
+    }
+    .to_string()
 }
 
 /// Convenience helper parsing IR text and returning token strings.
-pub fn parse_and_generate(
-    context: &Context,
-    ir: &str,
-) -> Result<Vec<String>, String> {
+pub fn parse_and_generate(context: &Context, ir: &str) -> Result<Vec<String>, String> {
     let module = parse_module(context, ir)?;
     Ok(generate_tokens(&module))
 }
@@ -103,7 +100,10 @@ pub fn generate(module: &Module) -> String {
     if tokens.is_empty() {
         "// No pattern functions found\n".to_string()
     } else {
-        format!("// Generated instruction encoders\n\n{}\n", tokens.join("\n\n"))
+        format!(
+            "// Generated instruction encoders\n\n{}\n",
+            tokens.join("\n\n")
+        )
     }
 }
 
@@ -127,7 +127,7 @@ mod tests {
         let i32_type = context.i32_type();
         let fn_type = i32_type.fn_type(&[], false);
         let _function = module.add_function("pattern_add_i32", fn_type, None);
-        
+
         let tokens = generate_tokens(&module);
         assert_eq!(tokens.len(), 1);
         assert!(tokens[0].contains("add_i32"));
@@ -142,11 +142,11 @@ mod tests {
                 ret i32 %1
             }
         "#;
-        
+
         let context = Context::create();
         let result = parse_and_generate(&context, ir);
         assert!(result.is_ok());
-        
+
         let tokens = result.unwrap();
         assert_eq!(tokens.len(), 1);
         assert!(tokens[0].contains("simple_add"));

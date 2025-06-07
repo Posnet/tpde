@@ -4,9 +4,9 @@
 //! and validate output against expected patterns, similar to LLVM's FileCheck tool
 //! but implemented in a Rust-native way.
 
-use std::collections::VecDeque;
-use crate::core::{Analyzer, IrAdaptor};
 use super::{TestIR, TestIRAdaptor};
+use crate::core::{Analyzer, IrAdaptor};
+use std::collections::VecDeque;
 
 /// A CHECK directive extracted from a TIR file
 #[derive(Debug, Clone)]
@@ -47,7 +47,7 @@ impl TestSpec {
 
         for line in content.lines() {
             let trimmed = line.trim();
-            
+
             if trimmed.starts_with("; RUN:") {
                 // Parse RUN directive
                 let run_cmd = trimmed.strip_prefix("; RUN:").unwrap().trim();
@@ -145,7 +145,7 @@ impl TestRunner {
 
             for func in adaptor.funcs() {
                 let func_name = adaptor.func_link_name(func).to_string(); // Clone the name
-                
+
                 analyzer.switch_func(&mut adaptor, func);
 
                 if print_rpo {
@@ -159,22 +159,29 @@ impl TestRunner {
 
                 if print_liveness {
                     output.push(format!("Liveness for {}", func_name));
-                    
+
                     // Get block names for index mapping
                     let blocks: Vec<_> = analyzer.order().to_vec();
-                    let block_names: Vec<String> = blocks.iter()
+                    let block_names: Vec<String> = blocks
+                        .iter()
                         .map(|&b| adaptor.block_name(b).to_string())
                         .collect();
-                    
+
                     // Print liveness info for each value
                     let mut value_idx = 0;
-                    
+
                     // First, function arguments
                     for _arg in adaptor.cur_args() {
                         if let Some(liveness) = analyzer.liveness(value_idx) {
-                            let first_block = block_names.get(liveness.first).map(|s| s.as_str()).unwrap_or("?");
-                            let last_block = block_names.get(liveness.last).map(|s| s.as_str()).unwrap_or("?");
-                            
+                            let first_block = block_names
+                                .get(liveness.first)
+                                .map(|s| s.as_str())
+                                .unwrap_or("?");
+                            let last_block = block_names
+                                .get(liveness.last)
+                                .map(|s| s.as_str())
+                                .unwrap_or("?");
+
                             output.push(format!(
                                 "{}: {} refs, {}->{} ({}->{}) , lf: {}",
                                 value_idx,
@@ -190,15 +197,21 @@ impl TestRunner {
                         }
                         value_idx += 1;
                     }
-                    
+
                     // Then, values in blocks
                     for block in &blocks {
                         // PHIs
                         for _phi in adaptor.block_phis(*block) {
                             if let Some(liveness) = analyzer.liveness(value_idx) {
-                                let first_block = block_names.get(liveness.first).map(|s| s.as_str()).unwrap_or("?");
-                                let last_block = block_names.get(liveness.last).map(|s| s.as_str()).unwrap_or("?");
-                                
+                                let first_block = block_names
+                                    .get(liveness.first)
+                                    .map(|s| s.as_str())
+                                    .unwrap_or("?");
+                                let last_block = block_names
+                                    .get(liveness.last)
+                                    .map(|s| s.as_str())
+                                    .unwrap_or("?");
+
                                 output.push(format!(
                                     "{}: {} refs, {}->{}({}->{}) , lf: {}",
                                     value_idx,
@@ -214,13 +227,19 @@ impl TestRunner {
                             }
                             value_idx += 1;
                         }
-                        
+
                         // Instructions
                         for _inst in adaptor.block_insts(*block) {
                             if let Some(liveness) = analyzer.liveness(value_idx) {
-                                let first_block = block_names.get(liveness.first).map(|s| s.as_str()).unwrap_or("?");
-                                let last_block = block_names.get(liveness.last).map(|s| s.as_str()).unwrap_or("?");
-                                
+                                let first_block = block_names
+                                    .get(liveness.first)
+                                    .map(|s| s.as_str())
+                                    .unwrap_or("?");
+                                let last_block = block_names
+                                    .get(liveness.last)
+                                    .map(|s| s.as_str())
+                                    .unwrap_or("?");
+
                                 output.push(format!(
                                     "{}: {} refs, {}->{}({}->{}) , lf: {}",
                                     value_idx,
@@ -237,7 +256,7 @@ impl TestRunner {
                             value_idx += 1;
                         }
                     }
-                    
+
                     output.push("End Liveness".to_string());
                 }
             }
@@ -247,19 +266,24 @@ impl TestRunner {
     }
 
     /// Validate output against CHECK directives
-    pub fn validate_output(&self, output: &str, directives: &[CheckDirective]) -> Result<(), String> {
+    pub fn validate_output(
+        &self,
+        output: &str,
+        directives: &[CheckDirective],
+    ) -> Result<(), String> {
         let output_lines: VecDeque<_> = output.lines().collect();
         let mut line_idx = 0;
-        
+
         for directive in directives {
             match directive {
                 CheckDirective::Comment(_) => continue,
-                
+
                 CheckDirective::Check(pattern) => {
-                    let found = output_lines.iter()
+                    let found = output_lines
+                        .iter()
                         .skip(line_idx)
                         .position(|line| line.contains(pattern));
-                    
+
                     match found {
                         Some(idx) => {
                             line_idx += idx + 1; // Move to the next line after the match
@@ -268,21 +292,29 @@ impl TestRunner {
                             }
                         }
                         None => {
-                            return Err(format!("CHECK: pattern '{}' not found in output", pattern));
+                            return Err(format!(
+                                "CHECK: pattern '{}' not found in output",
+                                pattern
+                            ));
                         }
                     }
                 }
-                
+
                 CheckDirective::CheckLabel(pattern) => {
-                    let found = output_lines.iter()
+                    let found = output_lines
+                        .iter()
                         .skip(line_idx)
                         .position(|line| line.contains(pattern));
-                    
+
                     match found {
                         Some(idx) => {
                             line_idx += idx + 1;
                             if self.verbose {
-                                println!("CHECK-LABEL: '{}' found at line {}", pattern, line_idx - 1);
+                                println!(
+                                    "CHECK-LABEL: '{}' found at line {}",
+                                    pattern,
+                                    line_idx - 1
+                                );
                             }
                         }
                         None => {
@@ -290,12 +322,12 @@ impl TestRunner {
                         }
                     }
                 }
-                
+
                 CheckDirective::CheckNext(pattern) => {
                     if line_idx >= output_lines.len() {
                         return Err(format!("CHECK-NEXT: no more lines, expected '{}'", pattern));
                     }
-                    
+
                     let line = output_lines[line_idx];
                     if !line.contains(pattern) {
                         return Err(format!(
@@ -303,18 +335,18 @@ impl TestRunner {
                             pattern, line
                         ));
                     }
-                    
+
                     if self.verbose {
                         println!("CHECK-NEXT: '{}' matches at line {}", pattern, line_idx);
                     }
                     line_idx += 1;
                 }
-                
+
                 CheckDirective::CheckEmpty => {
                     if line_idx >= output_lines.len() {
                         continue; // End of output counts as empty
                     }
-                    
+
                     let line = output_lines[line_idx];
                     if !line.trim().is_empty() {
                         return Err(format!(
@@ -322,7 +354,7 @@ impl TestRunner {
                             line
                         ));
                     }
-                    
+
                     if self.verbose {
                         println!("CHECK-EMPTY: matches at line {}", line_idx);
                     }
@@ -361,7 +393,7 @@ test() {
     fn test_check_matching() {
         let runner = TestRunner::new(false);
         let output = "Printing IR\nFunction test\nBlock entry\n";
-        
+
         let directives = vec![
             CheckDirective::Check("Printing IR".to_string()),
             CheckDirective::CheckLabel("Function test".to_string()),
@@ -375,7 +407,7 @@ test() {
     fn test_check_next_failure() {
         let runner = TestRunner::new(false);
         let output = "Line 1\nLine 2\nLine 3\n";
-        
+
         let directives = vec![
             CheckDirective::Check("Line 1".to_string()),
             CheckDirective::CheckNext("Line 3".to_string()), // Should fail
