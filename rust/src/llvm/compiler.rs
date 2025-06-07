@@ -20,7 +20,7 @@ use crate::{
     core::{
         register_file::{AsmReg, RegBitSet, RegisterFile},
         session::CompilationSession,
-        value_assignment::ValueAssignmentManager,
+        value_assignment::{ValLocalIdx, ValueAssignmentManager},
     },
     core::{CompilerContext, ValuePartRef},
     x64::function_codegen::FunctionCodegen,
@@ -563,6 +563,10 @@ where
             InstructionOpcode::ZExt => self.compile_zext_instruction(instruction),
             InstructionOpcode::Trunc => self.compile_trunc_instruction(instruction),
             InstructionOpcode::Switch => self.compile_switch_instruction(instruction),
+            InstructionOpcode::UDiv => self.compile_udiv_instruction(instruction),
+            InstructionOpcode::SDiv => self.compile_sdiv_instruction(instruction),
+            InstructionOpcode::URem => self.compile_urem_instruction(instruction),
+            InstructionOpcode::SRem => self.compile_srem_instruction(instruction),
 
             _ => {
                 log::warn!(
@@ -1055,6 +1059,651 @@ where
                 result_reg.bank,
                 result_reg.id
             );
+        }
+
+        Ok(())
+    }
+
+    /// Compile unsigned division instruction (UDiv).
+    fn compile_udiv_instruction(
+        &mut self,
+        instruction: inkwell::values::InstructionValue<'ctx>,
+    ) -> Result<(), LlvmCompilerError> {
+        log::trace!("🔧 Compiling UDIV instruction");
+
+        let context = self.setup_binary_operation(instruction)?;
+        let encoder = self.codegen.encoder_mut();
+
+        // Special registers for division
+        let rax = AsmReg::new(0, 0); // RAX
+        let rdx = AsmReg::new(0, 2); // RDX
+
+        // Check if RDX needs to be saved before creating the context
+        let rdx_in_use = self.register_file.is_allocated(rdx);
+        let saved_rdx = if rdx_in_use {
+            // Use invalid index for scratch register (following C++ pattern)
+            const INVALID_IDX: ValLocalIdx = usize::MAX;
+            let scratch_reg = self
+                .register_file
+                .allocate_reg(0, INVALID_IDX, 0, None)
+                .map_err(|e| {
+                    LlvmCompilerError::RegisterAllocation(format!(
+                        "Failed to allocate scratch for RDX: {:?}",
+                        e
+                    ))
+                })?;
+
+            // Lock scratch register and save RDX
+            self.register_file.lock_register(scratch_reg).map_err(|e| {
+                LlvmCompilerError::RegisterAllocation(format!("Failed to lock scratch: {:?}", e))
+            })?;
+
+            encoder.mov_reg_reg(scratch_reg, rdx).map_err(|e| {
+                LlvmCompilerError::CodeGeneration(format!("Failed to save RDX: {:?}", e))
+            })?;
+            log::trace!("   Saved RDX to scratch register {:?}", scratch_reg);
+
+            Some(scratch_reg)
+        } else {
+            None
+        };
+
+        // Create compiler context
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+
+        // Load operands
+        let mut dividend_ref = ValuePartRef::new(context.left_idx, 0).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to create dividend ref: {:?}", e))
+        })?;
+        let mut divisor_ref = ValuePartRef::new(context.right_idx, 0).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to create divisor ref: {:?}", e))
+        })?;
+
+        let dividend_reg = dividend_ref.load_to_reg(&mut ctx).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to load dividend: {:?}", e))
+        })?;
+        let divisor_reg = divisor_ref.load_to_reg(&mut ctx).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to load divisor: {:?}", e))
+        })?;
+
+        // Move dividend to RAX if not already there
+        if dividend_reg != rax {
+            match context.bit_width {
+                32 => encoder.mov32_reg_reg(rax, dividend_reg),
+                64 => encoder.mov_reg_reg(rax, dividend_reg),
+                _ => {
+                    return Err(LlvmCompilerError::UnsupportedInstruction(format!(
+                        "UDIV with {}-bit width not supported",
+                        context.bit_width
+                    )))
+                }
+            }
+            .map_err(|e| {
+                LlvmCompilerError::CodeGeneration(format!("Failed to mov to rax: {:?}", e))
+            })?;
+        }
+
+        // Clear RDX for unsigned division
+        encoder.xor_reg_reg(rdx, rdx).map_err(|e| {
+            LlvmCompilerError::CodeGeneration(format!("Failed to clear RDX: {:?}", e))
+        })?;
+        log::trace!("   Generated: xor rdx, rdx");
+
+        // Perform division
+        match context.bit_width {
+            32 => {
+                encoder.div32_reg(divisor_reg).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to emit div32: {:?}", e))
+                })?;
+                log::trace!(
+                    "   Generated: div32 {}:{}",
+                    divisor_reg.bank,
+                    divisor_reg.id
+                );
+            }
+            64 => {
+                encoder.div_reg(divisor_reg).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to emit div64: {:?}", e))
+                })?;
+                log::trace!("   Generated: div {}:{}", divisor_reg.bank, divisor_reg.id);
+            }
+            _ => unreachable!(),
+        }
+
+        // Let context go out of scope to release the borrow on register_file
+
+        // Allocate result register - try to use RAX directly if possible
+        if let Ok(()) = self
+            .register_file
+            .allocate_specific_reg(rax, context.result_idx, 0)
+        {
+            // Great, result is already in RAX
+            log::trace!("   Result allocated directly to RAX");
+        } else {
+            // Need to move from RAX to another register
+            let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+            let mut result_ref = ValuePartRef::new(context.result_idx, 0).map_err(|e| {
+                LlvmCompilerError::RegisterAllocation(format!(
+                    "Failed to create result ref: {:?}",
+                    e
+                ))
+            })?;
+
+            let result_reg = result_ref.load_to_reg(&mut ctx).map_err(|e| {
+                LlvmCompilerError::RegisterAllocation(format!("Failed to allocate result: {:?}", e))
+            })?;
+
+            if result_reg != rax {
+                match context.bit_width {
+                    32 => encoder.mov32_reg_reg(result_reg, rax),
+                    64 => encoder.mov_reg_reg(result_reg, rax),
+                    _ => unreachable!(),
+                }
+                .map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to mov from rax: {:?}", e))
+                })?;
+                log::trace!("   Generated: mov result from RAX to {:?}", result_reg);
+            }
+        }
+
+        // Restore RDX if it was saved
+        if let Some(scratch_reg) = saved_rdx {
+            encoder.mov_reg_reg(rdx, scratch_reg).map_err(|e| {
+                LlvmCompilerError::CodeGeneration(format!("Failed to restore RDX: {:?}", e))
+            })?;
+            log::trace!("   Restored RDX from scratch register");
+
+            // Unlock and free scratch register
+            self.register_file.unlock_register(scratch_reg).ok();
+            self.register_file.free_register(scratch_reg).ok();
+        }
+
+        Ok(())
+    }
+
+    /// Compile signed division instruction (SDiv).
+    fn compile_sdiv_instruction(
+        &mut self,
+        instruction: inkwell::values::InstructionValue<'ctx>,
+    ) -> Result<(), LlvmCompilerError> {
+        log::trace!("🔧 Compiling SDIV instruction");
+
+        let context = self.setup_binary_operation(instruction)?;
+        let encoder = self.codegen.encoder_mut();
+
+        // Special registers for division
+        let rax = AsmReg::new(0, 0); // RAX
+        let rdx = AsmReg::new(0, 2); // RDX
+
+        // Check if RDX needs to be saved before creating the context
+        let rdx_in_use = self.register_file.is_allocated(rdx);
+        let saved_rdx = if rdx_in_use {
+            // Use invalid index for scratch register
+            const INVALID_IDX: ValLocalIdx = usize::MAX;
+            let scratch_reg = self
+                .register_file
+                .allocate_reg(0, INVALID_IDX, 0, None)
+                .map_err(|e| {
+                    LlvmCompilerError::RegisterAllocation(format!(
+                        "Failed to allocate scratch for RDX: {:?}",
+                        e
+                    ))
+                })?;
+
+            self.register_file.lock_register(scratch_reg).map_err(|e| {
+                LlvmCompilerError::RegisterAllocation(format!("Failed to lock scratch: {:?}", e))
+            })?;
+
+            encoder.mov_reg_reg(scratch_reg, rdx).map_err(|e| {
+                LlvmCompilerError::CodeGeneration(format!("Failed to save RDX: {:?}", e))
+            })?;
+
+            Some(scratch_reg)
+        } else {
+            None
+        };
+
+        // Create compiler context
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+
+        // Load operands
+        let mut dividend_ref = ValuePartRef::new(context.left_idx, 0).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to create dividend ref: {:?}", e))
+        })?;
+        let mut divisor_ref = ValuePartRef::new(context.right_idx, 0).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to create divisor ref: {:?}", e))
+        })?;
+
+        let dividend_reg = dividend_ref.load_to_reg(&mut ctx).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to load dividend: {:?}", e))
+        })?;
+        let divisor_reg = divisor_ref.load_to_reg(&mut ctx).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to load divisor: {:?}", e))
+        })?;
+
+        // Move dividend to RAX if not already there
+        if dividend_reg != rax {
+            match context.bit_width {
+                32 => encoder.mov32_reg_reg(rax, dividend_reg),
+                64 => encoder.mov_reg_reg(rax, dividend_reg),
+                _ => {
+                    return Err(LlvmCompilerError::UnsupportedInstruction(format!(
+                        "SDIV with {}-bit width not supported",
+                        context.bit_width
+                    )))
+                }
+            }
+            .map_err(|e| {
+                LlvmCompilerError::CodeGeneration(format!("Failed to mov to rax: {:?}", e))
+            })?;
+        }
+
+        // Sign extend RAX to RDX:RAX
+        match context.bit_width {
+            32 => {
+                encoder.cdq().map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to emit CDQ: {:?}", e))
+                })?;
+                log::trace!("   Generated: cdq");
+            }
+            64 => {
+                encoder.cqo().map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to emit CQO: {:?}", e))
+                })?;
+                log::trace!("   Generated: cqo");
+            }
+            _ => unreachable!(),
+        }
+
+        // Perform signed division
+        match context.bit_width {
+            32 => {
+                encoder.idiv32_reg(divisor_reg).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to emit idiv32: {:?}", e))
+                })?;
+                log::trace!(
+                    "   Generated: idiv32 {}:{}",
+                    divisor_reg.bank,
+                    divisor_reg.id
+                );
+            }
+            64 => {
+                encoder.idiv_reg(divisor_reg).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to emit idiv64: {:?}", e))
+                })?;
+                log::trace!("   Generated: idiv {}:{}", divisor_reg.bank, divisor_reg.id);
+            }
+            _ => unreachable!(),
+        }
+
+        // Let context go out of scope to release the borrow on register_file
+
+        // Allocate result register - try to use RAX directly if possible
+        if let Ok(()) = self
+            .register_file
+            .allocate_specific_reg(rax, context.result_idx, 0)
+        {
+            log::trace!("   Result allocated directly to RAX");
+        } else {
+            let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+            let mut result_ref = ValuePartRef::new(context.result_idx, 0).map_err(|e| {
+                LlvmCompilerError::RegisterAllocation(format!(
+                    "Failed to create result ref: {:?}",
+                    e
+                ))
+            })?;
+
+            let result_reg = result_ref.load_to_reg(&mut ctx).map_err(|e| {
+                LlvmCompilerError::RegisterAllocation(format!("Failed to allocate result: {:?}", e))
+            })?;
+
+            if result_reg != rax {
+                match context.bit_width {
+                    32 => encoder.mov32_reg_reg(result_reg, rax),
+                    64 => encoder.mov_reg_reg(result_reg, rax),
+                    _ => unreachable!(),
+                }
+                .map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to mov from rax: {:?}", e))
+                })?;
+            }
+        }
+
+        // Restore RDX if it was saved
+        if let Some(scratch_reg) = saved_rdx {
+            encoder.mov_reg_reg(rdx, scratch_reg).map_err(|e| {
+                LlvmCompilerError::CodeGeneration(format!("Failed to restore RDX: {:?}", e))
+            })?;
+
+            self.register_file.unlock_register(scratch_reg).ok();
+            self.register_file.free_register(scratch_reg).ok();
+        }
+
+        Ok(())
+    }
+
+    /// Compile unsigned remainder instruction (URem).
+    fn compile_urem_instruction(
+        &mut self,
+        instruction: inkwell::values::InstructionValue<'ctx>,
+    ) -> Result<(), LlvmCompilerError> {
+        log::trace!("🔧 Compiling UREM instruction");
+
+        let context = self.setup_binary_operation(instruction)?;
+        let encoder = self.codegen.encoder_mut();
+
+        // Special registers for division
+        let rax = AsmReg::new(0, 0); // RAX
+        let rdx = AsmReg::new(0, 2); // RDX - remainder goes here
+
+        // Check if RDX needs to be saved before creating the context
+        let rdx_in_use = self.register_file.is_allocated(rdx);
+        let saved_rdx = if rdx_in_use {
+            const INVALID_IDX: ValLocalIdx = usize::MAX;
+            let scratch_reg = self
+                .register_file
+                .allocate_reg(0, INVALID_IDX, 0, None)
+                .map_err(|e| {
+                    LlvmCompilerError::RegisterAllocation(format!(
+                        "Failed to allocate scratch for RDX: {:?}",
+                        e
+                    ))
+                })?;
+
+            self.register_file.lock_register(scratch_reg).map_err(|e| {
+                LlvmCompilerError::RegisterAllocation(format!("Failed to lock scratch: {:?}", e))
+            })?;
+
+            encoder.mov_reg_reg(scratch_reg, rdx).map_err(|e| {
+                LlvmCompilerError::CodeGeneration(format!("Failed to save RDX: {:?}", e))
+            })?;
+
+            Some(scratch_reg)
+        } else {
+            None
+        };
+
+        // Create compiler context
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+
+        // Load operands
+        let mut dividend_ref = ValuePartRef::new(context.left_idx, 0).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to create dividend ref: {:?}", e))
+        })?;
+        let mut divisor_ref = ValuePartRef::new(context.right_idx, 0).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to create divisor ref: {:?}", e))
+        })?;
+
+        let dividend_reg = dividend_ref.load_to_reg(&mut ctx).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to load dividend: {:?}", e))
+        })?;
+        let divisor_reg = divisor_ref.load_to_reg(&mut ctx).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to load divisor: {:?}", e))
+        })?;
+
+        // Move dividend to RAX if not already there
+        if dividend_reg != rax {
+            match context.bit_width {
+                32 => encoder.mov32_reg_reg(rax, dividend_reg),
+                64 => encoder.mov_reg_reg(rax, dividend_reg),
+                _ => {
+                    return Err(LlvmCompilerError::UnsupportedInstruction(format!(
+                        "UREM with {}-bit width not supported",
+                        context.bit_width
+                    )))
+                }
+            }
+            .map_err(|e| {
+                LlvmCompilerError::CodeGeneration(format!("Failed to mov to rax: {:?}", e))
+            })?;
+        }
+
+        // Clear RDX for unsigned division
+        encoder.xor_reg_reg(rdx, rdx).map_err(|e| {
+            LlvmCompilerError::CodeGeneration(format!("Failed to clear RDX: {:?}", e))
+        })?;
+        log::trace!("   Generated: xor rdx, rdx");
+
+        // Perform division (quotient in RAX, remainder in RDX)
+        match context.bit_width {
+            32 => {
+                encoder.div32_reg(divisor_reg).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to emit div32: {:?}", e))
+                })?;
+                log::trace!(
+                    "   Generated: div32 {}:{}",
+                    divisor_reg.bank,
+                    divisor_reg.id
+                );
+            }
+            64 => {
+                encoder.div_reg(divisor_reg).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to emit div64: {:?}", e))
+                })?;
+                log::trace!("   Generated: div {}:{}", divisor_reg.bank, divisor_reg.id);
+            }
+            _ => unreachable!(),
+        }
+
+        // Let context go out of scope to release the borrow on register_file
+
+        // Result (remainder) is in RDX - try to allocate RDX directly
+        if let Ok(()) = self
+            .register_file
+            .allocate_specific_reg(rdx, context.result_idx, 0)
+        {
+            log::trace!("   Result allocated directly to RDX");
+        } else {
+            let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+            let mut result_ref = ValuePartRef::new(context.result_idx, 0).map_err(|e| {
+                LlvmCompilerError::RegisterAllocation(format!(
+                    "Failed to create result ref: {:?}",
+                    e
+                ))
+            })?;
+
+            let result_reg = result_ref.load_to_reg(&mut ctx).map_err(|e| {
+                LlvmCompilerError::RegisterAllocation(format!("Failed to allocate result: {:?}", e))
+            })?;
+
+            if result_reg != rdx {
+                match context.bit_width {
+                    32 => encoder.mov32_reg_reg(result_reg, rdx),
+                    64 => encoder.mov_reg_reg(result_reg, rdx),
+                    _ => unreachable!(),
+                }
+                .map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to mov from rdx: {:?}", e))
+                })?;
+            }
+        }
+
+        // Restore RDX if it was saved and result is not in RDX
+        if let Some(scratch_reg) = saved_rdx {
+            // Only restore if result didn't end up in RDX
+            let rdx_has_result = self
+                .register_file
+                .get_assignment(rdx)
+                .map(|a| a.local_idx == context.result_idx)
+                .unwrap_or(false);
+
+            if !rdx_has_result {
+                encoder.mov_reg_reg(rdx, scratch_reg).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to restore RDX: {:?}", e))
+                })?;
+            }
+
+            self.register_file.unlock_register(scratch_reg).ok();
+            self.register_file.free_register(scratch_reg).ok();
+        }
+
+        Ok(())
+    }
+
+    /// Compile signed remainder instruction (SRem).
+    fn compile_srem_instruction(
+        &mut self,
+        instruction: inkwell::values::InstructionValue<'ctx>,
+    ) -> Result<(), LlvmCompilerError> {
+        log::trace!("🔧 Compiling SREM instruction");
+
+        let context = self.setup_binary_operation(instruction)?;
+        let encoder = self.codegen.encoder_mut();
+
+        // Special registers for division
+        let rax = AsmReg::new(0, 0); // RAX
+        let rdx = AsmReg::new(0, 2); // RDX - remainder goes here
+
+        // Check if RDX needs to be saved before creating the context
+        let rdx_in_use = self.register_file.is_allocated(rdx);
+        let saved_rdx = if rdx_in_use {
+            const INVALID_IDX: ValLocalIdx = usize::MAX;
+            let scratch_reg = self
+                .register_file
+                .allocate_reg(0, INVALID_IDX, 0, None)
+                .map_err(|e| {
+                    LlvmCompilerError::RegisterAllocation(format!(
+                        "Failed to allocate scratch for RDX: {:?}",
+                        e
+                    ))
+                })?;
+
+            self.register_file.lock_register(scratch_reg).map_err(|e| {
+                LlvmCompilerError::RegisterAllocation(format!("Failed to lock scratch: {:?}", e))
+            })?;
+
+            encoder.mov_reg_reg(scratch_reg, rdx).map_err(|e| {
+                LlvmCompilerError::CodeGeneration(format!("Failed to save RDX: {:?}", e))
+            })?;
+
+            Some(scratch_reg)
+        } else {
+            None
+        };
+
+        // Create compiler context
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+
+        // Load operands
+        let mut dividend_ref = ValuePartRef::new(context.left_idx, 0).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to create dividend ref: {:?}", e))
+        })?;
+        let mut divisor_ref = ValuePartRef::new(context.right_idx, 0).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to create divisor ref: {:?}", e))
+        })?;
+
+        let dividend_reg = dividend_ref.load_to_reg(&mut ctx).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to load dividend: {:?}", e))
+        })?;
+        let divisor_reg = divisor_ref.load_to_reg(&mut ctx).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to load divisor: {:?}", e))
+        })?;
+
+        // Move dividend to RAX if not already there
+        if dividend_reg != rax {
+            match context.bit_width {
+                32 => encoder.mov32_reg_reg(rax, dividend_reg),
+                64 => encoder.mov_reg_reg(rax, dividend_reg),
+                _ => {
+                    return Err(LlvmCompilerError::UnsupportedInstruction(format!(
+                        "SREM with {}-bit width not supported",
+                        context.bit_width
+                    )))
+                }
+            }
+            .map_err(|e| {
+                LlvmCompilerError::CodeGeneration(format!("Failed to mov to rax: {:?}", e))
+            })?;
+        }
+
+        // Sign extend RAX to RDX:RAX
+        match context.bit_width {
+            32 => {
+                encoder.cdq().map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to emit CDQ: {:?}", e))
+                })?;
+                log::trace!("   Generated: cdq");
+            }
+            64 => {
+                encoder.cqo().map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to emit CQO: {:?}", e))
+                })?;
+                log::trace!("   Generated: cqo");
+            }
+            _ => unreachable!(),
+        }
+
+        // Perform signed division (quotient in RAX, remainder in RDX)
+        match context.bit_width {
+            32 => {
+                encoder.idiv32_reg(divisor_reg).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to emit idiv32: {:?}", e))
+                })?;
+                log::trace!(
+                    "   Generated: idiv32 {}:{}",
+                    divisor_reg.bank,
+                    divisor_reg.id
+                );
+            }
+            64 => {
+                encoder.idiv_reg(divisor_reg).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to emit idiv64: {:?}", e))
+                })?;
+                log::trace!("   Generated: idiv {}:{}", divisor_reg.bank, divisor_reg.id);
+            }
+            _ => unreachable!(),
+        }
+
+        // Let context go out of scope to release the borrow on register_file
+
+        // Result (remainder) is in RDX - try to allocate RDX directly
+        if let Ok(()) = self
+            .register_file
+            .allocate_specific_reg(rdx, context.result_idx, 0)
+        {
+            log::trace!("   Result allocated directly to RDX");
+        } else {
+            let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+            let mut result_ref = ValuePartRef::new(context.result_idx, 0).map_err(|e| {
+                LlvmCompilerError::RegisterAllocation(format!(
+                    "Failed to create result ref: {:?}",
+                    e
+                ))
+            })?;
+
+            let result_reg = result_ref.load_to_reg(&mut ctx).map_err(|e| {
+                LlvmCompilerError::RegisterAllocation(format!("Failed to allocate result: {:?}", e))
+            })?;
+
+            if result_reg != rdx {
+                match context.bit_width {
+                    32 => encoder.mov32_reg_reg(result_reg, rdx),
+                    64 => encoder.mov_reg_reg(result_reg, rdx),
+                    _ => unreachable!(),
+                }
+                .map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to mov from rdx: {:?}", e))
+                })?;
+            }
+        }
+
+        // Restore RDX if it was saved and result is not in RDX
+        if let Some(scratch_reg) = saved_rdx {
+            // Only restore if result didn't end up in RDX
+            let rdx_has_result = self
+                .register_file
+                .get_assignment(rdx)
+                .map(|a| a.local_idx == context.result_idx)
+                .unwrap_or(false);
+
+            if !rdx_has_result {
+                encoder.mov_reg_reg(rdx, scratch_reg).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to restore RDX: {:?}", e))
+                })?;
+            }
+
+            self.register_file.unlock_register(scratch_reg).ok();
+            self.register_file.free_register(scratch_reg).ok();
         }
 
         Ok(())

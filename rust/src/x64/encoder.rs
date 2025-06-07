@@ -497,6 +497,82 @@ impl X64Encoder {
         Ok(())
     }
 
+    // ==== DIVISION INSTRUCTIONS ====
+
+    /// Emit CDQ instruction - sign extend EAX to EDX:EAX for 32-bit division.
+    pub fn cdq(&mut self) -> Result<(), EncodingError> {
+        self.assembler
+            .cdq()
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit CQO instruction - sign extend RAX to RDX:RAX for 64-bit division.
+    pub fn cqo(&mut self) -> Result<(), EncodingError> {
+        self.assembler
+            .cqo()
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit XOR instruction to clear a register - used before unsigned division.
+    pub fn xor_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        if dst == src {
+            // Optimization: xor reg, reg is a common idiom to clear a register
+            let reg = self.to_gp_register(dst)?;
+            self.assembler
+                .xor(reg, reg)
+                .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        } else {
+            let dst_reg = self.to_gp_register(dst)?;
+            let src_reg = self.to_gp_register(src)?;
+            self.assembler
+                .xor(dst_reg, src_reg)
+                .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+    /// Emit IDIV instruction - signed divide RDX:RAX by register (64-bit).
+    pub fn idiv_reg(&mut self, divisor: AsmReg) -> Result<(), EncodingError> {
+        let divisor_reg = self.to_gp_register(divisor)?;
+
+        self.assembler
+            .idiv(divisor_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit IDIV instruction - signed divide EDX:EAX by register (32-bit).
+    pub fn idiv32_reg(&mut self, divisor: AsmReg) -> Result<(), EncodingError> {
+        let divisor_reg = self.to_gp32_register(divisor)?;
+
+        self.assembler
+            .idiv(divisor_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit DIV instruction - unsigned divide RDX:RAX by register (64-bit).
+    pub fn div_reg(&mut self, divisor: AsmReg) -> Result<(), EncodingError> {
+        let divisor_reg = self.to_gp_register(divisor)?;
+
+        self.assembler
+            .div(divisor_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit DIV instruction - unsigned divide EDX:EAX by register (32-bit).
+    pub fn div32_reg(&mut self, divisor: AsmReg) -> Result<(), EncodingError> {
+        let divisor_reg = self.to_gp32_register(divisor)?;
+
+        self.assembler
+            .div(divisor_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
     // ==== 32-BIT INSTRUCTION VARIANTS (Critical for i32 operations) ====
 
     /// Emit MOV instruction - register to register (32-bit).
