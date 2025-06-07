@@ -32,3 +32,4 @@ thiserror = "2.0"
 log = "0.4"
 env_logger = "0.11"
 clap = { version = "4.5", features = ["derive"] }
+hashbrown = { version = "0.15", features = ["allocator-api2"] }

@@ -14,6 +14,7 @@
 
 use tpde::core::AsmReg;
 use tpde::x64::{Encoder as X64Encoder, EncodingError};
+use bumpalo::Bump;
 
 /// Test function call instruction generation.
 ///
@@ -37,7 +38,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn test_call_instruction_encoding() -> Result<(), EncodingError> {
     println!("📋 Testing CALL instruction encoding...");
 
-    let mut encoder = X64Encoder::new()?;
+    let bump = Bump::new();
+    let mut encoder = X64Encoder::new(&bump)?;
 
     // Test indirect call through register (call rax)
     let target_reg = AsmReg::new(0, 0); // RAX
@@ -71,7 +73,8 @@ fn test_call_instruction_encoding() -> Result<(), EncodingError> {
 fn test_complete_call_sequence() -> Result<(), EncodingError> {
     println!("📋 Testing complete function call sequence...");
 
-    let mut encoder = X64Encoder::new()?;
+    let bump = Bump::new();
+    let mut encoder = X64Encoder::new(&bump)?;
 
     // Simulate System V x86-64 calling convention
     let rdi = AsmReg::new(0, 7); // First argument register
