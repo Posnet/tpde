@@ -236,12 +236,7 @@ fn test_call_tir() {
         ],
     );
 
-    check_output_contains(
-        &output,
-        &[
-            "Extern function ext_func2",
-        ],
-    );
+    check_output_contains(&output, &["Extern function ext_func2"]);
 
     // Verify call instruction
     let calls: Vec<_> = ir
@@ -249,10 +244,10 @@ fn test_call_tir() {
         .iter()
         .filter(|v| v.op == tpde::test_ir::Operation::Call)
         .collect();
-    assert_eq!(calls.len(), 2); // Two call instructions  
+    assert_eq!(calls.len(), 2); // Two call instructions
     assert_eq!(calls[0].name, "a");
     assert_eq!(calls[0].op_count, 0); // No arguments to ext_func2
-    assert_eq!(calls[1].name, "b"); 
+    assert_eq!(calls[1].name, "b");
     assert_eq!(calls[1].op_count, 1); // One argument to ext_func
 }
 
@@ -285,10 +280,12 @@ fn test_duplicate_funcs_tir() {
     // This test file contains duplicate function definitions, which should fail to parse
     let path = Path::new("../tpde/test/filetest/tir").join("duplicate_funcs.tir");
     let contents = fs::read_to_string(&path).unwrap();
-    
+
     let result = TestIR::parse(&contents);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Duplicate function definition"));
+    assert!(result
+        .unwrap_err()
+        .contains("Duplicate function definition"));
 }
 
 // Additional verification tests for parser edge cases

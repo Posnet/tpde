@@ -29,7 +29,7 @@ impl TestConfig {
             ..Default::default()
         }
     }
-    
+
     fn parse_run_line(&mut self, run_line: &str) {
         // Check if the command is expected to fail
         let run_line = if let Some(cmd) = run_line.trim().strip_prefix("not ") {
@@ -38,7 +38,7 @@ impl TestConfig {
         } else {
             run_line
         };
-        
+
         // Parse flags
         self.is_arm64 = run_line.contains("--arch=a64") || run_line.contains("--arch=arm64");
         self.print_ir = run_line.contains("--print-ir");
@@ -47,18 +47,22 @@ impl TestConfig {
         self.print_loops = run_line.contains("--print-loops");
         self.print_layout = run_line.contains("--print-layout");
         self.no_fixed_assignments = run_line.contains("--no-fixed-assignments");
-        
+
         // Parse --run-until=
         if let Some(pos) = run_line.find("--run-until=") {
             let start = pos + "--run-until=".len();
-            let end = run_line[start..].find(' ').unwrap_or(run_line.len() - start);
+            let end = run_line[start..]
+                .find(' ')
+                .unwrap_or(run_line.len() - start);
             self.run_until = run_line[start..start + end].to_string();
         }
-        
+
         // Parse -o output.o
         if let Some(pos) = run_line.find("-o ") {
             let start = pos + 3;
-            let end = run_line[start..].find(' ').unwrap_or(run_line.len() - start);
+            let end = run_line[start..]
+                .find(' ')
+                .unwrap_or(run_line.len() - start);
             self.obj_out_path = Some(run_line[start..start + end].to_string());
         }
     }
@@ -86,13 +90,13 @@ fn discover_tir_files(dir: &Path) -> Vec<PathBuf> {
 fn run_tir_file(path: &Path) -> Result<String, String> {
     // Initialize logging if not already done
     let _ = env_logger::builder().is_test(true).try_init();
-    
+
     let content = fs::read_to_string(path)
         .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
 
     // Parse RUN directive
     let mut config = TestConfig::default();
-    
+
     for line in content.lines() {
         if let Some(run_line) = line.strip_prefix("; RUN:") {
             config.parse_run_line(run_line);
@@ -106,7 +110,7 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
 
     // Parse the TIR content
     let parse_result = TestIR::parse(&content);
-    
+
     // Handle expected failures
     if config.expect_failure {
         match parse_result {
@@ -114,9 +118,9 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
             Ok(_) => return Err("Expected parse failure but succeeded".to_string()),
         }
     }
-    
+
     let ir = parse_result?;
-    
+
     // Check if IR contains ARM64-specific instructions (like tbz)
     for value in &ir.values {
         if value.op == tpde::test_ir::Operation::Tbz {
@@ -132,7 +136,12 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
     }
 
     // Run analyzer if needed
-    if config.print_rpo || config.print_liveness || config.print_loops || config.print_layout || config.run_until == "analyzer" {
+    if config.print_rpo
+        || config.print_liveness
+        || config.print_loops
+        || config.print_layout
+        || config.run_until == "analyzer"
+    {
         let mut adaptor = TestIRAdaptor::new(&ir);
         let mut analyzer = Analyzer::new();
 
@@ -248,36 +257,38 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
         use bumpalo::Bump;
         use tpde::core::session::CompilationSession;
         use tpde::test_ir::TestIRCompiler;
-        
+
         let arena = Bump::new();
         let session = CompilationSession::new(&arena);
-        
+
         let compiler = TestIRCompiler::new(&ir, &session, config.no_fixed_assignments)
             .map_err(|e| format!("Failed to create compiler: {e:?}"))?;
-            
-        let object_code = compiler.compile()
+
+        let object_code = compiler
+            .compile()
             .map_err(|e| format!("Compilation failed: {e:?}"))?;
-        
+
         // Write object file if path provided
         if let Some(out_path) = &config.obj_out_path {
             // Handle %t placeholder
             let actual_path = if out_path.contains("%t") {
                 // Create temp directory
-                let temp_dir = std::env::temp_dir().join(format!("tpde_test_{}", std::process::id()));
+                let temp_dir =
+                    std::env::temp_dir().join(format!("tpde_test_{}", std::process::id()));
                 std::fs::create_dir_all(&temp_dir).ok();
                 out_path.replace("%t", temp_dir.to_str().unwrap())
             } else {
                 out_path.clone()
             };
-            
+
             // Ensure parent directory exists
             if let Some(parent) = std::path::Path::new(&actual_path).parent() {
                 std::fs::create_dir_all(parent).ok();
             }
-            
+
             std::fs::write(&actual_path, &object_code)
                 .map_err(|e| format!("Failed to write object file: {e}"))?;
-                
+
             // For codegen tests, we need to disassemble the object
             if config.run_until == "codegen" && actual_path.ends_with(".o") {
                 // Run objdump on the generated object file
@@ -289,7 +300,8 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
                         .arg("-x86-asm-syntax=intel")
                         .arg("--no-show-raw-insn")
                         .arg(&actual_path)
-                        .output() {
+                        .output()
+                    {
                         Ok(output) => output,
                         Err(_) => {
                             // Fall back to regular objdump without Intel syntax
@@ -310,7 +322,7 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
                         .output()
                         .map_err(|e| format!("Failed to run objdump: {e}"))?
                 };
-                    
+
                 if objdump_output.status.success() {
                     let disasm = String::from_utf8_lossy(&objdump_output.stdout);
                     output.push(disasm.to_string());
@@ -320,7 +332,10 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
                 }
             }
         } else {
-            output.push(format!("Generated {} bytes of object code", object_code.len()));
+            output.push(format!(
+                "Generated {} bytes of object code",
+                object_code.len()
+            ));
         }
     }
 
@@ -333,7 +348,7 @@ fn validate_output(output: &str, content: &str) -> Result<(), String> {
     if output.starts_with("Skipping ARM64-specific test") {
         return Ok(());
     }
-    
+
     // Special case for expected failures
     if output.starts_with("Expected failure:") {
         return Ok(());

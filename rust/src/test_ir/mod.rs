@@ -319,7 +319,7 @@ impl TestIR {
         for i in 0..incoming_count {
             let val_idx = self.value_operands[(phi.op_begin_idx + i) as usize];
             let block_idx = self.value_operands[(phi.op_begin_idx + incoming_count + i) as usize];
-            
+
             if let (Some(val), Some(block)) = (
                 self.values.get(val_idx as usize),
                 self.blocks.get(block_idx as usize),
@@ -372,7 +372,12 @@ impl TestIR {
         }
 
         // Print immediates
-        let imm_start = block_op_start + if info.succ_count == !0 { 0 } else { info.succ_count };
+        let imm_start = block_op_start
+            + if info.succ_count == !0 {
+                0
+            } else {
+                info.succ_count
+            };
         for i in 0..info.imm_count {
             if let Some(&imm) = self.value_operands.get((imm_start + i) as usize) {
                 writeln!(output, "Op ${}", imm).unwrap();

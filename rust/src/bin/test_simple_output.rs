@@ -12,11 +12,11 @@ struct Cli {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
-    
+
     let content = std::fs::read_to_string(&cli.input)?;
     let spec = TestSpec::parse(&content)?;
     let ir = TestIR::parse(&spec.tir_content)?;
     println!("{}", ir.print());
-    
+
     Ok(())
 }

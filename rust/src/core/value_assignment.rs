@@ -93,7 +93,11 @@ impl PartData {
 
     /// Set register validity flag.
     pub fn set_register_valid(&mut self, valid: bool) {
-        self.packed = if valid { self.packed | 0x1 } else { self.packed & !0x1 };
+        self.packed = if valid {
+            self.packed | 0x1
+        } else {
+            self.packed & !0x1
+        };
     }
 
     /// Whether the part has been modified since last spill.
@@ -103,7 +107,11 @@ impl PartData {
 
     /// Set modification flag.
     pub fn set_modified(&mut self, modified: bool) {
-        self.packed = if modified { self.packed | 0x2 } else { self.packed & !0x2 };
+        self.packed = if modified {
+            self.packed | 0x2
+        } else {
+            self.packed & !0x2
+        };
     }
 }
 

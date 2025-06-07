@@ -83,8 +83,8 @@ impl RegBitSet {
 
     /// Check if register is set.
     pub fn contains(&self, reg: AsmReg) -> bool {
-        reg.bank < MAX_REGISTER_BANKS as u8 
-            && reg.id < 64 
+        reg.bank < MAX_REGISTER_BANKS as u8
+            && reg.id < 64
             && (self.banks[reg.bank as usize] & (1u64 << reg.id)) != 0
     }
 
@@ -409,7 +409,11 @@ impl RegisterFile {
         }
 
         if !self.used.contains(reg) {
-            log::error!("Attempted to lock unallocated register {:?}, used: {:?}", reg, self.used);
+            log::error!(
+                "Attempted to lock unallocated register {:?}, used: {:?}",
+                reg,
+                self.used
+            );
             return Err(RegAllocError::RegisterNotAllocated);
         }
 

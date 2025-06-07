@@ -91,17 +91,17 @@ impl X64Encoder {
     /// Convert AsmReg to iced-x86 64-bit GP register.
     fn to_gp64_register(&self, reg: AsmReg) -> Result<AsmRegister64, EncodingError> {
         use iced_x86::code_asm::*;
-        
+
         if reg.bank != 0 {
             return Err(EncodingError::InvalidRegister);
         }
 
         const GP64_REGS: [AsmRegister64; 16] = [
-            rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi,
-            r8, r9, r10, r11, r12, r13, r14, r15,
+            rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi, r8, r9, r10, r11, r12, r13, r14, r15,
         ];
-        
-        GP64_REGS.get(reg.id as usize)
+
+        GP64_REGS
+            .get(reg.id as usize)
             .copied()
             .ok_or(EncodingError::InvalidRegister)
     }
@@ -109,17 +109,17 @@ impl X64Encoder {
     /// Convert AsmReg to iced-x86 32-bit GP register.
     fn to_gp32_register(&self, reg: AsmReg) -> Result<AsmRegister32, EncodingError> {
         use iced_x86::code_asm::*;
-        
+
         if reg.bank != 0 {
             return Err(EncodingError::InvalidRegister);
         }
 
         const GP32_REGS: [AsmRegister32; 16] = [
-            eax, ecx, edx, ebx, esp, ebp, esi, edi,
-            r8d, r9d, r10d, r11d, r12d, r13d, r14d, r15d,
+            eax, ecx, edx, ebx, esp, ebp, esi, edi, r8d, r9d, r10d, r11d, r12d, r13d, r14d, r15d,
         ];
-        
-        GP32_REGS.get(reg.id as usize)
+
+        GP32_REGS
+            .get(reg.id as usize)
             .copied()
             .ok_or(EncodingError::InvalidRegister)
     }
@@ -127,17 +127,17 @@ impl X64Encoder {
     /// Convert AsmReg to iced-x86 16-bit GP register.
     fn to_gp16_register(&self, reg: AsmReg) -> Result<AsmRegister16, EncodingError> {
         use iced_x86::code_asm::*;
-        
+
         if reg.bank != 0 {
             return Err(EncodingError::InvalidRegister);
         }
 
         const GP16_REGS: [AsmRegister16; 16] = [
-            ax, cx, dx, bx, sp, bp, si, di,
-            r8w, r9w, r10w, r11w, r12w, r13w, r14w, r15w,
+            ax, cx, dx, bx, sp, bp, si, di, r8w, r9w, r10w, r11w, r12w, r13w, r14w, r15w,
         ];
-        
-        GP16_REGS.get(reg.id as usize)
+
+        GP16_REGS
+            .get(reg.id as usize)
             .copied()
             .ok_or(EncodingError::InvalidRegister)
     }
@@ -145,17 +145,17 @@ impl X64Encoder {
     /// Convert AsmReg to iced-x86 8-bit GP register.
     fn to_gp8_register(&self, reg: AsmReg) -> Result<AsmRegister8, EncodingError> {
         use iced_x86::code_asm::*;
-        
+
         if reg.bank != 0 {
             return Err(EncodingError::InvalidRegister);
         }
 
         const GP8_REGS: [AsmRegister8; 16] = [
-            al, cl, dl, bl, spl, bpl, sil, dil,
-            r8b, r9b, r10b, r11b, r12b, r13b, r14b, r15b,
+            al, cl, dl, bl, spl, bpl, sil, dil, r8b, r9b, r10b, r11b, r12b, r13b, r14b, r15b,
         ];
-        
-        GP8_REGS.get(reg.id as usize)
+
+        GP8_REGS
+            .get(reg.id as usize)
             .copied()
             .ok_or(EncodingError::InvalidRegister)
     }
@@ -164,17 +164,18 @@ impl X64Encoder {
     #[allow(dead_code)]
     fn to_xmm_register(&self, reg: AsmReg) -> Result<AsmRegisterXmm, EncodingError> {
         use iced_x86::code_asm::*;
-        
+
         if reg.bank != 1 {
             return Err(EncodingError::InvalidRegister);
         }
 
         const XMM_REGS: [AsmRegisterXmm; 16] = [
-            xmm0, xmm1, xmm2, xmm3, xmm4, xmm5, xmm6, xmm7,
-            xmm8, xmm9, xmm10, xmm11, xmm12, xmm13, xmm14, xmm15,
+            xmm0, xmm1, xmm2, xmm3, xmm4, xmm5, xmm6, xmm7, xmm8, xmm9, xmm10, xmm11, xmm12, xmm13,
+            xmm14, xmm15,
         ];
-        
-        XMM_REGS.get(reg.id as usize)
+
+        XMM_REGS
+            .get(reg.id as usize)
             .copied()
             .ok_or(EncodingError::InvalidRegister)
     }

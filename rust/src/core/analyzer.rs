@@ -105,7 +105,7 @@ impl<A: IrAdaptor> Analyzer<A> {
     /// Build block layout and liveness for the given function using the adaptor.
     pub fn switch_func(&mut self, adaptor: &mut A, func: A::FuncRef) {
         trace!("Analyzing function: {}", adaptor.func_link_name(func));
-        
+
         self.order.clear();
         self.block_map.clear();
         self.liveness.clear();
@@ -169,17 +169,17 @@ impl<A: IrAdaptor> Analyzer<A> {
             return;
         }
         let val_idx = adaptor.val_local_idx(val);
-        
+
         // Ensure liveness vector is large enough
         if val_idx >= self.liveness.len() {
             self.liveness.resize(val_idx + 1, LivenessInfo::default());
         }
-        
+
         // Get the loop containing this block
         let block_loop_idx = self.block_loop_map.get(block_idx).copied().unwrap_or(0);
-        
+
         let info = &mut self.liveness[val_idx];
-        
+
         // First time seeing this value - initialize
         if info.ref_count == 0 {
             info.ref_count = 1;
@@ -189,73 +189,81 @@ impl<A: IrAdaptor> Analyzer<A> {
             info.last_full = false;
             return;
         }
-        
+
         // Increment reference count
         info.ref_count += 1;
-        
+
         // Helper to update liveness for block only
         let update_for_block_only = |info: &mut LivenessInfo, block_idx: usize| {
             let old_first = info.first;
             let old_last = info.last;
-            
+
             info.first = old_first.min(block_idx);
             info.last = old_last.max(block_idx);
-            
+
             // If last changed, we don't need to extend lifetime to end of last block
-            info.last_full = if old_last == info.last { info.last_full } else { false };
+            info.last_full = if old_last == info.last {
+                info.last_full
+            } else {
+                false
+            };
         };
-        
+
         // Helper to update liveness for an entire loop
         let update_for_loop = |info: &mut LivenessInfo, loop_info: &Loop| {
             let old_first = info.first;
             let old_last = info.last;
-            
+
             info.first = old_first.min(loop_info.begin as usize);
             info.last = old_last.max((loop_info.end as usize).saturating_sub(1));
-            
+
             // If last changed, set last_full to true since values need to be allocated when loop is active
-            info.last_full = if old_last == info.last { info.last_full } else { true };
+            info.last_full = if old_last == info.last {
+                info.last_full
+            } else {
+                true
+            };
         };
-        
+
         // If the value's lowest common loop is the same as the current block's loop,
         // just extend the liveness interval
         if info.lowest_common_loop == block_loop_idx {
             update_for_block_only(info, block_idx);
             return;
         }
-        
+
         let liveness_loop = self.loops[info.lowest_common_loop as usize];
         let block_loop = self.loops[block_loop_idx as usize];
-        
+
         // Check if the current use is nested inside the loop of the liveness interval
-        if liveness_loop.level < block_loop.level && 
-           (block_loop.begin as usize) < (liveness_loop.end as usize) {
-            
+        if liveness_loop.level < block_loop.level
+            && (block_loop.begin as usize) < (liveness_loop.end as usize)
+        {
             // Find the loop at level (liveness_loop.level + 1) that contains block_loop
             let target_level = liveness_loop.level + 1;
             let mut cur_loop_idx = block_loop_idx as usize;
             let mut cur_level = block_loop.level;
-            
+
             while cur_level != target_level {
                 cur_loop_idx = self.loops[cur_loop_idx].parent as usize;
                 cur_level -= 1;
             }
-            
+
             update_for_loop(info, &self.loops[cur_loop_idx]);
             return;
         }
-        
+
         // Need to update the lowest common loop to contain both liveness_loop and block_loop
         let mut lhs_idx = info.lowest_common_loop as usize;
         let mut rhs_idx = block_loop_idx as usize;
         let mut prev_lhs = lhs_idx;
         let mut prev_rhs = rhs_idx;
-        
+
         // Find the lowest common ancestor loop
         while lhs_idx != rhs_idx {
             let lhs_level = self.loops[lhs_idx].level;
             let rhs_level = self.loops[rhs_idx].level;
-            
+
             if lhs_level > rhs_level {
                 prev_lhs = lhs_idx;
                 lhs_idx = self.loops[lhs_idx].parent as usize;
@@ -269,13 +277,13 @@ impl<A: IrAdaptor> Analyzer<A> {
                 rhs_idx = self.loops[rhs_idx].parent as usize;
             }
         }
-        
+
         // Update lowest common loop
         info.lowest_common_loop = lhs_idx as u32;
-        
+
         // Extend for the full loop that contains liveness_loop and is nested directly in lcl
         update_for_loop(info, &self.loops[prev_lhs]);
-        
+
         // Extend by block if the block_loop is the lcl, or by prev_rhs otherwise
         if lhs_idx == block_loop_idx as usize {
             update_for_block_only(info, block_idx);

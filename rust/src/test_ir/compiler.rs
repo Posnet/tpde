@@ -3,7 +3,6 @@
 //! This module provides a concrete compiler that can compile TestIR
 //! to x86-64 machine code, matching the functionality of the C++ test harness.
 
-use log::debug;
 use crate::{
     core::{
         assembler::{Assembler, ElfAssembler},
@@ -19,6 +18,7 @@ use crate::{
         function_codegen::{ArgInfo, FunctionCodegen},
     },
 };
+use log::debug;
 
 /// TestIR compiler for x86-64.
 pub struct TestIRCompiler<'arena> {
@@ -44,11 +44,11 @@ impl<'arena> TestIRCompiler<'arena> {
         // Get the current function
         let func_idx = self.adaptor.cur_func() as usize;
         let func = &self.ir.functions[func_idx];
-        
+
         // Local index is relative to the start of arguments for this function
         global_idx - func.arg_begin_idx as usize
     }
-    
+
     /// Create a new TestIR compiler.
     pub fn new(
         ir: &'arena TestIR,
@@ -86,15 +86,20 @@ impl<'arena> TestIRCompiler<'arena> {
     /// Compile a single function.
     fn compile_function(&mut self, func_idx: usize) -> Result<(), CompilationError> {
         let func = &self.ir.functions[func_idx];
-        
+
         // Skip external declarations
         if func.declaration {
             return Ok(());
         }
 
         // Define symbol for function
-        let sym = <ElfAssembler as Assembler<TestIRAdaptor>>::sym_predef_func(&mut self.assembler, &func.name, func.local_only, false);
-        
+        let sym = <ElfAssembler as Assembler<TestIRAdaptor>>::sym_predef_func(
+            &mut self.assembler,
+            &func.name,
+            func.local_only,
+            false,
+        );
+
         // Switch adaptor to this function
         use crate::test_ir::adaptor::FuncRef;
         self.adaptor.switch_func(FuncRef(func_idx as u32));
@@ -102,44 +107,51 @@ impl<'arena> TestIRCompiler<'arena> {
         // Reset per-function state
         self.value_mgr = ValueAssignmentManager::new();
         self.register_file = RegisterFile::new(16, 2, RegBitSet::all_in_bank(0, 16));
-        
+
         // Create a new function codegen for this function
         let mut func_codegen = FunctionCodegen::new()?;
 
         // Process function arguments
         let arg_count = (func.arg_end_idx - func.arg_begin_idx) as usize;
-        debug!("Function {} has {} arguments (indices {}..{})", func.name, arg_count, func.arg_begin_idx, func.arg_end_idx);
+        debug!(
+            "Function {} has {} arguments (indices {}..{})",
+            func.name, arg_count, func.arg_begin_idx, func.arg_end_idx
+        );
         let args: Vec<ArgInfo> = vec![ArgInfo::int64(); arg_count];
         let arg_assignments = func_codegen.process_arguments(&args)?;
-        
+
         // Assign arguments to registers/stack according to calling convention
         for (idx, assignment) in arg_assignments.iter().enumerate() {
             // Arguments start at local index 0 within the function
             let local_idx = idx;
-            
+
             debug!("Creating argument assignment for local_idx={}", local_idx);
-            
+
             // Create a value assignment for the argument
             let value_assignment = self.value_mgr.create_assignment(local_idx, 1, 8);
-            
+
             // If argument is in a register, set it up
             if let Some(reg) = assignment.reg {
                 // First, we need to actually allocate the register in the RegisterFile
                 // We'll use allocate_specific_reg to mark it as allocated
-                self.register_file.allocate_specific_reg(reg, local_idx, 0)?;
-                
+                self.register_file
+                    .allocate_specific_reg(reg, local_idx, 0)?;
+
                 // Set up the part data for this register
                 let part_data = &mut value_assignment.parts[0];
                 *part_data = crate::core::value_assignment::PartData::new(reg.bank, reg.id, 3); // 3 = log2(8) for 64-bit
                 part_data.set_register_valid(true);
-                
+
                 // Now we can lock the register since it's allocated
                 self.register_file.lock_register(reg)?;
             } else {
                 // TODO: Handle stack arguments - set up stack location
-                value_assignment.location = Some(crate::core::value_assignment::StorageLocation::Stack(assignment.stack_off.unwrap_or(0)));
+                value_assignment.location =
+                    Some(crate::core::value_assignment::StorageLocation::Stack(
+                        assignment.stack_off.unwrap_or(0),
+                    ));
             }
-            
+
             // Add initial reference for the argument
             value_assignment.add_ref();
         }
@@ -161,24 +173,24 @@ impl<'arena> TestIRCompiler<'arena> {
 
         // Get generated code from function codegen
         let func_code = func_codegen.finalize()?;
-        
+
         // Append to assembler
         let offset = self.assembler.append(&func_code, 16);
         let size = func_code.len() as u64;
-        
+
         // Define symbol at this location
-        self.assembler.define_symbol(
-            sym,
-            self.assembler.current_section(),
-            offset,
-            size,
-        );
+        self.assembler
+            .define_symbol(sym, self.assembler.current_section(), offset, size);
 
         Ok(())
     }
 
     /// Compile a single block.
-    fn compile_block(&mut self, block_idx: usize, func_codegen: &mut FunctionCodegen) -> Result<(), CompilationError> {
+    fn compile_block(
+        &mut self,
+        block_idx: usize,
+        func_codegen: &mut FunctionCodegen,
+    ) -> Result<(), CompilationError> {
         let block = &self.ir.blocks[block_idx];
 
         // Compile all instructions in the block
@@ -190,9 +202,13 @@ impl<'arena> TestIRCompiler<'arena> {
     }
 
     /// Compile a single instruction.
-    fn compile_instruction(&mut self, inst_idx: usize, func_codegen: &mut FunctionCodegen) -> Result<(), CompilationError> {
+    fn compile_instruction(
+        &mut self,
+        inst_idx: usize,
+        func_codegen: &mut FunctionCodegen,
+    ) -> Result<(), CompilationError> {
         let inst = &self.ir.values[inst_idx];
-        
+
         let local_idx = self.global_to_local_idx(inst_idx);
         debug!("Compiling {} ({}): {:?}", inst.name, local_idx, inst.op);
 
@@ -229,10 +245,14 @@ impl<'arena> TestIRCompiler<'arena> {
         emit_op: F,
     ) -> Result<(), CompilationError>
     where
-        F: FnOnce(&mut crate::x64::encoder::X64Encoder, AsmReg, AsmReg) -> Result<(), EncodingError>,
+        F: FnOnce(
+            &mut crate::x64::encoder::X64Encoder,
+            AsmReg,
+            AsmReg,
+        ) -> Result<(), EncodingError>,
     {
         let inst = &self.ir.values[inst_idx];
-        
+
         // Get operands
         let left_idx = self.ir.value_operands[inst.op_begin_idx as usize];
         let right_idx = self.ir.value_operands[(inst.op_begin_idx + 1) as usize];
@@ -241,9 +261,11 @@ impl<'arena> TestIRCompiler<'arena> {
         let local_inst_idx = self.global_to_local_idx(inst_idx);
         let local_left = self.global_to_local_idx(left_idx as usize);
         let local_right = self.global_to_local_idx(right_idx as usize);
-        
+
         // Create value assignment for the result
-        self.value_mgr.create_assignment(local_inst_idx, 1, 8).add_ref();
+        self.value_mgr
+            .create_assignment(local_inst_idx, 1, 8)
+            .add_ref();
 
         // Create compiler context
         let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
@@ -271,26 +293,38 @@ impl<'arena> TestIRCompiler<'arena> {
     }
 
     /// Compile an add instruction.
-    fn compile_add(&mut self, inst_idx: usize, func_codegen: &mut FunctionCodegen) -> Result<(), CompilationError> {
+    fn compile_add(
+        &mut self,
+        inst_idx: usize,
+        func_codegen: &mut FunctionCodegen,
+    ) -> Result<(), CompilationError> {
         self.compile_binary_op(inst_idx, func_codegen, |encoder, dst, src| {
             encoder.add_reg_reg(dst, src)
         })
     }
 
     /// Compile a sub instruction.
-    fn compile_sub(&mut self, inst_idx: usize, func_codegen: &mut FunctionCodegen) -> Result<(), CompilationError> {
+    fn compile_sub(
+        &mut self,
+        inst_idx: usize,
+        func_codegen: &mut FunctionCodegen,
+    ) -> Result<(), CompilationError> {
         self.compile_binary_op(inst_idx, func_codegen, |encoder, dst, src| {
             encoder.sub_reg_reg(dst, src)
         })
     }
 
     /// Compile a return instruction.
-    fn compile_ret(&mut self, inst_idx: usize, func_codegen: &mut FunctionCodegen) -> Result<(), CompilationError> {
+    fn compile_ret(
+        &mut self,
+        inst_idx: usize,
+        func_codegen: &mut FunctionCodegen,
+    ) -> Result<(), CompilationError> {
         let inst = &self.ir.values[inst_idx];
-        
+
         // Get return value
         let ret_val_idx = self.ir.value_operands[inst.op_begin_idx as usize];
-        
+
         // Convert to local index
         let local_ret = self.global_to_local_idx(ret_val_idx as usize);
 
@@ -314,31 +348,46 @@ impl<'arena> TestIRCompiler<'arena> {
     }
 
     /// Compile a terminate instruction.
-    fn compile_terminate(&mut self, _func_codegen: &mut FunctionCodegen) -> Result<(), CompilationError> {
+    fn compile_terminate(
+        &mut self,
+        _func_codegen: &mut FunctionCodegen,
+    ) -> Result<(), CompilationError> {
         // For TestIR, terminate is like a void return
         // Epilogue will be generated at end of function
         Ok(())
     }
 
     /// Compile any branch instruction (br, condbr, jump).
-    fn compile_branch(&mut self, _inst_idx: usize, _func_codegen: &mut FunctionCodegen) -> Result<(), CompilationError> {
+    fn compile_branch(
+        &mut self,
+        _inst_idx: usize,
+        _func_codegen: &mut FunctionCodegen,
+    ) -> Result<(), CompilationError> {
         // TODO: Implement control flow with label management and jump instructions
         Ok(())
     }
 
     /// Compile an alloca instruction.
-    fn compile_alloca(&mut self, inst_idx: usize, _func_codegen: &mut FunctionCodegen) -> Result<(), CompilationError> {
+    fn compile_alloca(
+        &mut self,
+        inst_idx: usize,
+        _func_codegen: &mut FunctionCodegen,
+    ) -> Result<(), CompilationError> {
         // Create value assignment for the result (a pointer to stack space)
         let local_idx = self.global_to_local_idx(inst_idx);
         self.value_mgr.create_assignment(local_idx, 1, 8).add_ref();
-        
+
         // For now, just allocate a dummy register
         // Real implementation would allocate stack space and return a pointer
         Ok(())
     }
 
     /// Compile a call instruction.
-    fn compile_call(&mut self, inst_idx: usize, _func_codegen: &mut FunctionCodegen) -> Result<(), CompilationError> {
+    fn compile_call(
+        &mut self,
+        inst_idx: usize,
+        _func_codegen: &mut FunctionCodegen,
+    ) -> Result<(), CompilationError> {
         // Check if this call produces a result
         let inst = &self.ir.values[inst_idx];
         if inst.op.info().is_def {
@@ -346,29 +395,32 @@ impl<'arena> TestIRCompiler<'arena> {
             let local_idx = self.global_to_local_idx(inst_idx);
             self.value_mgr.create_assignment(local_idx, 1, 8).add_ref();
         }
-        
+
         // For now, we don't handle the actual call generation
         Ok(())
     }
 
-
     /// Compile a zerofill instruction.
-    fn compile_zerofill(&mut self, inst_idx: usize, func_codegen: &mut FunctionCodegen) -> Result<(), CompilationError> {
+    fn compile_zerofill(
+        &mut self,
+        inst_idx: usize,
+        func_codegen: &mut FunctionCodegen,
+    ) -> Result<(), CompilationError> {
         let inst = &self.ir.values[inst_idx];
-        
+
         // Check if zerofill has an operand
         if inst.op_begin_idx < inst.op_end_idx {
             let size = self.ir.value_operands[inst.op_begin_idx as usize];
-            
+
             // Generate NOP instructions to fill space
             let encoder = func_codegen.encoder_mut();
             let nop_count = size / 4; // Approximate, each NOP is ~1-4 bytes
-            
+
             for _ in 0..nop_count {
                 encoder.nop()?;
             }
         }
-        
+
         Ok(())
     }
 }

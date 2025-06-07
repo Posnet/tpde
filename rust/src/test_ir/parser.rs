@@ -53,7 +53,8 @@ impl<'a> Parser<'a> {
                 Ok(_) => {}
                 Err(e) => {
                     // Include position context in the error message
-                    let mut error_msg = format!("Error parsing function at position {}: {}", self.pos, e);
+                    let mut error_msg =
+                        format!("Error parsing function at position {}: {}", self.pos, e);
                     if self.pos < self.text.len() {
                         let context_start = self.pos.saturating_sub(20);
                         let context_end = (self.pos + 20).min(self.text.len());
