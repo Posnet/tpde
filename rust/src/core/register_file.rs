@@ -16,6 +16,8 @@
 //! register allocation strategy, using a clock-based algorithm with on-demand spilling.
 
 use super::value_assignment::ValLocalIdx;
+use super::session::CompilationSession;
+use bumpalo::collections::Vec as BumpVec;
 
 /// Type alias for register spill callback function.
 type SpillCallback = Box<dyn Fn(AsmReg, &Assignment) -> Result<(), String>>;
@@ -187,7 +189,7 @@ pub enum RegAllocError {
 ///
 /// Uses a clock-based allocation algorithm with reference counting and
 /// on-demand spilling to efficiently manage register pressure.
-pub struct RegisterFile {
+pub struct RegisterFile<'arena> {
     /// Number of registers per bank (must be ≤ 64).
     regs_per_bank: usize,
     /// Total number of registers across all banks.
@@ -205,26 +207,36 @@ pub struct RegisterFile {
     /// Clock position for allocation in each bank.
     clocks: [RegId; MAX_REGISTER_BANKS],
     /// Which value owns each register.
-    assignments: Vec<Option<Assignment>>,
+    assignments: BumpVec<'arena, Option<Assignment>>,
     /// Lock count for each register (prevents eviction).
-    lock_counts: Vec<u8>,
+    lock_counts: BumpVec<'arena, u8>,
 
     /// Callback for spilling register contents.
     spill_callback: Option<SpillCallback>,
 }
 
-impl RegisterFile {
+impl<'arena> RegisterFile<'arena> {
     /// Create a new register file with the given configuration.
     ///
     /// # Arguments
     /// * `regs_per_bank` - Number of registers per bank (max 64)
     /// * `num_banks` - Number of register banks (max 4)
     /// * `allocatable_regs` - Which registers are available for allocation
-    pub fn new(regs_per_bank: usize, num_banks: usize, allocatable_regs: RegBitSet) -> Self {
+    pub fn new(
+        session: &'arena CompilationSession<'arena>,
+        regs_per_bank: usize,
+        num_banks: usize,
+        allocatable_regs: RegBitSet,
+    ) -> Self {
         assert!(regs_per_bank <= 64, "Too many registers per bank");
         assert!(num_banks <= MAX_REGISTER_BANKS, "Too many register banks");
 
         let total_regs = regs_per_bank * num_banks;
+
+        let mut assignments = BumpVec::with_capacity_in(total_regs, session.arena());
+        assignments.resize(total_regs, None);
+        let mut lock_counts = BumpVec::with_capacity_in(total_regs, session.arena());
+        lock_counts.resize(total_regs, 0);
 
         Self {
             regs_per_bank,
@@ -234,8 +246,8 @@ impl RegisterFile {
             fixed: RegBitSet::new(),
             clobbered: RegBitSet::new(),
             clocks: [0; MAX_REGISTER_BANKS],
-            assignments: vec![None; total_regs],
-            lock_counts: vec![0; total_regs],
+            assignments,
+            lock_counts,
             spill_callback: None,
         }
     }
@@ -486,19 +498,19 @@ impl RegisterFile {
         self.fixed.clear_all();
         self.clobbered.clear_all();
         self.clocks.fill(0);
-        self.assignments.fill(None);
-        self.lock_counts.fill(0);
+        for a in self.assignments.iter_mut() {
+            *a = None;
+        }
+        for c in self.lock_counts.iter_mut() {
+            *c = 0;
+        }
     }
 
     /// Find a register currently assigned to the given value/part.
     pub fn find_register_for_value(&self, local_idx: ValLocalIdx, part: u32) -> Option<AsmReg> {
         for (i, assignment) in self.assignments.iter().enumerate() {
-            if let Some(Assignment {
-                local_idx: idx,
-                part: p,
-            }) = assignment
-            {
-                if *idx == local_idx && *p == part {
+            if let Some(Assignment { local_idx: idx, part: p }) = *assignment {
+                if idx == local_idx && p == part {
                     return Some(AsmReg::from_linear_index(i, self.regs_per_bank));
                 }
             }
@@ -510,14 +522,16 @@ impl RegisterFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bumpalo::Bump;
+    use crate::core::CompilationSession;
 
-    fn create_test_regfile() -> RegisterFile {
+    fn create_test_regfile<'arena>(session: &'arena CompilationSession<'arena>) -> RegisterFile<'arena> {
         // Create register file with 8 GP regs (bank 0) and 8 FP regs (bank 1)
         let mut allocatable = RegBitSet::new();
         allocatable.union(&RegBitSet::all_in_bank(0, 8)); // GP regs 0-7
         allocatable.union(&RegBitSet::all_in_bank(1, 8)); // FP regs 0-7
 
-        RegisterFile::new(8, 2, allocatable)
+        RegisterFile::new(session, 8, 2, allocatable)
     }
 
     #[test]
@@ -534,7 +548,9 @@ mod tests {
 
     #[test]
     fn test_register_allocation() {
-        let mut regfile = create_test_regfile();
+        let arena = Bump::new();
+        let session = CompilationSession::new(&arena);
+        let mut regfile = create_test_regfile(&session);
 
         // Allocate first register in GP bank
         let reg1 = regfile.allocate_reg(0, 100, 0, None).unwrap();
@@ -553,7 +569,9 @@ mod tests {
 
     #[test]
     fn test_register_locking() {
-        let mut regfile = create_test_regfile();
+        let arena = Bump::new();
+        let session = CompilationSession::new(&arena);
+        let mut regfile = create_test_regfile(&session);
         let reg = regfile.allocate_reg(0, 100, 0, None).unwrap();
 
         assert!(!regfile.is_locked(reg));
@@ -566,7 +584,9 @@ mod tests {
 
     #[test]
     fn test_register_eviction() {
-        let mut regfile = create_test_regfile();
+        let arena = Bump::new();
+        let session = CompilationSession::new(&arena);
+        let mut regfile = create_test_regfile(&session);
 
         // Fill all GP registers
         let mut regs = Vec::new();
@@ -594,7 +614,9 @@ mod tests {
 
     #[test]
     fn test_find_register_for_value() {
-        let mut regfile = create_test_regfile();
+        let arena = Bump::new();
+        let session = CompilationSession::new(&arena);
+        let mut regfile = create_test_regfile(&session);
         let reg = regfile.allocate_reg(0, 100, 1, None).unwrap();
 
         assert_eq!(regfile.find_register_for_value(100, 1), Some(reg));
@@ -604,7 +626,9 @@ mod tests {
 
     #[test]
     fn test_bank_usage_stats() {
-        let mut regfile = create_test_regfile();
+        let arena = Bump::new();
+        let session = CompilationSession::new(&arena);
+        let mut regfile = create_test_regfile(&session);
 
         let reg1 = regfile.allocate_reg(0, 100, 0, None).unwrap();
         let _reg2 = regfile.allocate_reg(0, 101, 0, None).unwrap();

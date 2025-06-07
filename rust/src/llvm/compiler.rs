@@ -153,7 +153,7 @@ pub struct LlvmCompiler<'ctx, 'arena> {
     value_mgr: ValueAssignmentManager,
 
     /// Register allocation state.
-    register_file: RegisterFile,
+    register_file: RegisterFile<'arena>,
 
     /// Function code generation.
     codegen: FunctionCodegen,
@@ -247,7 +247,7 @@ where
         let mut allocatable = RegBitSet::new();
         allocatable.union(&RegBitSet::all_in_bank(0, 16)); // GP regs
         allocatable.union(&RegBitSet::all_in_bank(1, 16)); // XMM regs
-        let register_file = RegisterFile::new(16, 2, allocatable);
+        let register_file = RegisterFile::new(session, 16, 2, allocatable);
         let codegen = map_err!(
             FunctionCodegen::new(),
             CodeGeneration,
@@ -307,7 +307,7 @@ where
         let mut allocatable = RegBitSet::new();
         allocatable.union(&RegBitSet::all_in_bank(0, 16)); // GP regs
         allocatable.union(&RegBitSet::all_in_bank(1, 16)); // XMM regs
-        self.register_file = RegisterFile::new(16, 2, allocatable);
+        self.register_file = RegisterFile::new(self.session, 16, 2, allocatable);
         self.codegen = map_err!(
             FunctionCodegen::new(),
             CodeGeneration,
