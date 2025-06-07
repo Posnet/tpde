@@ -31,7 +31,7 @@ pub struct TestIRCompiler<'arena> {
     /// Value assignment manager.
     value_mgr: ValueAssignmentManager<'arena>,
     /// Register allocator.
-    register_file: RegisterFile,
+    register_file: RegisterFile<'arena>,
     /// Compilation session.
     _session: &'arena CompilationSession<'arena>,
     /// Whether to disable fixed register assignments.
@@ -66,7 +66,7 @@ impl<'arena> TestIRCompiler<'arena> {
             adaptor,
             assembler,
             value_mgr: ValueAssignmentManager::new_in(session.arena()),
-            register_file: RegisterFile::new(16, 2, available_regs),
+            register_file: RegisterFile::new(session, 16, 2, available_regs),
             _session: session,
             _no_fixed_assignments: no_fixed_assignments,
         })
@@ -106,7 +106,7 @@ impl<'arena> TestIRCompiler<'arena> {
 
         // Reset per-function state
         self.value_mgr = ValueAssignmentManager::new_in(self._session.arena());
-        self.register_file = RegisterFile::new(16, 2, RegBitSet::all_in_bank(0, 16));
+        self.register_file = RegisterFile::new(self._session, 16, 2, RegBitSet::all_in_bank(0, 16));
 
         // Create a new function codegen for this function
         let mut func_codegen = FunctionCodegen::new(self._session.arena())?;

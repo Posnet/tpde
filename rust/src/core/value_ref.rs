@@ -53,13 +53,13 @@ pub enum OwnershipMode {
 /// without holding direct references, avoiding Rust borrowing conflicts.
 pub struct CompilerContext<'a, 'arena> {
     pub assignments: &'a mut ValueAssignmentManager<'arena>,
-    pub register_file: &'a mut RegisterFile,
+    pub register_file: &'a mut RegisterFile<'arena>,
 }
 
 impl<'a, 'arena> CompilerContext<'a, 'arena> {
     pub fn new(
         assignments: &'a mut ValueAssignmentManager<'arena>,
-        register_file: &'a mut RegisterFile,
+        register_file: &'a mut RegisterFile<'arena>,
     ) -> Self {
         Self {
             assignments,
@@ -82,12 +82,12 @@ pub struct ValueRef {
     consumed: bool,
 }
 
-impl ValueRef {
+impl<'arena> ValueRef {
     /// Create a new ValueRef with the specified ownership mode.
     pub fn new(
         local_idx: ValLocalIdx,
         ownership: OwnershipMode,
-        ctx: &mut CompilerContext<'_, '_>,
+        ctx: &mut CompilerContext<'_, 'arena>,
     ) -> Self {
         // Add reference count if using ref-counted ownership
         if ownership == OwnershipMode::RefCounted {
@@ -104,7 +104,7 @@ impl ValueRef {
     }
 
     /// Create an owned ValueRef (takes exclusive ownership).
-    pub fn owned(local_idx: ValLocalIdx, ctx: &mut CompilerContext<'_, '_>) -> Self {
+    pub fn owned(local_idx: ValLocalIdx, ctx: &mut CompilerContext<'_, 'arena>) -> Self {
         // For owned values, we need to add a reference that we'll remove on drop
         if let Some(assignment) = ctx.assignments.get_assignment_mut(local_idx) {
             assignment.add_ref();
@@ -118,7 +118,7 @@ impl ValueRef {
     }
 
     /// Create a ref-counted ValueRef (shared ownership).
-    pub fn ref_counted(local_idx: ValLocalIdx, ctx: &mut CompilerContext<'_, '_>) -> Self {
+    pub fn ref_counted(local_idx: ValLocalIdx, ctx: &mut CompilerContext<'_, 'arena>) -> Self {
         Self::new(local_idx, OwnershipMode::RefCounted, ctx)
     }
 
@@ -128,7 +128,7 @@ impl ValueRef {
     }
 
     /// Get the number of parts for this value.
-    pub fn part_count(&self, ctx: &CompilerContext<'_, '_>) -> Result<u32, ValueRefError> {
+    pub fn part_count(&self, ctx: &CompilerContext<'_, 'arena>) -> Result<u32, ValueRefError> {
         ctx.assignments
             .get_assignment(self.local_idx)
             .map(|a| a.part_count)
@@ -139,7 +139,7 @@ impl ValueRef {
     pub fn part(
         &self,
         part_idx: u32,
-        ctx: &mut CompilerContext<'_, '_>,
+        ctx: &mut CompilerContext<'_, 'arena>,
     ) -> Result<ValuePartRef, ValueRefError> {
         let part_count = self.part_count(ctx)?;
         if part_idx >= part_count {
@@ -150,12 +150,19 @@ impl ValueRef {
     }
 
     /// Access the first (and usually only) part of this value.
-    pub fn single_part(&self, ctx: &mut CompilerContext<'_, '_>) -> Result<ValuePartRef, ValueRefError> {
+    pub fn single_part(
+        &self,
+        ctx: &mut CompilerContext<'_, 'arena>,
+    ) -> Result<ValuePartRef, ValueRefError> {
         self.part(0, ctx)
     }
 
     /// Check if this value is currently assigned to a register.
-    pub fn is_in_register(&self, part_idx: u32, ctx: &CompilerContext<'_, '_>) -> bool {
+    pub fn is_in_register(
+        &self,
+        part_idx: u32,
+        ctx: &CompilerContext<'_, 'arena>,
+    ) -> bool {
         if let Some(assignment) = ctx.assignments.get_assignment(self.local_idx) {
             if let Some(part_data) = assignment.part(part_idx) {
                 return part_data.register_valid();
@@ -165,7 +172,11 @@ impl ValueRef {
     }
 
     /// Get the register for a specific part if it's currently assigned.
-    pub fn current_register(&self, part_idx: u32, ctx: &CompilerContext<'_, '_>) -> Option<AsmReg> {
+    pub fn current_register(
+        &self,
+        part_idx: u32,
+        ctx: &CompilerContext<'_, 'arena>,
+    ) -> Option<AsmReg> {
         if !self.is_in_register(part_idx, ctx) {
             return None;
         }
@@ -187,13 +198,13 @@ impl ValueRef {
     }
 
     /// Manually drop this ValueRef with access to the context.
-    pub fn drop_with_context(mut self, ctx: &mut CompilerContext<'_, '_>) {
+    pub fn drop_with_context(mut self, ctx: &mut CompilerContext<'_, 'arena>) {
         self.cleanup(ctx);
         self.consumed = true; // Prevent double cleanup
     }
 
     /// Internal cleanup method.
-    fn cleanup(&mut self, ctx: &mut CompilerContext<'_, '_>) {
+    fn cleanup(&mut self, ctx: &mut CompilerContext<'_, 'arena>) {
         if !self.consumed && self.ownership != OwnershipMode::Unowned {
             ctx.assignments.remove_ref(self.local_idx);
         }
@@ -215,7 +226,7 @@ pub struct ValuePartRef {
     modified: bool,
 }
 
-impl ValuePartRef {
+impl<'arena> ValuePartRef {
     /// Create a new ValuePartRef for the specified value part.
     pub fn new(local_idx: ValLocalIdx, part_idx: u32) -> Result<Self, ValueRefError> {
         log::trace!(
@@ -236,7 +247,10 @@ impl ValuePartRef {
     /// This is the primary method used by instruction selection to get
     /// a register containing the value. It handles allocation, reloading
     /// from stack, and locking automatically.
-    pub fn load_to_reg(&mut self, ctx: &mut CompilerContext<'_, '_>) -> Result<AsmReg, ValueRefError> {
+    pub fn load_to_reg(
+        &mut self,
+        ctx: &mut CompilerContext<'_, 'arena>,
+    ) -> Result<AsmReg, ValueRefError> {
         log::trace!(
             "load_to_reg for local_idx={}, part_idx={}",
             self.local_idx,
@@ -260,7 +274,10 @@ impl ValuePartRef {
     }
 
     /// Allocate a register for this part.
-    fn allocate_register(&mut self, ctx: &mut CompilerContext<'_, '_>) -> Result<AsmReg, ValueRefError> {
+    fn allocate_register(
+        &mut self,
+        ctx: &mut CompilerContext<'_, 'arena>,
+    ) -> Result<AsmReg, ValueRefError> {
         log::trace!(
             "allocate_register for local_idx={}, part_idx={}",
             self.local_idx,
@@ -318,7 +335,7 @@ impl ValuePartRef {
     pub fn alloc_try_reuse(
         &mut self,
         other: &mut ValuePartRef,
-        ctx: &mut CompilerContext<'_, '_>,
+        ctx: &mut CompilerContext<'_, 'arena>,
     ) -> Result<AsmReg, ValueRefError> {
         if let Some(other_reg) = other.current_register(ctx) {
             // Check if we can take ownership of the other register
@@ -335,7 +352,10 @@ impl ValuePartRef {
     }
 
     /// Get the current register for this part (if any).
-    pub fn current_register(&self, ctx: &CompilerContext<'_, '_>) -> Option<AsmReg> {
+    pub fn current_register(
+        &self,
+        ctx: &CompilerContext<'_, 'arena>,
+    ) -> Option<AsmReg> {
         ctx.assignments
             .get_assignment(self.local_idx)
             .and_then(|assignment| assignment.part(self.part_idx))
@@ -344,7 +364,7 @@ impl ValuePartRef {
     }
 
     /// Check if this part can transfer ownership of its register.
-    fn can_transfer_ownership(&self, ctx: &CompilerContext<'_, '_>) -> bool {
+    fn can_transfer_ownership(&self, ctx: &CompilerContext<'_, 'arena>) -> bool {
         // Can transfer if we have exclusive access and the register isn't shared
         self.locked_register.is_some()
             && ctx
@@ -355,7 +375,10 @@ impl ValuePartRef {
     }
 
     /// Release ownership of the current register.
-    fn release_register(&mut self, ctx: &mut CompilerContext<'_, '_>) -> Result<(), ValueRefError> {
+    fn release_register(
+        &mut self,
+        ctx: &mut CompilerContext<'_, 'arena>,
+    ) -> Result<(), ValueRefError> {
         if let Some(reg) = self.locked_register.take() {
             // Unlock the register
             ctx.register_file
@@ -376,7 +399,7 @@ impl ValuePartRef {
     fn claim_register(
         &mut self,
         reg: AsmReg,
-        ctx: &mut CompilerContext<'_, '_>,
+        ctx: &mut CompilerContext<'_, 'arena>,
     ) -> Result<(), ValueRefError> {
         // Update our assignment
         if let Some(assignment) = ctx.assignments.get_assignment_mut(self.local_idx) {
@@ -400,7 +423,7 @@ impl ValuePartRef {
     }
 
     /// Mark this part as modified (dirty).
-    pub fn set_modified(&mut self, ctx: &mut CompilerContext<'_, '_>) {
+    pub fn set_modified(&mut self, ctx: &mut CompilerContext<'_, 'arena>) {
         self.modified = true;
         if let Some(reg) = self.current_register(ctx) {
             ctx.register_file.mark_clobbered(reg);
@@ -413,7 +436,10 @@ impl ValuePartRef {
     }
 
     /// Spill this part to memory if it's in a register.
-    pub fn spill(&mut self, ctx: &mut CompilerContext<'_, '_>) -> Result<(), ValueRefError> {
+    pub fn spill(
+        &mut self,
+        ctx: &mut CompilerContext<'_, 'arena>,
+    ) -> Result<(), ValueRefError> {
         if let Some(_reg) = self.current_register(ctx) {
             // In a real implementation, this would generate spill code
             // For now, we just mark the register as invalid
@@ -427,7 +453,7 @@ impl ValuePartRef {
     }
 
     /// Get the size of this part in bytes.
-    pub fn size_bytes(&self, ctx: &CompilerContext<'_, '_>) -> u32 {
+    pub fn size_bytes(&self, ctx: &CompilerContext<'_, 'arena>) -> u32 {
         ctx.assignments
             .get_assignment(self.local_idx)
             .and_then(|assignment| assignment.part(self.part_idx))
@@ -436,12 +462,12 @@ impl ValuePartRef {
     }
 
     /// Manually drop this ValuePartRef with access to the context.
-    pub fn drop_with_context(mut self, ctx: &mut CompilerContext<'_, '_>) {
+    pub fn drop_with_context(mut self, ctx: &mut CompilerContext<'_, 'arena>) {
         self.cleanup(ctx);
     }
 
     /// Internal cleanup method.
-    fn cleanup(&mut self, ctx: &mut CompilerContext<'_, '_>) {
+    fn cleanup(&mut self, ctx: &mut CompilerContext<'_, 'arena>) {
         // Unlock any locked register
         if let Some(reg) = self.locked_register {
             let _ = ctx.register_file.unlock_register(reg);
@@ -455,11 +481,11 @@ impl ValuePartRef {
 /// and reference counting information.
 pub struct ValueRefBuilder;
 
-impl ValueRefBuilder {
+impl<'arena> ValueRefBuilder {
     /// Create a ValueRef with ownership determined by liveness analysis.
     pub fn build_for_value(
         local_idx: ValLocalIdx,
-        ctx: &mut CompilerContext<'_, '_>,
+        ctx: &mut CompilerContext<'_, 'arena>,
         is_last_use: bool,
     ) -> ValueRef {
         let ownership = if is_last_use {
@@ -474,7 +500,10 @@ impl ValueRefBuilder {
     }
 
     /// Create a ValueRef for a result value (always owned).
-    pub fn build_for_result(local_idx: ValLocalIdx, ctx: &mut CompilerContext<'_, '_>) -> ValueRef {
+    pub fn build_for_result(
+        local_idx: ValLocalIdx,
+        ctx: &mut CompilerContext<'_, 'arena>,
+    ) -> ValueRef {
         ValueRef::owned(local_idx, ctx)
     }
 }
@@ -482,19 +511,27 @@ impl ValueRefBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bumpalo::Bump;
 
-    fn create_register_file() -> RegisterFile {
+    use bumpalo::Bump;
+    use crate::core::CompilationSession;
+
+    fn create_test_setup<'arena>(
+        session: &'arena CompilationSession<'arena>,
+    ) -> (ValueAssignmentManager<'arena>, RegisterFile<'arena>) {
+        let assignments = ValueAssignmentManager::new_in(session.arena());
+
         let mut allocatable = crate::core::register_file::RegBitSet::new();
         allocatable.union(&crate::core::register_file::RegBitSet::all_in_bank(0, 8));
-        RegisterFile::new(8, 1, allocatable)
+        let register_file = RegisterFile::new(session, 8, 1, allocatable);
+
+        (assignments, register_file)
     }
 
     #[test]
     fn test_value_ref_creation() {
-        let bump = Bump::new();
-        let mut assignments = ValueAssignmentManager::new_in(&bump);
-        let mut register_file = create_register_file();
+        let arena = Bump::new();
+        let session = CompilationSession::new(&arena);
+        let (mut assignments, mut register_file) = create_test_setup(&session);
         let mut ctx = CompilerContext::new(&mut assignments, &mut register_file);
 
         // Create an assignment
@@ -511,9 +548,9 @@ mod tests {
 
     #[test]
     fn test_value_part_ref_allocation() {
-        let bump = Bump::new();
-        let mut assignments = ValueAssignmentManager::new_in(&bump);
-        let mut register_file = create_register_file();
+        let arena = Bump::new();
+        let session = CompilationSession::new(&arena);
+        let (mut assignments, mut register_file) = create_test_setup(&session);
         let mut ctx = CompilerContext::new(&mut assignments, &mut register_file);
 
         // Create an assignment
@@ -535,9 +572,9 @@ mod tests {
 
     #[test]
     fn test_modification_tracking() {
-        let bump = Bump::new();
-        let mut assignments = ValueAssignmentManager::new_in(&bump);
-        let mut register_file = create_register_file();
+        let arena = Bump::new();
+        let session = CompilationSession::new(&arena);
+        let (mut assignments, mut register_file) = create_test_setup(&session);
         let mut ctx = CompilerContext::new(&mut assignments, &mut register_file);
 
         ctx.assignments.create_assignment(42, 1, 8);

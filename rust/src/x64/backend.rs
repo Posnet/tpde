@@ -21,9 +21,9 @@ use crate::core::{
     assembler::ElfAssembler,
     register_file::{RegAllocError, RegBitSet, RegisterFile},
     value_assignment::ValueAssignmentManager,
+    session::CompilationSession,
     Backend, CompilerBase, CompilerContext, IrAdaptor, ValuePartRef, ValueRefError,
 };
-use bumpalo::Bump;
 
 /// Error types for the x86-64 backend.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,7 +70,7 @@ pub struct X64Backend<'arena> {
     /// Value assignment tracking.
     value_mgr: ValueAssignmentManager<'arena>,
     /// Register allocator.
-    register_file: RegisterFile,
+    register_file: RegisterFile<'arena>,
     /// Instruction encoder.
     encoder: InstructionSelector<'arena>,
     /// Current stack frame size.
@@ -79,12 +79,12 @@ pub struct X64Backend<'arena> {
 
 impl<'arena> X64Backend<'arena> {
     /// Create a new x86-64 backend.
-    pub fn new(alloc: &'arena Bump) -> Result<Self, X64BackendError> {
+    pub fn new(session: &'arena CompilationSession<'arena>) -> Result<Self, X64BackendError> {
         Ok(Self {
-            alloc,
-            value_mgr: ValueAssignmentManager::new_in(alloc),
-            register_file: RegisterFile::new(16, 2, RegBitSet::all_in_bank(0, 16)),
-            encoder: InstructionSelector::new(alloc)?,
+            alloc: session.arena(),
+            value_mgr: ValueAssignmentManager::new_in(session.arena()),
+            register_file: RegisterFile::new(session, 16, 2, RegBitSet::all_in_bank(0, 16)),
+            encoder: InstructionSelector::new(session.arena())?,
             frame_size: 0,
         })
     }
@@ -237,11 +237,11 @@ impl<'arena, A: IrAdaptor> Backend<A, ElfAssembler> for X64Backend<'arena> {
 /// Helper function to create a complete x86-64 compilation pipeline.
 pub fn create_x64_compiler<'arena, A: IrAdaptor>(
     adaptor: A,
-    arena: &'arena Bump,
+    session: &'arena CompilationSession<'arena>,
 ) -> Result<CompilerBase<A, ElfAssembler, X64Backend<'arena>>, X64BackendError> {
     use crate::core::assembler::Assembler;
     let assembler = <ElfAssembler as Assembler<A>>::new(true);
-    let backend = X64Backend::new(arena)?;
+    let backend = X64Backend::new(session)?;
     Ok(CompilerBase::new(adaptor, assembler, backend))
 }
 
@@ -249,6 +249,7 @@ pub fn create_x64_compiler<'arena, A: IrAdaptor>(
 mod tests {
     use super::*;
     use crate::core::IrAdaptor;
+    use bumpalo::Bump;
 
     /// Minimal test IR adaptor for demonstrating the backend.
     struct TestIrAdaptor {
@@ -391,8 +392,9 @@ mod tests {
 
     #[test]
     fn test_x64_backend_creation() {
-        let alloc = Bump::new();
-        let backend = X64Backend::new(&alloc);
+        let arena = Bump::new();
+        let session = CompilationSession::new(&arena);
+        let backend = X64Backend::new(&session);
         assert!(backend.is_ok());
     }
 

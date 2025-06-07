@@ -58,7 +58,8 @@
       "Bash(gh pr checkout:*)",
       "Bash(git merge:*)",
       "Bash(git fetch:*)",
-      "Bash(git pull:*)"
+      "Bash(git pull:*)",
+      "Bash(git cherry-pick:*)"
     ],
     "deny": []
   }
