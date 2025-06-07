@@ -599,6 +599,15 @@ impl<'ctx, 'arena, 'session> LlvmCompiler<'ctx, 'arena, 'session> {
             InstructionOpcode::URem => self.compile_urem_instruction(instruction),
             InstructionOpcode::SRem => self.compile_srem_instruction(instruction),
             InstructionOpcode::Select => self.compile_select_instruction(instruction),
+            InstructionOpcode::FAdd => self.compile_fadd_instruction(instruction),
+            InstructionOpcode::FSub => self.compile_fsub_instruction(instruction),
+            InstructionOpcode::FMul => self.compile_fmul_instruction(instruction),
+            InstructionOpcode::FDiv => self.compile_fdiv_instruction(instruction),
+            InstructionOpcode::FCmp => self.compile_fcmp_instruction(instruction),
+            InstructionOpcode::SIToFP => self.compile_sitofp_instruction(instruction),
+            InstructionOpcode::UIToFP => self.compile_uitofp_instruction(instruction),
+            InstructionOpcode::FPToSI => self.compile_fptosi_instruction(instruction),
+            InstructionOpcode::FPToUI => self.compile_fptoui_instruction(instruction),
 
             _ => {
                 log::warn!(
@@ -654,6 +663,72 @@ impl<'ctx, 'arena, 'session> LlvmCompiler<'ctx, 'arena, 'session> {
         })
     }
 
+    /// Extract common floating point binary operation setup.
+    fn setup_fp_binary_operation(
+        &mut self,
+        instruction: inkwell::values::InstructionValue<'ctx>,
+    ) -> Result<BinaryOpContext, LlvmCompilerError> {
+        // Direct access to LLVM instruction operands
+        let operand0 = instruction.get_operand(0).unwrap().left().unwrap();
+        let operand1 = instruction.get_operand(1).unwrap().left().unwrap();
+
+        // Get bit width from instruction type
+        let float_type = instruction.get_type().into_float_type();
+        let bit_width = if float_type.get_context().f64_type() == float_type {
+            64
+        } else {
+            32
+        };
+
+        // Convert LLVM values to our value indices
+        let left_idx = self.get_or_create_value_index(operand0)?;
+        let right_idx = self.get_or_create_value_index(operand1)?;
+
+        // For arithmetic operations, the instruction itself is the result value
+        // We'll use the instruction address as a unique ID for now
+        use inkwell::values::AsValueRef;
+        let inst_ptr = instruction.as_value_ref() as usize;
+        let result_idx = inst_ptr % 1024; // Simple hash for value index
+
+        // Create value assignments for floating point values
+        let value_size = (bit_width / 8) as u8;
+        let size_log2 = match bit_width {
+            32 => 2, // 2^2 = 4 bytes
+            64 => 3, // 2^3 = 8 bytes
+            _ => panic!("Invalid float bit width: {}", bit_width),
+        };
+
+        if self.value_mgr.get_assignment(left_idx).is_none() {
+            let assignment = self.value_mgr.create_assignment(left_idx, 1, value_size);
+            // Set bank 1 (XMM) for floating point
+            if let Some(part) = assignment.part_mut(0) {
+                *part = crate::core::value_assignment::PartData::new(1, 0, size_log2);
+            }
+        }
+        if self.value_mgr.get_assignment(right_idx).is_none() {
+            let assignment = self.value_mgr.create_assignment(right_idx, 1, value_size);
+            // Set bank 1 (XMM) for floating point
+            if let Some(part) = assignment.part_mut(0) {
+                *part = crate::core::value_assignment::PartData::new(1, 0, size_log2);
+            }
+        }
+        if self.value_mgr.get_assignment(result_idx).is_none() {
+            let assignment = self.value_mgr.create_assignment(result_idx, 1, value_size);
+            // Set bank 1 (XMM) for floating point
+            if let Some(part) = assignment.part_mut(0) {
+                *part = crate::core::value_assignment::PartData::new(1, 0, size_log2);
+            }
+        }
+
+        Ok(BinaryOpContext {
+            left_idx,
+            right_idx,
+            result_idx,
+            bit_width,
+            value_size,
+        })
+    }
+
     /// Allocate registers for binary operation.
     fn allocate_binary_op_registers(
         &mut self,
@@ -694,6 +769,61 @@ impl<'ctx, 'arena, 'session> LlvmCompiler<'ctx, 'arena, 'session> {
         } else {
             result_ref.load_to_reg(&mut ctx).map_err(|e| {
                 LlvmCompilerError::RegisterAllocation(format!("Failed to allocate result: {:?}", e))
+            })?
+        };
+
+        Ok((left_reg, right_reg, result_reg))
+    }
+
+    /// Allocate XMM registers for floating point binary operation.
+    fn allocate_fp_binary_op_registers(
+        &mut self,
+        context: &BinaryOpContext,
+        reuse_left: bool,
+    ) -> Result<(AsmReg, AsmReg, AsmReg), LlvmCompilerError> {
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+
+        // Create value references
+        let mut left_ref = ValuePartRef::new(context.left_idx, 0).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to create left ref: {:?}", e))
+        })?;
+        let mut right_ref = ValuePartRef::new(context.right_idx, 0).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to create right ref: {:?}", e))
+        })?;
+        let mut result_ref = ValuePartRef::new(context.result_idx, 0).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to create result ref: {:?}", e))
+        })?;
+
+        // Load operands to registers (will use XMM registers based on PartData bank setting)
+        let left_reg = left_ref.load_to_reg(&mut ctx).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!(
+                "Failed to load left operand to XMM: {:?}",
+                e
+            ))
+        })?;
+        let right_reg = right_ref.load_to_reg(&mut ctx).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!(
+                "Failed to load right operand to XMM: {:?}",
+                e
+            ))
+        })?;
+
+        // Try to reuse left operand register for result if requested
+        let result_reg = if reuse_left {
+            result_ref
+                .alloc_try_reuse(&mut left_ref, &mut ctx)
+                .map_err(|e| {
+                    LlvmCompilerError::RegisterAllocation(format!(
+                        "Failed to allocate result: {:?}",
+                        e
+                    ))
+                })?
+        } else {
+            result_ref.load_to_reg(&mut ctx).map_err(|e| {
+                LlvmCompilerError::RegisterAllocation(format!(
+                    "Failed to allocate result to XMM: {:?}",
+                    e
+                ))
             })?
         };
 
@@ -1797,7 +1927,10 @@ impl<'ctx, 'arena, 'session> LlvmCompiler<'ctx, 'arena, 'session> {
 
         // Load condition into a register
         let mut condition_ref = ValuePartRef::new(condition_idx, 0).map_err(|e| {
-            LlvmCompilerError::RegisterAllocation(format!("Failed to create condition ref: {:?}", e))
+            LlvmCompilerError::RegisterAllocation(format!(
+                "Failed to create condition ref: {:?}",
+                e
+            ))
         })?;
         let condition_reg = condition_ref.load_to_reg(&mut ctx).map_err(|e| {
             LlvmCompilerError::RegisterAllocation(format!("Failed to load condition: {:?}", e))
@@ -1832,38 +1965,70 @@ impl<'ctx, 'arena, 'session> LlvmCompiler<'ctx, 'arena, 'session> {
         // The select instruction works as: result = condition ? true_value : false_value
         // We implement this using conditional moves (CMOV):
         // 1. Move false value to result
-        // 2. Test condition 
+        // 2. Test condition
         // 3. If condition is true (non-zero), move true value to result
 
         // First, move false value to result
         match bit_width {
             1 | 8 => {
                 encoder.mov8_reg_reg(result_reg, false_reg).map_err(|e| {
-                    LlvmCompilerError::CodeGeneration(format!("Failed to mov8 false value: {:?}", e))
+                    LlvmCompilerError::CodeGeneration(format!(
+                        "Failed to mov8 false value: {:?}",
+                        e
+                    ))
                 })?;
-                log::trace!("   Generated: mov8 {}:{}, {}:{}", 
-                    result_reg.bank, result_reg.id, false_reg.bank, false_reg.id);
+                log::trace!(
+                    "   Generated: mov8 {}:{}, {}:{}",
+                    result_reg.bank,
+                    result_reg.id,
+                    false_reg.bank,
+                    false_reg.id
+                );
             }
             16 => {
                 encoder.mov16_reg_reg(result_reg, false_reg).map_err(|e| {
-                    LlvmCompilerError::CodeGeneration(format!("Failed to mov16 false value: {:?}", e))
+                    LlvmCompilerError::CodeGeneration(format!(
+                        "Failed to mov16 false value: {:?}",
+                        e
+                    ))
                 })?;
-                log::trace!("   Generated: mov16 {}:{}, {}:{}", 
-                    result_reg.bank, result_reg.id, false_reg.bank, false_reg.id);
+                log::trace!(
+                    "   Generated: mov16 {}:{}, {}:{}",
+                    result_reg.bank,
+                    result_reg.id,
+                    false_reg.bank,
+                    false_reg.id
+                );
             }
             32 => {
                 encoder.mov32_reg_reg(result_reg, false_reg).map_err(|e| {
-                    LlvmCompilerError::CodeGeneration(format!("Failed to mov32 false value: {:?}", e))
+                    LlvmCompilerError::CodeGeneration(format!(
+                        "Failed to mov32 false value: {:?}",
+                        e
+                    ))
                 })?;
-                log::trace!("   Generated: mov32 {}:{}, {}:{}", 
-                    result_reg.bank, result_reg.id, false_reg.bank, false_reg.id);
+                log::trace!(
+                    "   Generated: mov32 {}:{}, {}:{}",
+                    result_reg.bank,
+                    result_reg.id,
+                    false_reg.bank,
+                    false_reg.id
+                );
             }
             64 => {
                 encoder.mov_reg_reg(result_reg, false_reg).map_err(|e| {
-                    LlvmCompilerError::CodeGeneration(format!("Failed to mov64 false value: {:?}", e))
+                    LlvmCompilerError::CodeGeneration(format!(
+                        "Failed to mov64 false value: {:?}",
+                        e
+                    ))
                 })?;
-                log::trace!("   Generated: mov {}:{}, {}:{}", 
-                    result_reg.bank, result_reg.id, false_reg.bank, false_reg.id);
+                log::trace!(
+                    "   Generated: mov {}:{}, {}:{}",
+                    result_reg.bank,
+                    result_reg.id,
+                    false_reg.bank,
+                    false_reg.id
+                );
             }
             _ => unreachable!(),
         }
@@ -1872,23 +2037,41 @@ impl<'ctx, 'arena, 'session> LlvmCompiler<'ctx, 'arena, 'session> {
         encoder.test_reg_imm(condition_reg, 1).map_err(|e| {
             LlvmCompilerError::CodeGeneration(format!("Failed to test condition: {:?}", e))
         })?;
-        log::trace!("   Generated: test {}:{}, 1", condition_reg.bank, condition_reg.id);
+        log::trace!(
+            "   Generated: test {}:{}, 1",
+            condition_reg.bank,
+            condition_reg.id
+        );
 
         // Conditional move: if condition is non-zero, move true value to result
         match bit_width {
             1 | 8 | 16 | 32 => {
-                encoder.cmovne32_reg_reg(result_reg, true_reg).map_err(|e| {
-                    LlvmCompilerError::CodeGeneration(format!("Failed to cmovne32: {:?}", e))
-                })?;
-                log::trace!("   Generated: cmovne32 {}:{}, {}:{}", 
-                    result_reg.bank, result_reg.id, true_reg.bank, true_reg.id);
+                encoder
+                    .cmovne32_reg_reg(result_reg, true_reg)
+                    .map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to cmovne32: {:?}", e))
+                    })?;
+                log::trace!(
+                    "   Generated: cmovne32 {}:{}, {}:{}",
+                    result_reg.bank,
+                    result_reg.id,
+                    true_reg.bank,
+                    true_reg.id
+                );
             }
             64 => {
-                encoder.cmovne64_reg_reg(result_reg, true_reg).map_err(|e| {
-                    LlvmCompilerError::CodeGeneration(format!("Failed to cmovne64: {:?}", e))
-                })?;
-                log::trace!("   Generated: cmovne {}:{}, {}:{}", 
-                    result_reg.bank, result_reg.id, true_reg.bank, true_reg.id);
+                encoder
+                    .cmovne64_reg_reg(result_reg, true_reg)
+                    .map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to cmovne64: {:?}", e))
+                    })?;
+                log::trace!(
+                    "   Generated: cmovne {}:{}, {}:{}",
+                    result_reg.bank,
+                    result_reg.id,
+                    true_reg.bank,
+                    true_reg.id
+                );
             }
             _ => unreachable!(),
         }
@@ -2580,6 +2763,737 @@ impl<'ctx, 'arena, 'session> LlvmCompiler<'ctx, 'arena, 'session> {
             }
         }
 
+        Ok(())
+    }
+
+    /// Compile floating point add instruction.
+    fn compile_fadd_instruction(
+        &mut self,
+        instruction: inkwell::values::InstructionValue<'ctx>,
+    ) -> Result<(), LlvmCompilerError> {
+        log::trace!("➕ Compiling FADD instruction");
+
+        let context = self.setup_fp_binary_operation(instruction)?;
+        let (left_reg, right_reg, result_reg) =
+            self.allocate_fp_binary_op_registers(&context, true)?;
+
+        let encoder = self.codegen.encoder_mut();
+
+        match context.bit_width {
+            32 => {
+                if result_reg == left_reg {
+                    encoder.addss_reg_reg(result_reg, right_reg).map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to emit addss: {:?}", e))
+                    })?;
+                    log::trace!(
+                        "   Generated: addss xmm{}:{}, xmm{}:{}",
+                        result_reg.bank,
+                        result_reg.id,
+                        right_reg.bank,
+                        right_reg.id
+                    );
+                } else {
+                    // Move left to result first
+                    encoder.movss_reg_reg(result_reg, left_reg).map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to emit movss: {:?}", e))
+                    })?;
+                    encoder.addss_reg_reg(result_reg, right_reg).map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to emit addss: {:?}", e))
+                    })?;
+                    log::trace!(
+                        "   Generated: movss xmm{}:{}, xmm{}:{}; addss xmm{}:{}, xmm{}:{}",
+                        result_reg.bank,
+                        result_reg.id,
+                        left_reg.bank,
+                        left_reg.id,
+                        result_reg.bank,
+                        result_reg.id,
+                        right_reg.bank,
+                        right_reg.id
+                    );
+                }
+            }
+            64 => {
+                if result_reg == left_reg {
+                    encoder.addsd_reg_reg(result_reg, right_reg).map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to emit addsd: {:?}", e))
+                    })?;
+                    log::trace!(
+                        "   Generated: addsd xmm{}:{}, xmm{}:{}",
+                        result_reg.bank,
+                        result_reg.id,
+                        right_reg.bank,
+                        right_reg.id
+                    );
+                } else {
+                    // Move left to result first
+                    encoder.movsd_reg_reg(result_reg, left_reg).map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to emit movsd: {:?}", e))
+                    })?;
+                    encoder.addsd_reg_reg(result_reg, right_reg).map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to emit addsd: {:?}", e))
+                    })?;
+                    log::trace!(
+                        "   Generated: movsd xmm{}:{}, xmm{}:{}; addsd xmm{}:{}, xmm{}:{}",
+                        result_reg.bank,
+                        result_reg.id,
+                        left_reg.bank,
+                        left_reg.id,
+                        result_reg.bank,
+                        result_reg.id,
+                        right_reg.bank,
+                        right_reg.id
+                    );
+                }
+            }
+            _ => {
+                return Err(LlvmCompilerError::UnsupportedInstruction(format!(
+                    "FADD instruction with {}-bit width not supported",
+                    context.bit_width
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Compile floating point subtract instruction.
+    fn compile_fsub_instruction(
+        &mut self,
+        instruction: inkwell::values::InstructionValue<'ctx>,
+    ) -> Result<(), LlvmCompilerError> {
+        log::trace!("➖ Compiling FSUB instruction");
+
+        let context = self.setup_fp_binary_operation(instruction)?;
+        let (left_reg, right_reg, result_reg) =
+            self.allocate_fp_binary_op_registers(&context, true)?;
+
+        let encoder = self.codegen.encoder_mut();
+
+        match context.bit_width {
+            32 => {
+                if result_reg == left_reg {
+                    encoder.subss_reg_reg(result_reg, right_reg).map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to emit subss: {:?}", e))
+                    })?;
+                    log::trace!(
+                        "   Generated: subss xmm{}:{}, xmm{}:{}",
+                        result_reg.bank,
+                        result_reg.id,
+                        right_reg.bank,
+                        right_reg.id
+                    );
+                } else {
+                    // Move left to result first
+                    encoder.movss_reg_reg(result_reg, left_reg).map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to emit movss: {:?}", e))
+                    })?;
+                    encoder.subss_reg_reg(result_reg, right_reg).map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to emit subss: {:?}", e))
+                    })?;
+                    log::trace!(
+                        "   Generated: movss xmm{}:{}, xmm{}:{}; subss xmm{}:{}, xmm{}:{}",
+                        result_reg.bank,
+                        result_reg.id,
+                        left_reg.bank,
+                        left_reg.id,
+                        result_reg.bank,
+                        result_reg.id,
+                        right_reg.bank,
+                        right_reg.id
+                    );
+                }
+            }
+            64 => {
+                if result_reg == left_reg {
+                    encoder.subsd_reg_reg(result_reg, right_reg).map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to emit subsd: {:?}", e))
+                    })?;
+                    log::trace!(
+                        "   Generated: subsd xmm{}:{}, xmm{}:{}",
+                        result_reg.bank,
+                        result_reg.id,
+                        right_reg.bank,
+                        right_reg.id
+                    );
+                } else {
+                    // Move left to result first
+                    encoder.movsd_reg_reg(result_reg, left_reg).map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to emit movsd: {:?}", e))
+                    })?;
+                    encoder.subsd_reg_reg(result_reg, right_reg).map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to emit subsd: {:?}", e))
+                    })?;
+                    log::trace!(
+                        "   Generated: movsd xmm{}:{}, xmm{}:{}; subsd xmm{}:{}, xmm{}:{}",
+                        result_reg.bank,
+                        result_reg.id,
+                        left_reg.bank,
+                        left_reg.id,
+                        result_reg.bank,
+                        result_reg.id,
+                        right_reg.bank,
+                        right_reg.id
+                    );
+                }
+            }
+            _ => {
+                return Err(LlvmCompilerError::UnsupportedInstruction(format!(
+                    "FSUB instruction with {}-bit width not supported",
+                    context.bit_width
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Compile floating point multiply instruction.
+    fn compile_fmul_instruction(
+        &mut self,
+        instruction: inkwell::values::InstructionValue<'ctx>,
+    ) -> Result<(), LlvmCompilerError> {
+        log::trace!("✖️ Compiling FMUL instruction");
+
+        let context = self.setup_fp_binary_operation(instruction)?;
+        let (left_reg, right_reg, result_reg) =
+            self.allocate_fp_binary_op_registers(&context, true)?;
+
+        let encoder = self.codegen.encoder_mut();
+
+        match context.bit_width {
+            32 => {
+                if result_reg == left_reg {
+                    encoder.mulss_reg_reg(result_reg, right_reg).map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to emit mulss: {:?}", e))
+                    })?;
+                    log::trace!(
+                        "   Generated: mulss xmm{}:{}, xmm{}:{}",
+                        result_reg.bank,
+                        result_reg.id,
+                        right_reg.bank,
+                        right_reg.id
+                    );
+                } else {
+                    // Move left to result first
+                    encoder.movss_reg_reg(result_reg, left_reg).map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to emit movss: {:?}", e))
+                    })?;
+                    encoder.mulss_reg_reg(result_reg, right_reg).map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to emit mulss: {:?}", e))
+                    })?;
+                    log::trace!(
+                        "   Generated: movss xmm{}:{}, xmm{}:{}; mulss xmm{}:{}, xmm{}:{}",
+                        result_reg.bank,
+                        result_reg.id,
+                        left_reg.bank,
+                        left_reg.id,
+                        result_reg.bank,
+                        result_reg.id,
+                        right_reg.bank,
+                        right_reg.id
+                    );
+                }
+            }
+            64 => {
+                if result_reg == left_reg {
+                    encoder.mulsd_reg_reg(result_reg, right_reg).map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to emit mulsd: {:?}", e))
+                    })?;
+                    log::trace!(
+                        "   Generated: mulsd xmm{}:{}, xmm{}:{}",
+                        result_reg.bank,
+                        result_reg.id,
+                        right_reg.bank,
+                        right_reg.id
+                    );
+                } else {
+                    // Move left to result first
+                    encoder.movsd_reg_reg(result_reg, left_reg).map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to emit movsd: {:?}", e))
+                    })?;
+                    encoder.mulsd_reg_reg(result_reg, right_reg).map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to emit mulsd: {:?}", e))
+                    })?;
+                    log::trace!(
+                        "   Generated: movsd xmm{}:{}, xmm{}:{}; mulsd xmm{}:{}, xmm{}:{}",
+                        result_reg.bank,
+                        result_reg.id,
+                        left_reg.bank,
+                        left_reg.id,
+                        result_reg.bank,
+                        result_reg.id,
+                        right_reg.bank,
+                        right_reg.id
+                    );
+                }
+            }
+            _ => {
+                return Err(LlvmCompilerError::UnsupportedInstruction(format!(
+                    "FMUL instruction with {}-bit width not supported",
+                    context.bit_width
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Compile floating point divide instruction.
+    fn compile_fdiv_instruction(
+        &mut self,
+        instruction: inkwell::values::InstructionValue<'ctx>,
+    ) -> Result<(), LlvmCompilerError> {
+        log::trace!("➗ Compiling FDIV instruction");
+
+        let context = self.setup_fp_binary_operation(instruction)?;
+        let (left_reg, right_reg, result_reg) =
+            self.allocate_fp_binary_op_registers(&context, true)?;
+
+        let encoder = self.codegen.encoder_mut();
+
+        match context.bit_width {
+            32 => {
+                if result_reg == left_reg {
+                    encoder.divss_reg_reg(result_reg, right_reg).map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to emit divss: {:?}", e))
+                    })?;
+                    log::trace!(
+                        "   Generated: divss xmm{}:{}, xmm{}:{}",
+                        result_reg.bank,
+                        result_reg.id,
+                        right_reg.bank,
+                        right_reg.id
+                    );
+                } else {
+                    // Move left to result first
+                    encoder.movss_reg_reg(result_reg, left_reg).map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to emit movss: {:?}", e))
+                    })?;
+                    encoder.divss_reg_reg(result_reg, right_reg).map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to emit divss: {:?}", e))
+                    })?;
+                    log::trace!(
+                        "   Generated: movss xmm{}:{}, xmm{}:{}; divss xmm{}:{}, xmm{}:{}",
+                        result_reg.bank,
+                        result_reg.id,
+                        left_reg.bank,
+                        left_reg.id,
+                        result_reg.bank,
+                        result_reg.id,
+                        right_reg.bank,
+                        right_reg.id
+                    );
+                }
+            }
+            64 => {
+                if result_reg == left_reg {
+                    encoder.divsd_reg_reg(result_reg, right_reg).map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to emit divsd: {:?}", e))
+                    })?;
+                    log::trace!(
+                        "   Generated: divsd xmm{}:{}, xmm{}:{}",
+                        result_reg.bank,
+                        result_reg.id,
+                        right_reg.bank,
+                        right_reg.id
+                    );
+                } else {
+                    // Move left to result first
+                    encoder.movsd_reg_reg(result_reg, left_reg).map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to emit movsd: {:?}", e))
+                    })?;
+                    encoder.divsd_reg_reg(result_reg, right_reg).map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!("Failed to emit divsd: {:?}", e))
+                    })?;
+                    log::trace!(
+                        "   Generated: movsd xmm{}:{}, xmm{}:{}; divsd xmm{}:{}, xmm{}:{}",
+                        result_reg.bank,
+                        result_reg.id,
+                        left_reg.bank,
+                        left_reg.id,
+                        result_reg.bank,
+                        result_reg.id,
+                        right_reg.bank,
+                        right_reg.id
+                    );
+                }
+            }
+            _ => {
+                return Err(LlvmCompilerError::UnsupportedInstruction(format!(
+                    "FDIV instruction with {}-bit width not supported",
+                    context.bit_width
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Compile floating point comparison instruction.
+    fn compile_fcmp_instruction(
+        &mut self,
+        instruction: inkwell::values::InstructionValue<'ctx>,
+    ) -> Result<(), LlvmCompilerError> {
+        log::trace!("🔢 Compiling FCMP instruction");
+
+        // FCmp is special - it takes float operands but returns i1 (boolean)
+        // Direct access to LLVM instruction operands
+        let operand0 = instruction.get_operand(0).unwrap().left().unwrap();
+        let operand1 = instruction.get_operand(1).unwrap().left().unwrap();
+
+        // Get bit width from first operand type (float)
+        let float_type = operand0.get_type().into_float_type();
+        let bit_width = if float_type.get_context().f64_type() == float_type {
+            64
+        } else {
+            32
+        };
+
+        // Convert LLVM values to our value indices
+        let left_idx = self.get_or_create_value_index(operand0)?;
+        let right_idx = self.get_or_create_value_index(operand1)?;
+
+        // For the result (i1), use instruction itself as the result value
+        use inkwell::values::AsValueRef;
+        let inst_ptr = instruction.as_value_ref() as usize;
+        let result_idx = inst_ptr % 1024;
+
+        // Create value assignments
+        let value_size = (bit_width / 8) as u8;
+        let size_log2 = match bit_width {
+            32 => 2, // 2^2 = 4 bytes
+            64 => 3, // 2^3 = 8 bytes
+            _ => panic!("Invalid float bit width: {}", bit_width),
+        };
+
+        // Setup float operands in XMM registers
+        if self.value_mgr.get_assignment(left_idx).is_none() {
+            let assignment = self.value_mgr.create_assignment(left_idx, 1, value_size);
+            // Set bank 1 (XMM) for floating point
+            if let Some(part) = assignment.part_mut(0) {
+                *part = crate::core::value_assignment::PartData::new(1, 0, size_log2);
+            }
+        }
+        if self.value_mgr.get_assignment(right_idx).is_none() {
+            let assignment = self.value_mgr.create_assignment(right_idx, 1, value_size);
+            // Set bank 1 (XMM) for floating point
+            if let Some(part) = assignment.part_mut(0) {
+                *part = crate::core::value_assignment::PartData::new(1, 0, size_log2);
+            }
+        }
+
+        // Setup result in GP register (i1 boolean)
+        if self.value_mgr.get_assignment(result_idx).is_none() {
+            self.value_mgr.create_assignment(result_idx, 1, 1); // 1 byte for i1
+        }
+
+        // Allocate registers
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+
+        let mut left_ref = ValuePartRef::new(left_idx, 0).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to create left ref: {:?}", e))
+        })?;
+        let mut right_ref = ValuePartRef::new(right_idx, 0).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to create right ref: {:?}", e))
+        })?;
+        let mut result_ref = ValuePartRef::new(result_idx, 0).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to create result ref: {:?}", e))
+        })?;
+
+        let left_reg = left_ref.load_to_reg(&mut ctx).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to load left operand: {:?}", e))
+        })?;
+        let right_reg = right_ref.load_to_reg(&mut ctx).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to load right operand: {:?}", e))
+        })?;
+        let result_reg = result_ref.load_to_reg(&mut ctx).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to allocate result: {:?}", e))
+        })?;
+
+        // Get the predicate for floating point comparison
+        let predicate = instruction.get_fcmp_predicate().ok_or_else(|| {
+            LlvmCompilerError::UnsupportedInstruction("Failed to get FCmp predicate".to_string())
+        })?;
+
+        let encoder = self.codegen.encoder_mut();
+
+        // First, perform the comparison
+        match bit_width {
+            32 => {
+                encoder.ucomiss_reg_reg(left_reg, right_reg).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to emit ucomiss: {:?}", e))
+                })?;
+                log::trace!(
+                    "   Generated: ucomiss xmm{}:{}, xmm{}:{}",
+                    left_reg.bank,
+                    left_reg.id,
+                    right_reg.bank,
+                    right_reg.id
+                );
+            }
+            64 => {
+                encoder.ucomisd_reg_reg(left_reg, right_reg).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to emit ucomisd: {:?}", e))
+                })?;
+                log::trace!(
+                    "   Generated: ucomisd xmm{}:{}, xmm{}:{}",
+                    left_reg.bank,
+                    left_reg.id,
+                    right_reg.bank,
+                    right_reg.id
+                );
+            }
+            _ => {
+                return Err(LlvmCompilerError::UnsupportedInstruction(format!(
+                    "FCMP instruction with {}-bit width not supported",
+                    bit_width
+                )));
+            }
+        }
+
+        // Now emit SETcc based on predicate
+        use inkwell::FloatPredicate;
+        match predicate {
+            FloatPredicate::OEQ => {
+                // Ordered and equal
+                encoder.sete_reg(result_reg).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to emit sete: {:?}", e))
+                })?;
+                log::trace!("   Generated: sete {}:{}", result_reg.bank, result_reg.id);
+            }
+            FloatPredicate::ONE => {
+                // Ordered and not equal
+                encoder.setne_reg(result_reg).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to emit setne: {:?}", e))
+                })?;
+                log::trace!("   Generated: setne {}:{}", result_reg.bank, result_reg.id);
+            }
+            FloatPredicate::OGT => {
+                // Ordered and greater than
+                encoder.seta_reg(result_reg).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to emit seta: {:?}", e))
+                })?;
+                log::trace!("   Generated: seta {}:{}", result_reg.bank, result_reg.id);
+            }
+            FloatPredicate::OGE => {
+                // Ordered and greater than or equal
+                encoder.setae_reg(result_reg).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to emit setae: {:?}", e))
+                })?;
+                log::trace!("   Generated: setae {}:{}", result_reg.bank, result_reg.id);
+            }
+            FloatPredicate::OLT => {
+                // Ordered and less than
+                encoder.setb_reg(result_reg).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to emit setb: {:?}", e))
+                })?;
+                log::trace!("   Generated: setb {}:{}", result_reg.bank, result_reg.id);
+            }
+            FloatPredicate::OLE => {
+                // Ordered and less than or equal
+                encoder.setbe_reg(result_reg).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!("Failed to emit setbe: {:?}", e))
+                })?;
+                log::trace!("   Generated: setbe {}:{}", result_reg.bank, result_reg.id);
+            }
+            _ => {
+                return Err(LlvmCompilerError::UnsupportedInstruction(format!(
+                    "FCMP predicate {:?} not supported",
+                    predicate
+                )));
+            }
+        }
+
+        // Zero-extend to full byte
+        encoder
+            .movzx_reg8_to_reg32(result_reg, result_reg)
+            .map_err(|e| {
+                LlvmCompilerError::CodeGeneration(format!("Failed to emit movzx: {:?}", e))
+            })?;
+        log::trace!(
+            "   Generated: movzx {}:{}, byte {}:{}",
+            result_reg.bank,
+            result_reg.id,
+            result_reg.bank,
+            result_reg.id
+        );
+
+        Ok(())
+    }
+
+    /// Compile signed integer to floating point conversion instruction.
+    fn compile_sitofp_instruction(
+        &mut self,
+        instruction: inkwell::values::InstructionValue<'ctx>,
+    ) -> Result<(), LlvmCompilerError> {
+        log::trace!("🔄 Compiling SITOFP (signed int to float) instruction");
+
+        // SIToFP has one operand (int source) and one result (float)
+        let operand = instruction.get_operand(0).unwrap().left().unwrap();
+        let src_idx = self.get_or_create_value_index(operand)?;
+
+        // Get source and destination types
+        let src_type = operand.get_type().into_int_type();
+        let dst_type = instruction.get_type().into_float_type();
+        let src_bits = src_type.get_bit_width();
+        let dst_bits = if dst_type.get_context().f64_type() == dst_type {
+            64
+        } else {
+            32
+        };
+
+        // Create result value
+        use inkwell::values::AsValueRef;
+        let inst_ptr = instruction.as_value_ref() as usize;
+        let result_idx = inst_ptr % 1024;
+
+        // Create value assignments
+        let src_size = (src_bits / 8) as u8;
+        let dst_size = (dst_bits / 8) as u8;
+        let dst_size_log2 = match dst_bits {
+            32 => 2, // 2^2 = 4 bytes
+            64 => 3, // 2^3 = 8 bytes
+            _ => panic!("Invalid float bit width: {}", dst_bits),
+        };
+
+        if self.value_mgr.get_assignment(src_idx).is_none() {
+            self.value_mgr.create_assignment(src_idx, 1, src_size);
+        }
+        if self.value_mgr.get_assignment(result_idx).is_none() {
+            let assignment = self.value_mgr.create_assignment(result_idx, 1, dst_size);
+            // Set bank 1 (XMM) for floating point result
+            if let Some(part) = assignment.part_mut(0) {
+                *part = crate::core::value_assignment::PartData::new(1, 0, dst_size_log2);
+            }
+        }
+
+        // Allocate registers
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+        let mut src_ref = ValuePartRef::new(src_idx, 0).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to create src ref: {:?}", e))
+        })?;
+        let mut result_ref = ValuePartRef::new(result_idx, 0).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to create result ref: {:?}", e))
+        })?;
+
+        let src_reg = src_ref.load_to_reg(&mut ctx).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to load src operand: {:?}", e))
+        })?;
+        let result_reg = result_ref.load_to_reg(&mut ctx).map_err(|e| {
+            LlvmCompilerError::RegisterAllocation(format!("Failed to allocate result: {:?}", e))
+        })?;
+
+        let encoder = self.codegen.encoder_mut();
+
+        // Emit conversion instruction based on src/dst sizes
+        match (src_bits, dst_bits) {
+            (32, 32) => {
+                encoder
+                    .cvtsi2ss_xmm_reg32(result_reg, src_reg)
+                    .map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!(
+                            "Failed to emit cvtsi2ss: {:?}",
+                            e
+                        ))
+                    })?;
+                log::trace!(
+                    "   Generated: cvtsi2ss xmm{}:{}, {}:{}",
+                    result_reg.bank,
+                    result_reg.id,
+                    src_reg.bank,
+                    src_reg.id
+                );
+            }
+            (32, 64) => {
+                encoder
+                    .cvtsi2sd_xmm_reg32(result_reg, src_reg)
+                    .map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!(
+                            "Failed to emit cvtsi2sd: {:?}",
+                            e
+                        ))
+                    })?;
+                log::trace!(
+                    "   Generated: cvtsi2sd xmm{}:{}, {}:{}",
+                    result_reg.bank,
+                    result_reg.id,
+                    src_reg.bank,
+                    src_reg.id
+                );
+            }
+            (64, 32) => {
+                encoder
+                    .cvtsi2ss_xmm_reg64(result_reg, src_reg)
+                    .map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!(
+                            "Failed to emit cvtsi2ss: {:?}",
+                            e
+                        ))
+                    })?;
+                log::trace!(
+                    "   Generated: cvtsi2ss xmm{}:{}, {}:{}",
+                    result_reg.bank,
+                    result_reg.id,
+                    src_reg.bank,
+                    src_reg.id
+                );
+            }
+            (64, 64) => {
+                encoder
+                    .cvtsi2sd_xmm_reg64(result_reg, src_reg)
+                    .map_err(|e| {
+                        LlvmCompilerError::CodeGeneration(format!(
+                            "Failed to emit cvtsi2sd: {:?}",
+                            e
+                        ))
+                    })?;
+                log::trace!(
+                    "   Generated: cvtsi2sd xmm{}:{}, {}:{}",
+                    result_reg.bank,
+                    result_reg.id,
+                    src_reg.bank,
+                    src_reg.id
+                );
+            }
+            _ => {
+                return Err(LlvmCompilerError::UnsupportedInstruction(format!(
+                    "SITOFP from {}-bit int to {}-bit float not supported",
+                    src_bits, dst_bits
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Compile unsigned integer to floating point conversion instruction.
+    fn compile_uitofp_instruction(
+        &mut self,
+        instruction: inkwell::values::InstructionValue<'ctx>,
+    ) -> Result<(), LlvmCompilerError> {
+        log::trace!("🔄 Compiling UITOFP (unsigned int to float) instruction");
+        // For now, treat as signed conversion - proper unsigned conversion needs more complex handling
+        self.compile_sitofp_instruction(instruction)
+    }
+
+    /// Compile floating point to signed integer conversion instruction.
+    fn compile_fptosi_instruction(
+        &mut self,
+        _instruction: inkwell::values::InstructionValue<'ctx>,
+    ) -> Result<(), LlvmCompilerError> {
+        log::trace!("🔄 Compiling FPTOSI (float to signed int) instruction");
+        // TODO: Implement float to int conversion
+        Ok(())
+    }
+
+    /// Compile floating point to unsigned integer conversion instruction.
+    fn compile_fptoui_instruction(
+        &mut self,
+        _instruction: inkwell::values::InstructionValue<'ctx>,
+    ) -> Result<(), LlvmCompilerError> {
+        log::trace!("🔄 Compiling FPTOUI (float to unsigned int) instruction");
+        // TODO: Implement float to unsigned int conversion
         Ok(())
     }
 

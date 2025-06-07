@@ -302,7 +302,7 @@ fn test_select_instruction() {
 
     // Build select: result = cond ? a : b
     let result = builder.build_select(cond, a, b, "select_result").unwrap();
-    
+
     builder.build_return(Some(&result)).unwrap();
 
     // Verify module
@@ -317,7 +317,7 @@ fn test_select_instruction() {
 
     // Compile the module
     let mut compiler = LlvmCompiler::new(module, &session).unwrap();
-    
+
     // Compile the function
     compiler.compile_function_by_name("test_select").unwrap();
 
@@ -349,11 +349,13 @@ fn test_select_with_comparison() {
     let y = function.get_nth_param(1).unwrap().into_int_value();
 
     // Compare x > y
-    let cmp = builder.build_int_compare(IntPredicate::SGT, x, y, "cmp").unwrap();
-    
+    let cmp = builder
+        .build_int_compare(IntPredicate::SGT, x, y, "cmp")
+        .unwrap();
+
     // Select max(x, y) using: cmp ? x : y
     let max_val = builder.build_select(cmp, x, y, "max").unwrap();
-    
+
     builder.build_return(Some(&max_val)).unwrap();
 
     // Verify module
@@ -368,7 +370,7 @@ fn test_select_with_comparison() {
 
     // Compile the module
     let mut compiler = LlvmCompiler::new(module, &session).unwrap();
-    
+
     // Compile the function
     compiler.compile_function_by_name("max").unwrap();
 
@@ -378,8 +380,232 @@ fn test_select_with_comparison() {
     assert!(stats.instruction_counts.contains_key("Select"));
 
     println!("✅ Select with comparison compiled successfully!");
-    println!("   ICmp: {}, Select: {}", 
-        stats.instruction_counts["ICmp"],
-        stats.instruction_counts["Select"]
+    println!(
+        "   ICmp: {}, Select: {}",
+        stats.instruction_counts["ICmp"], stats.instruction_counts["Select"]
+    );
+}
+
+#[test]
+fn test_floating_point_add() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    let context = Context::create();
+    let module = context.create_module("test_fadd");
+    let builder = context.create_builder();
+
+    // Create function: float add_floats(float a, float b)
+    let f32_type = context.f32_type();
+    let fn_type = f32_type.fn_type(&[f32_type.into(), f32_type.into()], false);
+    let function = module.add_function("add_floats", fn_type, None);
+
+    let entry = context.append_basic_block(function, "entry");
+    builder.position_at_end(entry);
+
+    let a = function.get_nth_param(0).unwrap().into_float_value();
+    let b = function.get_nth_param(1).unwrap().into_float_value();
+
+    let sum = builder.build_float_add(a, b, "sum").unwrap();
+    builder.build_return(Some(&sum)).unwrap();
+
+    // Verify module
+    assert!(module.verify().is_ok());
+
+    // Print for debugging
+    module.print_to_stderr();
+
+    // Create arena and session
+    let arena = Bump::new();
+    let session = CompilationSession::new(&arena);
+
+    // Compile the module
+    let mut compiler = LlvmCompiler::new(module, &session).unwrap();
+
+    // Compile the function
+    compiler.compile_function_by_name("add_floats").unwrap();
+
+    // Check that we compiled FAdd instruction
+    let stats = compiler.session().stats();
+    assert!(stats.instruction_counts.contains_key("FAdd"));
+
+    println!("✅ Float add compiled successfully!");
+    println!("   FAdd: {}", stats.instruction_counts["FAdd"]);
+}
+
+#[test]
+fn test_floating_point_arithmetic() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    let context = Context::create();
+    let module = context.create_module("test_fp_arithmetic");
+    let builder = context.create_builder();
+
+    // Create function: double compute(double x, double y)
+    let f64_type = context.f64_type();
+    let fn_type = f64_type.fn_type(&[f64_type.into(), f64_type.into()], false);
+    let function = module.add_function("compute", fn_type, None);
+
+    let entry = context.append_basic_block(function, "entry");
+    builder.position_at_end(entry);
+
+    let x = function.get_nth_param(0).unwrap().into_float_value();
+    let y = function.get_nth_param(1).unwrap().into_float_value();
+
+    // result = (x + y) * (x - y) / 2.0
+    let sum = builder.build_float_add(x, y, "sum").unwrap();
+    let diff = builder.build_float_sub(x, y, "diff").unwrap();
+    let product = builder.build_float_mul(sum, diff, "product").unwrap();
+    let two = f64_type.const_float(2.0);
+    let result = builder.build_float_div(product, two, "result").unwrap();
+
+    builder.build_return(Some(&result)).unwrap();
+
+    // Verify module
+    assert!(module.verify().is_ok());
+
+    // Print for debugging
+    module.print_to_stderr();
+
+    // Create arena and session
+    let arena = Bump::new();
+    let session = CompilationSession::new(&arena);
+
+    // Compile the module
+    let mut compiler = LlvmCompiler::new(module, &session).unwrap();
+
+    // Compile the function
+    compiler.compile_function_by_name("compute").unwrap();
+
+    // Check that we compiled all floating point instructions
+    let stats = compiler.session().stats();
+    assert!(stats.instruction_counts.contains_key("FAdd"));
+    assert!(stats.instruction_counts.contains_key("FSub"));
+    assert!(stats.instruction_counts.contains_key("FMul"));
+    assert!(stats.instruction_counts.contains_key("FDiv"));
+
+    println!("✅ Float arithmetic compiled successfully!");
+    println!(
+        "   FAdd: {}, FSub: {}, FMul: {}, FDiv: {}",
+        stats.instruction_counts["FAdd"],
+        stats.instruction_counts["FSub"],
+        stats.instruction_counts["FMul"],
+        stats.instruction_counts["FDiv"]
+    );
+}
+
+#[test]
+fn test_floating_point_comparison() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    let context = Context::create();
+    let module = context.create_module("test_fcmp");
+    let builder = context.create_builder();
+
+    // Create function: bool is_greater(float a, float b)
+    let f32_type = context.f32_type();
+    let i1_type = context.bool_type();
+    let fn_type = i1_type.fn_type(&[f32_type.into(), f32_type.into()], false);
+    let function = module.add_function("is_greater", fn_type, None);
+
+    let entry = context.append_basic_block(function, "entry");
+    builder.position_at_end(entry);
+
+    let a_param = function.get_nth_param(0).unwrap();
+    let b_param = function.get_nth_param(1).unwrap();
+
+    // Debug print the types
+    println!("a_param type: {:?}", a_param.get_type());
+    println!("b_param type: {:?}", b_param.get_type());
+
+    // Ensure they are float values
+    let a = a_param.into_float_value();
+    let b = b_param.into_float_value();
+
+    use inkwell::FloatPredicate;
+    let cmp = builder
+        .build_float_compare(FloatPredicate::OGT, a, b, "cmp")
+        .unwrap();
+    builder.build_return(Some(&cmp)).unwrap();
+
+    // Verify module
+    assert!(module.verify().is_ok());
+
+    // Print for debugging
+    module.print_to_stderr();
+
+    // Create arena and session
+    let arena = Bump::new();
+    let session = CompilationSession::new(&arena);
+
+    // Compile the module
+    let mut compiler = LlvmCompiler::new(module, &session).unwrap();
+
+    // Compile the function
+    compiler.compile_function_by_name("is_greater").unwrap();
+
+    // Check that we compiled FCmp instruction
+    let stats = compiler.session().stats();
+    assert!(stats.instruction_counts.contains_key("FCmp"));
+
+    println!("✅ Float comparison compiled successfully!");
+    println!("   FCmp: {}", stats.instruction_counts["FCmp"]);
+}
+
+#[test]
+fn test_mixed_int_float_operations() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    let context = Context::create();
+    let module = context.create_module("test_mixed");
+    let builder = context.create_builder();
+
+    // Create function: float scale_by_int(float value, int scale)
+    let f32_type = context.f32_type();
+    let i32_type = context.i32_type();
+    let fn_type = f32_type.fn_type(&[f32_type.into(), i32_type.into()], false);
+    let function = module.add_function("scale_by_int", fn_type, None);
+
+    let entry = context.append_basic_block(function, "entry");
+    builder.position_at_end(entry);
+
+    let value = function.get_nth_param(0).unwrap().into_float_value();
+    let scale_int = function.get_nth_param(1).unwrap().into_int_value();
+
+    // Convert int to float
+    let scale_float = builder
+        .build_signed_int_to_float(scale_int, f32_type, "scale_float")
+        .unwrap();
+
+    // Multiply
+    let result = builder
+        .build_float_mul(value, scale_float, "result")
+        .unwrap();
+    builder.build_return(Some(&result)).unwrap();
+
+    // Verify module
+    assert!(module.verify().is_ok());
+
+    // Print for debugging
+    module.print_to_stderr();
+
+    // Create arena and session
+    let arena = Bump::new();
+    let session = CompilationSession::new(&arena);
+
+    // Compile the module
+    let mut compiler = LlvmCompiler::new(module, &session).unwrap();
+
+    // Compile the function
+    compiler.compile_function_by_name("scale_by_int").unwrap();
+
+    // Check that we compiled the conversion and multiplication
+    let stats = compiler.session().stats();
+    assert!(stats.instruction_counts.contains_key("SIToFP"));
+    assert!(stats.instruction_counts.contains_key("FMul"));
+
+    println!("✅ Mixed int/float operations compiled successfully!");
+    println!(
+        "   SIToFP: {}, FMul: {}",
+        stats.instruction_counts["SIToFP"], stats.instruction_counts["FMul"]
     );
 }

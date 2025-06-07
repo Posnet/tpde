@@ -1329,6 +1329,258 @@ impl<'arena> X64Encoder<'arena> {
         Ok(())
     }
 
+    // ==== FLOATING POINT ARITHMETIC INSTRUCTIONS ====
+
+    /// Emit ADDSS instruction - scalar single-precision float add.
+    pub fn addss_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_xmm_register(dst)?;
+        let src_reg = self.to_xmm_register(src)?;
+
+        self.assembler
+            .addss(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit ADDSD instruction - scalar double-precision float add.
+    pub fn addsd_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_xmm_register(dst)?;
+        let src_reg = self.to_xmm_register(src)?;
+
+        self.assembler
+            .addsd(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit SUBSS instruction - scalar single-precision float subtract.
+    pub fn subss_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_xmm_register(dst)?;
+        let src_reg = self.to_xmm_register(src)?;
+
+        self.assembler
+            .subss(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit SUBSD instruction - scalar double-precision float subtract.
+    pub fn subsd_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_xmm_register(dst)?;
+        let src_reg = self.to_xmm_register(src)?;
+
+        self.assembler
+            .subsd(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit MULSS instruction - scalar single-precision float multiply.
+    pub fn mulss_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_xmm_register(dst)?;
+        let src_reg = self.to_xmm_register(src)?;
+
+        self.assembler
+            .mulss(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit MULSD instruction - scalar double-precision float multiply.
+    pub fn mulsd_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_xmm_register(dst)?;
+        let src_reg = self.to_xmm_register(src)?;
+
+        self.assembler
+            .mulsd(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit DIVSS instruction - scalar single-precision float divide.
+    pub fn divss_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_xmm_register(dst)?;
+        let src_reg = self.to_xmm_register(src)?;
+
+        self.assembler
+            .divss(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit DIVSD instruction - scalar double-precision float divide.
+    pub fn divsd_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_xmm_register(dst)?;
+        let src_reg = self.to_xmm_register(src)?;
+
+        self.assembler
+            .divsd(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit MOVSS instruction - move scalar single-precision float.
+    pub fn movss_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_xmm_register(dst)?;
+        let src_reg = self.to_xmm_register(src)?;
+
+        // For register-to-register moves, use MOVAPS for efficiency
+        self.assembler
+            .movaps(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit MOVSD instruction - move scalar double-precision float.
+    pub fn movsd_reg_reg(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_xmm_register(dst)?;
+        let src_reg = self.to_xmm_register(src)?;
+
+        // For register-to-register moves, use MOVAPS for efficiency
+        self.assembler
+            .movaps(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit MOVSS instruction - load scalar single-precision float from memory.
+    pub fn movss_reg_mem(
+        &mut self,
+        dst: AsmReg,
+        base: AsmReg,
+        offset: i32,
+    ) -> Result<(), EncodingError> {
+        let dst_reg = self.to_xmm_register(dst)?;
+        let base_reg = self.to_gp_register(base)?;
+        let mem = ptr(base_reg) + offset;
+
+        self.assembler
+            .movss(dst_reg, mem)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit MOVSD instruction - load scalar double-precision float from memory.
+    pub fn movsd_reg_mem(
+        &mut self,
+        dst: AsmReg,
+        base: AsmReg,
+        offset: i32,
+    ) -> Result<(), EncodingError> {
+        let dst_reg = self.to_xmm_register(dst)?;
+        let base_reg = self.to_gp_register(base)?;
+        let mem = qword_ptr(base_reg + offset);
+
+        // Use MOVQ for memory to XMM
+        self.assembler
+            .movq(dst_reg, mem)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit MOVSS instruction - store scalar single-precision float to memory.
+    pub fn movss_mem_reg(
+        &mut self,
+        base: AsmReg,
+        offset: i32,
+        src: AsmReg,
+    ) -> Result<(), EncodingError> {
+        let src_reg = self.to_xmm_register(src)?;
+        let base_reg = self.to_gp_register(base)?;
+        let mem = ptr(base_reg) + offset;
+
+        self.assembler
+            .movss(mem, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit MOVSD instruction - store scalar double-precision float to memory.
+    pub fn movsd_mem_reg(
+        &mut self,
+        base: AsmReg,
+        offset: i32,
+        src: AsmReg,
+    ) -> Result<(), EncodingError> {
+        let src_reg = self.to_xmm_register(src)?;
+        let base_reg = self.to_gp_register(base)?;
+        let mem = qword_ptr(base_reg + offset);
+
+        // Use MOVQ for XMM to memory
+        self.assembler
+            .movq(mem, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit UCOMISS instruction - compare scalar single-precision floats.
+    pub fn ucomiss_reg_reg(&mut self, left: AsmReg, right: AsmReg) -> Result<(), EncodingError> {
+        let left_reg = self.to_xmm_register(left)?;
+        let right_reg = self.to_xmm_register(right)?;
+
+        self.assembler
+            .ucomiss(left_reg, right_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit UCOMISD instruction - compare scalar double-precision floats.
+    pub fn ucomisd_reg_reg(&mut self, left: AsmReg, right: AsmReg) -> Result<(), EncodingError> {
+        let left_reg = self.to_xmm_register(left)?;
+        let right_reg = self.to_xmm_register(right)?;
+
+        self.assembler
+            .ucomisd(left_reg, right_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    // ==== CONVERSION INSTRUCTIONS ====
+
+    /// Emit CVTSI2SS instruction - convert 32-bit int to single-precision float.
+    pub fn cvtsi2ss_xmm_reg32(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_xmm_register(dst)?;
+        let src_reg = self.to_gp32_register(src)?;
+
+        self.assembler
+            .cvtsi2ss(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit CVTSI2SS instruction - convert 64-bit int to single-precision float.
+    pub fn cvtsi2ss_xmm_reg64(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_xmm_register(dst)?;
+        let src_reg = self.to_gp64_register(src)?;
+
+        self.assembler
+            .cvtsi2ss(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit CVTSI2SD instruction - convert 32-bit int to double-precision float.
+    pub fn cvtsi2sd_xmm_reg32(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_xmm_register(dst)?;
+        let src_reg = self.to_gp32_register(src)?;
+
+        self.assembler
+            .cvtsi2sd(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Emit CVTSI2SD instruction - convert 64-bit int to double-precision float.
+    pub fn cvtsi2sd_xmm_reg64(&mut self, dst: AsmReg, src: AsmReg) -> Result<(), EncodingError> {
+        let dst_reg = self.to_xmm_register(dst)?;
+        let src_reg = self.to_gp64_register(src)?;
+
+        self.assembler
+            .cvtsi2sd(dst_reg, src_reg)
+            .map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
+        Ok(())
+    }
+
     /// Generate the final machine code bytes.
     pub fn finalize(&mut self) -> Result<Vec<u8>, EncodingError> {
         // Ensure all block labels have been placed
