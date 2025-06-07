@@ -35,7 +35,7 @@ pub struct TestIRCompiler<'arena> {
     /// Compilation session.
     _session: &'arena CompilationSession<'arena>,
     /// Whether to disable fixed register assignments.
-    no_fixed_assignments: bool,
+    _no_fixed_assignments: bool,
 }
 
 impl<'arena> TestIRCompiler<'arena> {
@@ -74,7 +74,7 @@ impl<'arena> TestIRCompiler<'arena> {
             value_mgr: ValueAssignmentManager::new(),
             register_file: RegisterFile::new(16, 2, available_regs),
             _session: session,
-            no_fixed_assignments,
+            _no_fixed_assignments: no_fixed_assignments,
         })
     }
 

@@ -108,7 +108,7 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
     // Handle expected failures
     if expect_failure {
         match parse_result {
-            Err(e) => return Ok(format!("Expected failure: {}", e)),
+            Err(e) => return Ok(format!("Expected failure: {e}")),
             Ok(_) => return Err("Expected parse failure but succeeded".to_string()),
         }
     }
@@ -244,10 +244,10 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
         let session = CompilationSession::new(&arena);
         
         let compiler = TestIRCompiler::new(&ir, &session, no_fixed_assignments)
-            .map_err(|e| format!("Failed to create compiler: {:?}", e))?;
+            .map_err(|e| format!("Failed to create compiler: {e:?}"))?;
             
         let object_code = compiler.compile()
-            .map_err(|e| format!("Compilation failed: {:?}", e))?;
+            .map_err(|e| format!("Compilation failed: {e:?}"))?;
         
         // Write object file if path provided
         if let Some(out_path) = &obj_out_path {
@@ -267,7 +267,7 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
             }
             
             std::fs::write(&actual_path, &object_code)
-                .map_err(|e| format!("Failed to write object file: {}", e))?;
+                .map_err(|e| format!("Failed to write object file: {e}"))?;
                 
             // For codegen tests, we need to disassemble the object
             if run_until == "codegen" && actual_path.ends_with(".o") {
@@ -288,7 +288,7 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
                                 .arg("-d")
                                 .arg(&actual_path)
                                 .output()
-                                .map_err(|e| format!("Failed to run objdump: {}", e))?
+                                .map_err(|e| format!("Failed to run objdump: {e}"))?
                         }
                     }
                 } else {
@@ -299,7 +299,7 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
                         .arg("--disassemble")
                         .arg(&actual_path)
                         .output()
-                        .map_err(|e| format!("Failed to run objdump: {}", e))?
+                        .map_err(|e| format!("Failed to run objdump: {e}"))?
                 };
                     
                 if objdump_output.status.success() {
@@ -307,7 +307,7 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
                     output.push(disasm.to_string());
                 } else {
                     let stderr = String::from_utf8_lossy(&objdump_output.stderr);
-                    return Err(format!("objdump failed: {}", stderr));
+                    return Err(format!("objdump failed: {stderr}"));
                 }
             }
         } else {

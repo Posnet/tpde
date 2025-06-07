@@ -275,9 +275,9 @@ fn test_func_tir() {
     // Verify function structure
     assert_eq!(ir.functions.len(), 2);
     assert_eq!(ir.functions[0].name, "my_func");
-    assert_eq!(ir.functions[0].declaration, true);
+    assert!(ir.functions[0].declaration);
     assert_eq!(ir.functions[1].name, "local_func");
-    assert_eq!(ir.functions[1].local_only, true);
+    assert!(ir.functions[1].local_only);
 }
 
 #[test]
