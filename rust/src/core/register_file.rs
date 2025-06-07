@@ -577,7 +577,7 @@ mod tests {
         let mut regfile = create_test_regfile();
         
         let reg1 = regfile.allocate_reg(0, 100, 0, None).unwrap();
-        let reg2 = regfile.allocate_reg(0, 101, 0, None).unwrap();
+        let _reg2 = regfile.allocate_reg(0, 101, 0, None).unwrap();
         regfile.lock_register(reg1).unwrap();
         
         let (used, fixed, total) = regfile.bank_usage(0);

@@ -90,7 +90,6 @@ pub fn setup_varargs_call(cc_assigner: &mut crate::x64::calling_convention::SysV
 #[cfg(test)]
 mod tests {
     use super::*;
-    use inkwell::context::Context;
     
     #[test]
     fn test_attribute_kind_ids() {

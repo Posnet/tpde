@@ -19,7 +19,6 @@
 //! }
 //! ```
 
-use std::collections::HashMap;
 
 pub mod parser;
 pub mod adaptor;
@@ -120,7 +119,7 @@ impl Operation {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "add" => Some(Operation::Add),
             "sub" => Some(Operation::Sub),
@@ -166,7 +165,7 @@ impl TestIR {
         let mut output = String::new();
         output.push_str("Printing IR\n");
 
-        for (_func_idx, func) in self.functions.iter().enumerate() {
+        for func in self.functions.iter() {
             // Handle function declarations vs definitions
             if func.declaration {
                 output.push_str(&format!("Extern function {}", func.name));

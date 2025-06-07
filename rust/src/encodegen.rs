@@ -86,8 +86,8 @@ fn analyze_instruction(inst: &inkwell::values::InstructionValue) -> String {
 }
 
 /// Convenience helper parsing IR text and returning token strings.
-pub fn parse_and_generate<'ctx>(
-    context: &'ctx Context,
+pub fn parse_and_generate(
+    context: &Context,
     ir: &str,
 ) -> Result<Vec<String>, String> {
     let module = parse_module(context, ir)?;

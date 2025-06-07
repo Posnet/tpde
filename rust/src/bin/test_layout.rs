@@ -1,6 +1,5 @@
 use tpde::test_ir::{TestIR, TestIRAdaptor};
 use tpde::core::{Analyzer, IrAdaptor};
-use std::collections::HashMap;
 
 fn main() {
     let tir_content = r#"

@@ -104,32 +104,32 @@ pub trait IrAdaptor {
     }
     
     /// Get PHI nodes in a block.
-    fn block_phis(&self, block: Self::BlockRef) -> Box<dyn Iterator<Item = Self::ValueRef> + '_> {
+    fn block_phis(&self, _block: Self::BlockRef) -> Box<dyn Iterator<Item = Self::ValueRef> + '_> {
         Box::new(std::iter::empty())
     }
     
     /// Check if a value is a PHI node.
-    fn val_is_phi(&self, val: Self::ValueRef) -> bool {
+    fn val_is_phi(&self, _val: Self::ValueRef) -> bool {
         false
     }
     
     /// Get PHI node incoming count.
-    fn phi_incoming_count(&self, phi: Self::ValueRef) -> u32 {
+    fn phi_incoming_count(&self, _phi: Self::ValueRef) -> u32 {
         0
     }
     
     /// Get incoming value for a PHI node at given slot.
-    fn phi_incoming_val_for_slot(&self, phi: Self::ValueRef, slot: u32) -> Self::ValueRef {
+    fn phi_incoming_val_for_slot(&self, _phi: Self::ValueRef, _slot: u32) -> Self::ValueRef {
         Self::INVALID_VALUE_REF
     }
     
     /// Get incoming block for a PHI node at given slot.
-    fn phi_incoming_block_for_slot(&self, phi: Self::ValueRef, slot: u32) -> Self::BlockRef {
+    fn phi_incoming_block_for_slot(&self, _phi: Self::ValueRef, _slot: u32) -> Self::BlockRef {
         Self::INVALID_BLOCK_REF
     }
     
     /// Get the name of a block (for printing).
-    fn block_name(&self, block: Self::BlockRef) -> &str {
+    fn block_name(&self, _block: Self::BlockRef) -> &str {
         ""
     }
     

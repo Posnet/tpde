@@ -103,7 +103,7 @@ impl TestRunner {
 
         // Execute based on run directives
         for run_dir in &spec.run_directives {
-            let output = self.execute_command(&ir, &run_dir)?;
+            let output = self.execute_command(&ir, run_dir)?;
             self.validate_output(&output, &spec.check_directives)?;
         }
 
@@ -170,7 +170,7 @@ impl TestRunner {
                     let mut value_idx = 0;
                     
                     // First, function arguments
-                    for arg in adaptor.cur_args() {
+                    for _arg in adaptor.cur_args() {
                         if let Some(liveness) = analyzer.liveness(value_idx) {
                             let first_block = block_names.get(liveness.first).map(|s| s.as_str()).unwrap_or("?");
                             let last_block = block_names.get(liveness.last).map(|s| s.as_str()).unwrap_or("?");
@@ -194,7 +194,7 @@ impl TestRunner {
                     // Then, values in blocks
                     for block in &blocks {
                         // PHIs
-                        for phi in adaptor.block_phis(*block) {
+                        for _phi in adaptor.block_phis(*block) {
                             if let Some(liveness) = analyzer.liveness(value_idx) {
                                 let first_block = block_names.get(liveness.first).map(|s| s.as_str()).unwrap_or("?");
                                 let last_block = block_names.get(liveness.last).map(|s| s.as_str()).unwrap_or("?");
@@ -216,7 +216,7 @@ impl TestRunner {
                         }
                         
                         // Instructions
-                        for inst in adaptor.block_insts(*block) {
+                        for _inst in adaptor.block_insts(*block) {
                             if let Some(liveness) = analyzer.liveness(value_idx) {
                                 let first_block = block_names.get(liveness.first).map(|s| s.as_str()).unwrap_or("?");
                                 let last_block = block_names.get(liveness.last).map(|s| s.as_str()).unwrap_or("?");

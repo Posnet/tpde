@@ -14,6 +14,9 @@
 //! TPDE (Turbo-Powered Direct Execution) provides extremely fast compilation 
 //! of LLVM IR with a focus on low-latency code generation. It compiles 10-20x 
 //! faster than LLVM -O0 while maintaining reasonable code quality.
+
+// Allow uninlined format args for now - too many instances to fix individually
+#![allow(clippy::uninlined_format_args)]
 //!
 //! # Status: ~70-75% Complete
 //!

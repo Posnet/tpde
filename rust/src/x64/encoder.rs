@@ -1248,7 +1248,7 @@ impl InstructionSelector {
 
 #[cfg(test)]
 mod tests {
-    use super::{X64Encoder, InstructionSelector, EncodingError, JumpCondition};
+    use super::{X64Encoder, InstructionSelector, JumpCondition};
     use crate::core::register_file::AsmReg;
 
     #[test]
@@ -1380,8 +1380,8 @@ mod tests {
         let block2 = 20;
         
         // Create labels for blocks that don't exist yet
-        let label1 = encoder.get_or_create_label_for_block(block1);
-        let label2 = encoder.get_or_create_label_for_block(block2);
+        let _label1 = encoder.get_or_create_label_for_block(block1);
+        let _label2 = encoder.get_or_create_label_for_block(block2);
         
         // Verify different blocks get different labels  
         // Note: We can't directly compare label IDs due to API limitations

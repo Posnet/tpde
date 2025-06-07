@@ -383,7 +383,7 @@ impl FunctionFrame {
     
     /// Allocate a new spill slot and return its offset.
     pub fn allocate_spill_slot(&mut self, size: u32) -> i32 {
-        let aligned_size = ((size + 7) / 8) * 8; // Align to 8 bytes
+        let aligned_size = size.div_ceil(8) * 8; // Align to 8 bytes
         self.spill_offset -= aligned_size as i32;
         let offset = self.spill_offset;
         self.spill_slots.push(offset);
@@ -408,7 +408,7 @@ impl FunctionFrame {
         
         // Total frame size must be 16-byte aligned for System V ABI
         let total_size = saved_reg_size + spill_size;
-        self.frame_size = ((total_size + 15) / 16) * 16;
+        self.frame_size = total_size.div_ceil(16) * 16;
         self.locals_offset = -(self.frame_size as i32);
     }
 }

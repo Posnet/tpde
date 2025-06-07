@@ -14,7 +14,7 @@ fn create_byval_test(context: &Context) -> inkwell::module::Module {
     let i32_type = context.i32_type();
     let i64_type = context.i64_type();
     let struct_type = context.struct_type(&[i32_type.into(), i64_type.into()], false);
-    let ptr_type = struct_type.ptr_type(inkwell::AddressSpace::default());
+    let ptr_type = context.ptr_type(inkwell::AddressSpace::default());
     
     // Function: void process_struct(%struct* byval)
     let fn_type = context.void_type().fn_type(&[ptr_type.into()], false);
@@ -42,14 +42,10 @@ fn create_byval_test(context: &Context) -> inkwell::module::Module {
     let stack_struct = builder.build_alloca(struct_type, "tmp_struct").unwrap();
     
     // Initialize the struct
-    let gep0 = unsafe {
-        builder.build_struct_gep(struct_type, stack_struct, 0, "field0").unwrap()
-    };
+    let gep0 = builder.build_struct_gep(struct_type, stack_struct, 0, "field0").unwrap();
     builder.build_store(gep0, i32_type.const_int(42, false)).unwrap();
     
-    let gep1 = unsafe {
-        builder.build_struct_gep(struct_type, stack_struct, 1, "field1").unwrap()
-    };
+    let gep1 = builder.build_struct_gep(struct_type, stack_struct, 1, "field1").unwrap();
     builder.build_store(gep1, i64_type.const_int(100, false)).unwrap();
     
     // Call with byval
@@ -68,7 +64,7 @@ fn create_sret_test(context: &Context) -> inkwell::module::Module {
     let module = context.create_module("sret_test");
     let i32_type = context.i32_type();
     let struct_type = context.struct_type(&[i32_type.into(), i32_type.into()], false);
-    let ptr_type = struct_type.ptr_type(inkwell::AddressSpace::default());
+    let ptr_type = context.ptr_type(inkwell::AddressSpace::default());
     
     // Function: void make_pair(%struct* sret, i32, i32)
     let fn_type = context.void_type().fn_type(&[
@@ -92,14 +88,10 @@ fn create_sret_test(context: &Context) -> inkwell::module::Module {
     let val1 = function.get_nth_param(1).unwrap().into_int_value();
     let val2 = function.get_nth_param(2).unwrap().into_int_value();
     
-    let gep0 = unsafe {
-        builder.build_struct_gep(struct_type, sret_ptr, 0, "field0").unwrap()
-    };
+    let gep0 = builder.build_struct_gep(struct_type, sret_ptr, 0, "field0").unwrap();
     builder.build_store(gep0, val1).unwrap();
     
-    let gep1 = unsafe {
-        builder.build_struct_gep(struct_type, sret_ptr, 1, "field1").unwrap()
-    };
+    let gep1 = builder.build_struct_gep(struct_type, sret_ptr, 1, "field1").unwrap();
     builder.build_store(gep1, val2).unwrap();
     
     builder.build_return(None).unwrap();

@@ -228,12 +228,12 @@ fn test_multiple_allocas() {
     let int32_alloca = builder.build_alloca(i32_type, "int32_local").unwrap();
     let int64_alloca = builder.build_alloca(i64_type, "int64_local").unwrap();
     let float_alloca = builder.build_alloca(f32_type, "float_local").unwrap();
-    let array_alloca = builder.build_alloca(i32_type.array_type(5), "array_local").unwrap();
+    let _array_alloca = builder.build_alloca(i32_type.array_type(5), "array_local").unwrap();
     
     // Store some values
     let val32 = i32_type.const_int(42, false);
     let val64 = i64_type.const_int(100, false);
-    let valf32 = f32_type.const_float(3.14);
+    let valf32 = f32_type.const_float(3.5);
     
     builder.build_store(int32_alloca, val32).unwrap();
     builder.build_store(int64_alloca, val64).unwrap();

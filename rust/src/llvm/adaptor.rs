@@ -308,14 +308,14 @@ impl<'ctx> EnhancedLlvmAdaptor<'ctx> {
             // Build block index mapping - for now we'll use a simple approach
             // that works with inkwell's limited API
             for (idx, block) in blocks.iter().enumerate() {
-                let block_name = block.get_name().to_str().unwrap_or(&format!("block_{}", idx)).to_string();
+                let block_name = block.get_name().to_str().unwrap_or(&format!("block_{idx}")).to_string();
                 self.block_indices.insert(block_name, idx);
             }
             
             // Helper to find block index by name (unused for now but kept for future enhancement)
             let _find_block_index = |target_name: &str| -> Option<usize> {
                 for (i, block) in blocks.iter().enumerate() {
-                    let default_name = format!("block_{}", i);
+                    let default_name = format!("block_{i}");
                     let name = block.get_name().to_str().unwrap_or(&default_name);
                     if name == target_name {
                         return Some(i);
@@ -325,7 +325,7 @@ impl<'ctx> EnhancedLlvmAdaptor<'ctx> {
             };
             
             // Extract real successors from terminator instructions
-            for (_block_idx, block) in blocks.iter().enumerate() {
+            for block in blocks.iter() {
                 let successors = self.extract_block_successors(*block, &blocks);
                 self.block_successors.push(successors);
             }
@@ -502,11 +502,11 @@ impl<'ctx> EnhancedLlvmAdaptor<'ctx> {
     fn debug_print_successors(&self) {
         if let Some(func) = self.current_function {
             let func_name = func.get_name().to_str().unwrap_or("unknown");
-            log::debug!("Block successors for function '{}':", func_name);
+            log::debug!("Block successors for function '{func_name}':");
             
             let blocks: Vec<_> = func.get_basic_blocks();
             for (i, block) in blocks.iter().enumerate() {
-                let default_name = format!("block_{}", i);
+                let default_name = format!("block_{i}");
                 let block_name = block.get_name().to_str().unwrap_or(&default_name);
                 
                 let successors = if i < self.block_successors.len() {
@@ -518,9 +518,9 @@ impl<'ctx> EnhancedLlvmAdaptor<'ctx> {
                 let successor_names: Vec<String> = successors.iter()
                     .map(|&idx| {
                         if idx < blocks.len() {
-                            blocks[idx].get_name().to_str().unwrap_or(&format!("block_{}", idx)).to_string()
+                            blocks[idx].get_name().to_str().unwrap_or(&format!("block_{idx}")).to_string()
                         } else {
-                            format!("invalid_{}", idx)
+                            format!("invalid_{idx}")
                         }
                     })
                     .collect();
@@ -532,8 +532,8 @@ impl<'ctx> EnhancedLlvmAdaptor<'ctx> {
                     "None".to_string()
                 };
                 
-                log::debug!("  {} -> {:?}", block_name, successor_names);
-                log::debug!("    terminator: {}", terminator_info);
+                log::debug!("  {block_name} -> {successor_names:?}");
+                log::debug!("    terminator: {terminator_info}");
             }
         }
     }
@@ -642,7 +642,7 @@ impl<'ctx> IrAdaptor for EnhancedLlvmAdaptor<'ctx> {
 
     fn block_insts(&self, block: Self::BlockRef) -> Box<dyn Iterator<Item = Self::InstRef> + '_> {
         if let Some(bb) = block {
-            Box::new(bb.get_instructions().into_iter().map(Some))
+            Box::new(bb.get_instructions().map(Some))
         } else {
             Box::new(std::iter::empty())
         }
@@ -891,13 +891,11 @@ mod tests {
             let mut has_comparison = false;
             let mut has_branch = false;
             
-            for inst_opt in instructions {
-                if let Some(inst) = inst_opt {
-                    if adaptor.is_comparison(inst) {
-                        has_comparison = true;
-                    } else if adaptor.is_branch(inst) {
-                        has_branch = true;
-                    }
+            for inst in instructions.into_iter().flatten() {
+                if adaptor.is_comparison(inst) {
+                    has_comparison = true;
+                } else if adaptor.is_branch(inst) {
+                    has_branch = true;
                 }
             }
             
@@ -917,24 +915,20 @@ mod tests {
         
         let mut instruction_types = std::collections::HashSet::new();
         
-        for block_opt in adaptor.blocks() {
-            if let Some(block) = block_opt {
-                for inst_opt in adaptor.block_insts(Some(block)) {
-                    if let Some(inst) = inst_opt {
-                        if adaptor.is_comparison(inst) {
-                            instruction_types.insert("comparison");
-                        } else if adaptor.is_branch(inst) {
-                            instruction_types.insert("branch");
-                        } else if adaptor.is_call(inst) {
-                            instruction_types.insert("call");
-                        } else if adaptor.is_return(inst) {
-                            instruction_types.insert("return");
-                        } else if adaptor.is_phi(inst) {
-                            instruction_types.insert("phi");
-                        } else if adaptor.is_arithmetic(inst) {
-                            instruction_types.insert("arithmetic");
-                        }
-                    }
+        for block in adaptor.blocks().flatten() {
+            for inst in adaptor.block_insts(Some(block)).flatten() {
+                if adaptor.is_comparison(inst) {
+                    instruction_types.insert("comparison");
+                } else if adaptor.is_branch(inst) {
+                    instruction_types.insert("branch");
+                } else if adaptor.is_call(inst) {
+                    instruction_types.insert("call");
+                } else if adaptor.is_return(inst) {
+                    instruction_types.insert("return");
+                } else if adaptor.is_phi(inst) {
+                    instruction_types.insert("phi");
+                } else if adaptor.is_arithmetic(inst) {
+                    instruction_types.insert("arithmetic");
                 }
             }
         }
@@ -963,20 +957,16 @@ mod tests {
         
         let param_idx = adaptor.val_local_idx(Some(params[0]));
         // Parameters are indexed after globals, but could start at 0 if no globals
-        log::debug!("Parameter index: {}", param_idx);
+        log::debug!("Parameter index: {param_idx}");
         
         // Check that instructions get different indices
         let mut indices = std::collections::HashSet::new();
-        for block_opt in adaptor.blocks() {
-            if let Some(block) = block_opt {
-                for inst_opt in adaptor.block_insts(Some(block)) {
-                    if let Some(_inst) = inst_opt {
-                        for result_opt in adaptor.inst_results(inst_opt) {
-                            if let Some(result) = result_opt {
-                                let idx = adaptor.val_local_idx(Some(result));
-                                indices.insert(idx);
-                            }
-                        }
+        for block in adaptor.blocks().flatten() {
+            for inst_opt in adaptor.block_insts(Some(block)) {
+                if let Some(_inst) = inst_opt {
+                    for result in adaptor.inst_results(inst_opt).flatten() {
+                        let idx = adaptor.val_local_idx(Some(result));
+                        indices.insert(idx);
                     }
                 }
             }
@@ -1003,16 +993,18 @@ mod tests {
         for (i, block_opt) in blocks.iter().enumerate() {
             if let Some(block) = block_opt {
                 let successors: Vec<_> = adaptor.block_succs(Some(*block)).collect();
-                let default_name = format!("block_{}", i);
+                let default_name = format!("block_{i}");
                 let block_name = block.get_name().to_str().unwrap_or(&default_name);
                 
                 // Verify we get some form of successor information
-                log::debug!("Block '{}' has {} successors", block_name, successors.len());
+                let num_successors = successors.len();
+                log::debug!("Block '{block_name}' has {num_successors} successors");
                 
                 // Check terminator types
                 if let Some(terminator) = block.get_terminator() {
-                    log::debug!("  Terminator: {:?} ({} operands)", 
-                             terminator.get_opcode(), terminator.get_num_operands());
+                    let opcode = terminator.get_opcode();
+                    let num_operands = terminator.get_num_operands();
+                    log::debug!("  Terminator: {opcode:?} ({num_operands} operands)");
                 }
             }
         }
@@ -1032,16 +1024,14 @@ mod tests {
         let blocks: Vec<_> = adaptor.blocks().collect();
         let mut terminator_types = std::collections::HashMap::new();
         
-        for block_opt in blocks {
-            if let Some(block) = block_opt {
-                if let Some(terminator) = block.get_terminator() {
-                    let opcode = terminator.get_opcode();
-                    let block_name = block.get_name().to_str().unwrap_or("unnamed");
-                    terminator_types.insert(block_name.to_string(), opcode);
-                    
-                    log::debug!("Block '{}' terminator: {:?} ({} operands)", 
-                             block_name, opcode, terminator.get_num_operands());
-                }
+        for block in blocks.into_iter().flatten() {
+            if let Some(terminator) = block.get_terminator() {
+                let opcode = terminator.get_opcode();
+                let block_name = block.get_name().to_str().unwrap_or("unnamed");
+                terminator_types.insert(block_name.to_string(), opcode);
+                
+                let num_operands = terminator.get_num_operands();
+                log::debug!("Block '{block_name}' terminator: {opcode:?} ({num_operands} operands)");
             }
         }
         

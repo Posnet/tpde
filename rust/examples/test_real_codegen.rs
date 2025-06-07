@@ -12,7 +12,7 @@
 // or code generation components.
 
 use inkwell::context::Context;
-use tpde::llvm::{LlvmCompiler, LlvmAdaptor};
+use tpde::llvm::LlvmCompiler;
 use tpde::core::CompilationSession;
 use bumpalo::Bump;
 

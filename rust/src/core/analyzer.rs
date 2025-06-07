@@ -224,10 +224,8 @@ impl<A: IrAdaptor> Analyzer<A> {
         // First pass: build a map of blocks to their order in the IR
         // This is used to sort successors to maintain source order
         let mut block_order_map = HashMap::new();
-        let mut idx = 0u32;
-        for block in adaptor.blocks() {
-            block_order_map.insert(block, idx);
-            idx += 1;
+        for (idx, block) in adaptor.blocks().enumerate() {
+            block_order_map.insert(block, idx as u32);
         }
         
         let mut post = Vec::new();
@@ -413,8 +411,8 @@ impl<A: IrAdaptor> Analyzer<A> {
         }
         
         let mut loop_blocks = vec![BlockLoopInfo { loop_idx: !0, rpo_idx: 0 }; block_rpo.len()];
-        for i in 0..block_rpo.len() {
-            loop_blocks[i].rpo_idx = i as u32;
+        for (i, block_info) in loop_blocks.iter_mut().enumerate() {
+            block_info.rpo_idx = i as u32;
         }
         
         // Initialize loops with root loop
@@ -438,7 +436,7 @@ impl<A: IrAdaptor> Analyzer<A> {
             let parent = loop_parent[i] as usize;
             if loop_blocks[parent].loop_idx != !0 {
                 // Already have a loop for this block
-                return loop_blocks[parent].loop_idx;
+                loop_blocks[parent].loop_idx
             } else {
                 // Recursively get parent loop
                 let parent_loop_idx = build_or_get_parent_loop(loops, loop_blocks, loop_parent, parent);

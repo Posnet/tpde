@@ -4,7 +4,7 @@ use super::*;
 use std::collections::HashMap;
 
 pub fn parse_ir(text: &str) -> Result<TestIR, String> {
-    let mut parser = Parser::new(text);
+    let parser = Parser::new(text);
     parser.parse()
 }
 
@@ -79,9 +79,6 @@ impl<'a> Parser<'a> {
         self.text.chars().nth(self.pos)
     }
 
-    fn peek_char(&self, offset: usize) -> Option<char> {
-        self.text.chars().nth(self.pos + offset)
-    }
 
     fn advance(&mut self) {
         if let Some(ch) = self.current_char() {
@@ -244,7 +241,7 @@ impl<'a> Parser<'a> {
             self.skip_whitespace(true);
             let saved_pos = self.pos;
             match self.read_identifier() {
-                Ok(modifier) if modifier == "local" => {
+                Ok("local") => {
                     is_local = true;
                 }
                 Ok(_) => {
@@ -416,7 +413,7 @@ impl<'a> Parser<'a> {
         // Try to parse "%name = phi"
         if self.current_char() == Some('%') {
             self.advance();
-            if let Ok(_) = self.read_identifier() {
+            if self.read_identifier().is_ok() {
                 self.skip_whitespace(true);
                 if self.current_char() == Some('!') {
                     self.advance();
@@ -540,7 +537,7 @@ impl<'a> Parser<'a> {
             } else {
                 // Read operation
                 let op_str = self.read_identifier()?;
-                Operation::from_str(op_str)
+                Operation::parse(op_str)
                     .ok_or_else(|| format!("Unknown operation: {}", op_str))?
             };
             
@@ -548,7 +545,7 @@ impl<'a> Parser<'a> {
         } else {
             // No value definition, read operation directly
             let op_str = self.read_identifier()?;
-            let op = Operation::from_str(op_str)
+            let op = Operation::parse(op_str)
                 .ok_or_else(|| format!("Unknown operation: {}", op_str))?;
             (false, None, false, op)
         };

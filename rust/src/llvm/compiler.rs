@@ -62,9 +62,8 @@ pub struct GepExpression {
     pub needs_materialization: bool,
 }
 
-impl GepExpression {
-    /// Create a new empty GEP expression
-    pub fn new() -> Self {
+impl Default for GepExpression {
+    fn default() -> Self {
         Self {
             base: None,
             index: None,
@@ -72,6 +71,13 @@ impl GepExpression {
             displacement: 0,
             needs_materialization: false,
         }
+    }
+}
+
+impl GepExpression {
+    /// Create a new empty GEP expression
+    pub fn new() -> Self {
+        Self::default()
     }
     
     /// Create expression with base register
@@ -440,7 +446,7 @@ where
         block: BasicBlock<'ctx>
     ) -> Result<(), LlvmCompilerError> {
         // Get block name for label placement
-        if let Some(name) = block.get_name().to_str().ok() {
+        if let Ok(name) = block.get_name().to_str() {
             let block_idx = self.get_block_index_by_name(name)?;
             
             // Place label for this block
@@ -2048,7 +2054,7 @@ where
             let case_target_idx = 2 + i * 2 + 1;
             
             // Get case constant value
-            let case_value = instruction.get_operand(case_value_idx as u32).unwrap().left().unwrap();
+            let case_value = instruction.get_operand(case_value_idx).unwrap().left().unwrap();
             
             // Extract constant value
             let const_value = if let inkwell::values::BasicValueEnum::IntValue(int_val) = case_value {
@@ -2066,7 +2072,7 @@ where
             };
             
             // Get case target block
-            let case_target = instruction.get_operand(case_target_idx as u32).unwrap().right().unwrap();
+            let case_target = instruction.get_operand(case_target_idx).unwrap().right().unwrap();
             let case_name = case_target.get_name().to_str()
                 .map_err(|e| LlvmCompilerError::LlvmError(format!("Invalid case block name: {:?}", e)))?;
             let case_block_idx = self.get_block_index_by_name(case_name)?;
@@ -2189,7 +2195,7 @@ where
             let (bank, size, align) = match arg_type {
                 inkwell::types::BasicTypeEnum::IntType(int_type) => {
                     let bit_width = int_type.get_bit_width();
-                    let byte_size = (bit_width / 8) as u32;
+                    let byte_size = bit_width / 8;
                     let align = byte_size.min(8); // Max 8-byte alignment
                     (RegBank::GeneralPurpose, byte_size, align)
                 }
@@ -2342,7 +2348,7 @@ where
             let ret_type = instruction.get_type();
             let (ret_bank, ret_size) = match ret_type {
                 inkwell::types::AnyTypeEnum::IntType(int_type) => {
-                    (RegBank::GeneralPurpose, (int_type.get_bit_width() / 8) as u32)
+                    (RegBank::GeneralPurpose, int_type.get_bit_width() / 8)
                 }
                 inkwell::types::AnyTypeEnum::PointerType(_) => {
                     (RegBank::GeneralPurpose, 8)
@@ -2403,15 +2409,11 @@ where
         // Check if this is an array alloca by looking at operands
         let total_size = if instruction.get_num_operands() > 0 {
             // Array alloca - try to get size
-            if let Some(const_val) = instruction.get_operand(0).and_then(|op| op.left()) {
-                if let inkwell::values::BasicValueEnum::IntValue(int_val) = const_val {
-                    if let Some(const_int) = int_val.get_zero_extended_constant() {
-                        size * (const_int as u32)
-                    } else {
-                        size * 10 // Default array size
-                    }
+            if let Some(inkwell::values::BasicValueEnum::IntValue(int_val)) = instruction.get_operand(0).and_then(|op| op.left()) {
+                if let Some(const_int) = int_val.get_zero_extended_constant() {
+                    size * (const_int as u32)
                 } else {
-                    size
+                    size * 10 // Default array size
                 }
             } else {
                 size
@@ -2528,7 +2530,7 @@ where
     fn try_get_constant_index(&self, index_idx: usize) -> Option<i64> {
         // Simplified constant detection
         // In real implementation would check LLVM ConstantInt
-        if index_idx >= 100 && index_idx <= 110 {
+        if (100..=110).contains(&index_idx) {
             Some((index_idx - 100) as i64)
         } else {
             None
@@ -2548,7 +2550,7 @@ where
         
         // Find the block with the given name
         for (idx, block) in blocks.iter().enumerate() {
-            if let Some(name) = block.get_name().to_str().ok() {
+            if let Ok(name) = block.get_name().to_str() {
                 if name == block_name {
                     return Ok(idx);
                 }
@@ -2920,9 +2922,9 @@ mod tests {
         let context = Context::create();
         let module = create_simple_module(&context);
         let arena = Bump::new();
-        let mut session = CompilationSession::new(&arena);
+        let session = CompilationSession::new(&arena);
         
-        let compiler = LlvmCompiler::new(module, &mut session);
+        let compiler = LlvmCompiler::new(module, &session);
         assert!(compiler.is_ok());
     }
     
@@ -2959,7 +2961,7 @@ mod tests {
     fn create_gep_test_module(context: &Context) -> inkwell::module::Module {
         let module = context.create_module("gep_test");
         let i32_type = context.i32_type();
-        let i32_ptr_type = i32_type.ptr_type(inkwell::AddressSpace::default());
+        let i32_ptr_type = context.ptr_type(inkwell::AddressSpace::default());
         let fn_type = i32_type.fn_type(&[i32_ptr_type.into(), i32_type.into()], false);
         let function = module.add_function("array_access", fn_type, None);
         

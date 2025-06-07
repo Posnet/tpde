@@ -267,6 +267,7 @@ mod tests {
     }
 
     impl TestIrAdaptor {
+        #[allow(dead_code)]
         fn new() -> Self {
             let mut adaptor = Self {
                 functions: vec!["test_func".to_string()],

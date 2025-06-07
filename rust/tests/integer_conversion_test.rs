@@ -69,7 +69,7 @@ fn create_zext_test(context: &Context) -> inkwell::module::Module {
     let module = context.create_module("zext_test");
     let i1_type = context.bool_type();
     let i8_type = context.i8_type();
-    let i16_type = context.i16_type();
+    let _i16_type = context.i16_type();
     let i32_type = context.i32_type();
     let i64_type = context.i64_type();
     
@@ -124,7 +124,7 @@ fn create_trunc_test(context: &Context) -> inkwell::module::Module {
     let module = context.create_module("trunc_test");
     let i1_type = context.bool_type();
     let i8_type = context.i8_type();
-    let i16_type = context.i16_type();
+    let _i16_type = context.i16_type();
     let i32_type = context.i32_type();
     let i64_type = context.i64_type();
     

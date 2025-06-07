@@ -417,15 +417,15 @@ mod tests {
         let assignments = codegen.process_arguments(&args).unwrap();
         
         // First 6 should be in registers
-        for i in 0..6 {
-            assert!(assignments[i].reg.is_some());
-            assert!(assignments[i].stack_off.is_none());
+        for assignment in assignments.iter().take(6) {
+            assert!(assignment.reg.is_some());
+            assert!(assignment.stack_off.is_none());
         }
         
         // Last 2 should be on stack
-        for i in 6..8 {
-            assert!(assignments[i].reg.is_none());
-            assert!(assignments[i].stack_off.is_some());
+        for assignment in assignments.iter().skip(6).take(2) {
+            assert!(assignment.reg.is_none());
+            assert!(assignment.stack_off.is_some());
         }
     }
 

@@ -13,7 +13,7 @@
 // than skipped or generating placeholders.
 
 use inkwell::context::Context;
-use tpde::llvm::{LlvmCompiler, LlvmAdaptor};
+use tpde::llvm::LlvmCompiler;
 use tpde::core::CompilationSession;
 use bumpalo::Bump;
 

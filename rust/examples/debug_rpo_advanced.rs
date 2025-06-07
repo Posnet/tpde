@@ -136,6 +136,7 @@ fn dfs_source_order<'a>(
 }
 
 // Also test standard DFS for comparison
+#[allow(dead_code)]
 fn compute_rpo_standard<'a>(
     entry: &'a str,
     successors: &HashMap<&'a str, Vec<&'a str>>
@@ -149,6 +150,7 @@ fn compute_rpo_standard<'a>(
     post_order
 }
 
+#[allow(dead_code)]
 fn dfs_standard<'a>(
     node: &'a str,
     successors: &HashMap<&'a str, Vec<&'a str>>,
