@@ -22,6 +22,7 @@ use crate::core::{
     value_assignment::ValueAssignmentManager,
     Backend, CompilerBase, CompilerContext, IrAdaptor, ValuePartRef, ValueRefError,
 };
+use bumpalo::Bump;
 
 /// Error types for the x86-64 backend.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,9 +64,9 @@ impl From<EncodingError> for X64BackendError {
 /// - RegisterFile for register allocation
 /// - ValueRef/ValuePartRef for instruction selection
 /// - X64Encoder for machine code generation
-pub struct X64Backend {
+pub struct X64Backend<'arena> {
     /// Value assignment tracking.
-    value_mgr: ValueAssignmentManager,
+    value_mgr: ValueAssignmentManager<'arena>,
     /// Register allocator.
     register_file: RegisterFile,
     /// Instruction encoder.
@@ -74,11 +75,11 @@ pub struct X64Backend {
     frame_size: u32,
 }
 
-impl X64Backend {
-    /// Create a new x86-64 backend.
-    pub fn new() -> Result<Self, X64BackendError> {
+impl<'arena> X64Backend<'arena> {
+    /// Create a new x86-64 backend backed by the given arena.
+    pub fn new(arena: &'arena Bump) -> Result<Self, X64BackendError> {
         Ok(Self {
-            value_mgr: ValueAssignmentManager::new(),
+            value_mgr: ValueAssignmentManager::new_in(arena),
             register_file: RegisterFile::new(16, 2, RegBitSet::all_in_bank(0, 16)),
             encoder: InstructionSelector::new()?,
             frame_size: 0,
@@ -180,7 +181,7 @@ enum BinaryOpType {
     Sub,
 }
 
-impl<A: IrAdaptor> Backend<A, ElfAssembler> for X64Backend {
+impl<'arena, A: IrAdaptor> Backend<A, ElfAssembler> for X64Backend<'arena> {
     fn gen_prologue(&mut self, _base: &mut CompilerBase<A, ElfAssembler, Self>) {
         // Emit function prologue
         self.encoder.emit_prologue(self.frame_size).unwrap();
@@ -231,12 +232,13 @@ impl<A: IrAdaptor> Backend<A, ElfAssembler> for X64Backend {
 }
 
 /// Helper function to create a complete x86-64 compilation pipeline.
-pub fn create_x64_compiler<A: IrAdaptor>(
+pub fn create_x64_compiler<'arena, A: IrAdaptor>(
     adaptor: A,
-) -> Result<CompilerBase<A, ElfAssembler, X64Backend>, X64BackendError> {
+    arena: &'arena Bump,
+) -> Result<CompilerBase<A, ElfAssembler, X64Backend<'arena>>, X64BackendError> {
     use crate::core::assembler::Assembler;
     let assembler = <ElfAssembler as Assembler<A>>::new(true);
-    let backend = X64Backend::new()?;
+    let backend = X64Backend::new(arena)?;
     Ok(CompilerBase::new(adaptor, assembler, backend))
 }
 
@@ -386,7 +388,8 @@ mod tests {
 
     #[test]
     fn test_x64_backend_creation() {
-        let backend = X64Backend::new();
+        let arena = Bump::new();
+        let backend = X64Backend::new(&arena);
         assert!(backend.is_ok());
     }
 
