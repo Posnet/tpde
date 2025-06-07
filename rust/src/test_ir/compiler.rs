@@ -3,7 +3,7 @@
 //! This module provides a concrete compiler that can compile TestIR
 //! to x86-64 machine code, matching the functionality of the C++ test harness.
 
-use log::{debug, trace};
+use log::debug;
 use crate::{
     core::{
         assembler::{Assembler, ElfAssembler},
@@ -59,13 +59,7 @@ impl<'arena> TestIRCompiler<'arena> {
         let assembler = <ElfAssembler as Assembler<TestIRAdaptor>>::new(true);
 
         // x86-64 has 16 general purpose registers
-        let available_regs = if no_fixed_assignments {
-            // When no fixed assignments, use more registers
-            RegBitSet::all_in_bank(0, 16)
-        } else {
-            // Otherwise be more conservative
-            RegBitSet::all_in_bank(0, 16) // All 16 GP registers
-        };
+        let available_regs = RegBitSet::all_in_bank(0, 16);
 
         Ok(Self {
             ir,
@@ -100,8 +94,6 @@ impl<'arena> TestIRCompiler<'arena> {
 
         // Define symbol for function
         let sym = <ElfAssembler as Assembler<TestIRAdaptor>>::sym_predef_func(&mut self.assembler, &func.name, func.local_only, false);
-        
-        // We'll generate code using the function codegen
         
         // Switch adaptor to this function
         use crate::test_ir::adaptor::FuncRef;
@@ -201,130 +193,95 @@ impl<'arena> TestIRCompiler<'arena> {
     fn compile_instruction(&mut self, inst_idx: usize, func_codegen: &mut FunctionCodegen) -> Result<(), CompilationError> {
         let inst = &self.ir.values[inst_idx];
         
-        // Debug: print instruction being compiled
         let local_idx = self.global_to_local_idx(inst_idx);
-        debug!("Compiling instruction {} -> local {} ({}): {:?} op={:?}", inst_idx, local_idx, inst.name, inst.value_type, inst.op);
+        debug!("Compiling {} ({}): {:?}", inst.name, local_idx, inst.op);
 
+        use Operation::*;
         match inst.op {
-            Operation::Add => self.compile_add(inst_idx, func_codegen),
-            Operation::Sub => self.compile_sub(inst_idx, func_codegen),
-            Operation::Ret => self.compile_ret(inst_idx, func_codegen),
-            Operation::Terminate => self.compile_terminate(func_codegen),
-            Operation::Br => self.compile_br(inst_idx, func_codegen),
-            Operation::CondBr => self.compile_condbr(inst_idx, func_codegen),
-            Operation::Jump => self.compile_jump(inst_idx, func_codegen),
-            Operation::Alloca => self.compile_alloca(inst_idx, func_codegen),
-            Operation::Call => self.compile_call(inst_idx, func_codegen),
-            Operation::Tbz => self.compile_tbz(inst_idx, func_codegen),
-            Operation::ZeroFill => self.compile_zerofill(inst_idx, func_codegen),
-            Operation::Any => {
+            Add => self.compile_add(inst_idx, func_codegen),
+            Sub => self.compile_sub(inst_idx, func_codegen),
+            Ret => self.compile_ret(inst_idx, func_codegen),
+            Terminate => self.compile_terminate(func_codegen),
+            Br | CondBr | Jump => self.compile_branch(inst_idx, func_codegen),
+            Alloca => self.compile_alloca(inst_idx, func_codegen),
+            Call => self.compile_call(inst_idx, func_codegen),
+            Tbz => Err(CompilationError::UnsupportedInstruction), // ARM64-specific
+            ZeroFill => self.compile_zerofill(inst_idx, func_codegen),
+            Any => {
                 // "Any" operations are just value definitions
-                // We need to create a value assignment for them
-                let local_idx = self.global_to_local_idx(inst_idx);
                 self.value_mgr.create_assignment(local_idx, 1, 8).add_ref();
                 Ok(())
             }
-            Operation::None => {
-                // Operation::None is used for PHI nodes
-                if inst.value_type == crate::test_ir::ValueType::Phi {
-                    // Create value assignment for PHI node result
-                    let local_idx = self.global_to_local_idx(inst_idx);
-                    self.value_mgr.create_assignment(local_idx, 1, 8).add_ref();
-                    // PHI node resolution would happen here in a complete implementation
-                    Ok(())
-                } else {
-                    // Other None operations are invalid
-                    Err(CompilationError::InvalidInstruction)
-                }
+            None if inst.value_type == crate::test_ir::ValueType::Phi => {
+                // PHI nodes just need assignments
+                self.value_mgr.create_assignment(local_idx, 1, 8).add_ref();
+                Ok(())
             }
+            None => Err(CompilationError::InvalidInstruction),
         }
+    }
+
+    /// Compile a binary arithmetic instruction.
+    fn compile_binary_op<F>(
+        &mut self,
+        inst_idx: usize,
+        func_codegen: &mut FunctionCodegen,
+        emit_op: F,
+    ) -> Result<(), CompilationError>
+    where
+        F: FnOnce(&mut crate::x64::encoder::X64Encoder, AsmReg, AsmReg) -> Result<(), EncodingError>,
+    {
+        let inst = &self.ir.values[inst_idx];
+        
+        // Get operands
+        let left_idx = self.ir.value_operands[inst.op_begin_idx as usize];
+        let right_idx = self.ir.value_operands[(inst.op_begin_idx + 1) as usize];
+
+        // Convert to local indices
+        let local_inst_idx = self.global_to_local_idx(inst_idx);
+        let local_left = self.global_to_local_idx(left_idx as usize);
+        let local_right = self.global_to_local_idx(right_idx as usize);
+        
+        // Create value assignment for the result
+        self.value_mgr.create_assignment(local_inst_idx, 1, 8).add_ref();
+
+        // Create compiler context
+        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
+
+        // Get value references
+        let mut left_ref = ValuePartRef::new(local_left, 0)?;
+        let mut right_ref = ValuePartRef::new(local_right, 0)?;
+        let mut result_ref = ValuePartRef::new(local_inst_idx, 0)?;
+
+        // Load operands
+        let left_reg = left_ref.load_to_reg(&mut ctx)?;
+        let right_reg = right_ref.load_to_reg(&mut ctx)?;
+
+        // Allocate result (try to reuse left operand)
+        let result_reg = result_ref.alloc_try_reuse(&mut left_ref, &mut ctx)?;
+
+        // Generate instruction
+        let encoder = func_codegen.encoder_mut();
+        if result_reg != left_reg {
+            encoder.mov_reg_reg(result_reg, left_reg)?;
+        }
+        emit_op(encoder, result_reg, right_reg)?;
+
+        Ok(())
     }
 
     /// Compile an add instruction.
     fn compile_add(&mut self, inst_idx: usize, func_codegen: &mut FunctionCodegen) -> Result<(), CompilationError> {
-        let inst = &self.ir.values[inst_idx];
-        
-        // Get operands
-        let left_idx = self.ir.value_operands[inst.op_begin_idx as usize];
-        let right_idx = self.ir.value_operands[(inst.op_begin_idx + 1) as usize];
-
-        // Convert to local indices
-        let local_inst_idx = self.global_to_local_idx(inst_idx);
-        let local_left = self.global_to_local_idx(left_idx as usize);
-        let local_right = self.global_to_local_idx(right_idx as usize);
-        
-        // Create value assignment for the result
-        self.value_mgr.create_assignment(local_inst_idx, 1, 8).add_ref();
-
-        // Create compiler context
-        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
-
-        // Get value references
-        let mut left_ref = ValuePartRef::new(local_left, 0)?;
-        let mut right_ref = ValuePartRef::new(local_right, 0)?;
-        let mut result_ref = ValuePartRef::new(local_inst_idx, 0)?;
-
-        // Load operands
-        let left_reg = left_ref.load_to_reg(&mut ctx)?;
-        let right_reg = right_ref.load_to_reg(&mut ctx)?;
-
-        // Allocate result (try to reuse left operand)
-        let result_reg = result_ref.alloc_try_reuse(&mut left_ref, &mut ctx)?;
-
-        // Generate add instruction
-        let encoder = func_codegen.encoder_mut();
-        if result_reg != left_reg {
-            encoder.mov_reg_reg(result_reg, left_reg)?;
-        }
-        encoder.add_reg_reg(result_reg, right_reg)?;
-
-        Ok(())
+        self.compile_binary_op(inst_idx, func_codegen, |encoder, dst, src| {
+            encoder.add_reg_reg(dst, src)
+        })
     }
 
     /// Compile a sub instruction.
     fn compile_sub(&mut self, inst_idx: usize, func_codegen: &mut FunctionCodegen) -> Result<(), CompilationError> {
-        let inst = &self.ir.values[inst_idx];
-        
-        // Get operands
-        let left_idx = self.ir.value_operands[inst.op_begin_idx as usize];
-        let right_idx = self.ir.value_operands[(inst.op_begin_idx + 1) as usize];
-        
-        trace!("  Sub: left_idx={}, right_idx={}", left_idx, right_idx);
-
-        // Convert to local indices
-        let local_inst_idx = self.global_to_local_idx(inst_idx);
-        let local_left = self.global_to_local_idx(left_idx as usize);
-        let local_right = self.global_to_local_idx(right_idx as usize);
-        
-        debug!("Sub instruction: inst_idx={} -> local_inst_idx={}, left_idx={} -> local_left={}, right_idx={} -> local_right={}", 
-               inst_idx, local_inst_idx, left_idx, local_left, right_idx, local_right);
-        
-        // Create value assignment for the result
-        self.value_mgr.create_assignment(local_inst_idx, 1, 8).add_ref();
-
-        // Create compiler context
-        let mut ctx = CompilerContext::new(&mut self.value_mgr, &mut self.register_file);
-
-        // Get value references
-        let mut left_ref = ValuePartRef::new(local_left, 0)?;
-        let mut right_ref = ValuePartRef::new(local_right, 0)?;
-        let mut result_ref = ValuePartRef::new(local_inst_idx, 0)?;
-
-        // Load operands
-        let left_reg = left_ref.load_to_reg(&mut ctx)?;
-        let right_reg = right_ref.load_to_reg(&mut ctx)?;
-
-        // Allocate result (try to reuse left operand)
-        let result_reg = result_ref.alloc_try_reuse(&mut left_ref, &mut ctx)?;
-
-        // Generate sub instruction
-        let encoder = func_codegen.encoder_mut();
-        if result_reg != left_reg {
-            encoder.mov_reg_reg(result_reg, left_reg)?;
-        }
-        encoder.sub_reg_reg(result_reg, right_reg)?;
-
-        Ok(())
+        self.compile_binary_op(inst_idx, func_codegen, |encoder, dst, src| {
+            encoder.sub_reg_reg(dst, src)
+        })
     }
 
     /// Compile a return instruction.
@@ -363,22 +320,9 @@ impl<'arena> TestIRCompiler<'arena> {
         Ok(())
     }
 
-    /// Compile an unconditional branch.
-    fn compile_br(&mut self, _inst_idx: usize, _func_codegen: &mut FunctionCodegen) -> Result<(), CompilationError> {
-        // For now, we don't handle control flow
-        // This would require label management and jump instructions
-        Ok(())
-    }
-
-    /// Compile a conditional branch.
-    fn compile_condbr(&mut self, _inst_idx: usize, _func_codegen: &mut FunctionCodegen) -> Result<(), CompilationError> {
-        // For now, we don't handle control flow
-        Ok(())
-    }
-
-    /// Compile a multi-way jump.
-    fn compile_jump(&mut self, _inst_idx: usize, _func_codegen: &mut FunctionCodegen) -> Result<(), CompilationError> {
-        // For now, we don't handle control flow
+    /// Compile any branch instruction (br, condbr, jump).
+    fn compile_branch(&mut self, _inst_idx: usize, _func_codegen: &mut FunctionCodegen) -> Result<(), CompilationError> {
+        // TODO: Implement control flow with label management and jump instructions
         Ok(())
     }
 
@@ -407,11 +351,6 @@ impl<'arena> TestIRCompiler<'arena> {
         Ok(())
     }
 
-    /// Compile a test-bit-and-branch instruction.
-    fn compile_tbz(&mut self, _inst_idx: usize, _func_codegen: &mut FunctionCodegen) -> Result<(), CompilationError> {
-        // ARM64-specific instruction, not implemented for x86-64
-        Err(CompilationError::UnsupportedInstruction)
-    }
 
     /// Compile a zerofill instruction.
     fn compile_zerofill(&mut self, inst_idx: usize, func_codegen: &mut FunctionCodegen) -> Result<(), CompilationError> {

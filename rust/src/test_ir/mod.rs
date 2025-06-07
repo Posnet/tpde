@@ -255,144 +255,129 @@ impl TestIR {
     }
 
     pub fn print(&self) -> String {
+        use std::fmt::Write;
         let mut output = String::new();
-        output.push_str("Printing IR\n");
+        writeln!(output, "Printing IR").unwrap();
 
-        for func in self.functions.iter() {
-            // Handle function declarations vs definitions
-            if func.declaration {
-                output.push_str(&format!("\nExtern function {}", func.name));
+        for func in &self.functions {
+            // Print function header
+            let func_type = if func.declaration {
+                "Extern function"
             } else if func.local_only {
-                output.push_str(&format!("\nLocal function {}", func.name));
+                "Local function"
             } else {
-                output.push_str(&format!("\nFunction {}", func.name));
-            }
+                "Function"
+            };
+            writeln!(output, "\n{} {}", func_type, func.name).unwrap();
 
             // Print arguments
             for arg_idx in func.arg_begin_idx..func.arg_end_idx {
                 let arg = &self.values[arg_idx as usize];
-                output.push_str(&format!("\nArgument {}", arg.name));
+                writeln!(output, "Argument {}", arg.name).unwrap();
             }
 
-            // Print blocks (only for function definitions)
-            if !func.declaration {
-                for block_idx in func.block_begin_idx..func.block_end_idx {
-                    let block = &self.blocks[block_idx as usize];
-                    output.push_str(&format!("\nBlock {}", block.name));
+            // Skip blocks for declarations
+            if func.declaration {
+                continue;
+            }
 
-                    // Print successors
-                    for succ_idx in block.succ_begin_idx..block.succ_end_idx {
-                        let succ_block_idx = self.value_operands[succ_idx as usize];
-                        if succ_block_idx < self.blocks.len() as u32 {
-                            let succ_block = &self.blocks[succ_block_idx as usize];
-                            output.push_str(&format!("\nSucc {}", succ_block.name));
-                        }
+            // Print blocks
+            for block_idx in func.block_begin_idx..func.block_end_idx {
+                let block = &self.blocks[block_idx as usize];
+                writeln!(output, "Block {}", block.name).unwrap();
+
+                // Print successors
+                for succ_idx in block.succ_begin_idx..block.succ_end_idx {
+                    let succ_block_idx = self.value_operands[succ_idx as usize];
+                    if let Some(succ_block) = self.blocks.get(succ_block_idx as usize) {
+                        writeln!(output, "Succ {}", succ_block.name).unwrap();
                     }
+                }
 
-                    // Print PHIs
-                    for inst_idx in block.inst_begin_idx..block.phi_end_idx {
-                        let phi = &self.values[inst_idx as usize];
-                        output.push_str(&format!("\nPHI {}", phi.name));
+                // Print PHIs
+                for inst_idx in block.inst_begin_idx..block.phi_end_idx {
+                    self.print_phi(&mut output, inst_idx as usize);
+                }
 
-                        // Print incoming values
-                        let incoming_count = phi.op_count;
-                        for i in 0..incoming_count {
-                            let val_idx = self.value_operands[(phi.op_begin_idx + i) as usize];
-                            let block_idx = self.value_operands
-                                [(phi.op_begin_idx + incoming_count + i) as usize];
-                            if val_idx < self.values.len() as u32
-                                && block_idx < self.blocks.len() as u32
-                            {
-                                let val = &self.values[val_idx as usize];
-                                let from_block = &self.blocks[block_idx as usize];
-                                output
-                                    .push_str(&format!("\n{} from {}", val.name, from_block.name));
-                            }
-                        }
-                    }
-
-                    // Print instructions
-                    for inst_idx in block.phi_end_idx..block.inst_end_idx {
-                        let inst = &self.values[inst_idx as usize];
-                        let info = inst.op.info();
-
-                        if info.is_def {
-                            output.push_str(&format!("\nValue {} ({})", inst.name, info.name));
-                        } else {
-                            output.push_str(&format!("\nValue ({})", info.name));
-                        }
-
-                        // Print operands (special handling for call)
-                        if inst.op == Operation::Call {
-                            // For call instructions, print target function name
-                            // TODO: Once we track function references, print actual function name
-                            output.push_str("\nTarget ext_func2"); // Placeholder for now
-
-                            // Then print regular operands
-                            for op_idx in 0..inst.op_count {
-                                let operand_idx =
-                                    self.value_operands[(inst.op_begin_idx + op_idx) as usize];
-                                if operand_idx < self.values.len() as u32 {
-                                    let operand = &self.values[operand_idx as usize];
-                                    output.push_str(&format!("\nOp {}", operand.name));
-                                }
-                            }
-                        } else {
-                            // Normal operands
-                            for op_idx in 0..inst.op_count {
-                                let operand_idx =
-                                    self.value_operands[(inst.op_begin_idx + op_idx) as usize];
-                                if operand_idx < self.values.len() as u32 {
-                                    let operand = &self.values[operand_idx as usize];
-                                    output.push_str(&format!("\nOp {}", operand.name));
-                                }
-                            }
-                        }
-
-                        // Print block operands (for branches)
-                        let block_op_start = inst.op_begin_idx + inst.op_count;
-                        let block_op_count = info.succ_count;
-                        if block_op_count != !0 {
-                            for i in 0..block_op_count {
-                                let block_idx = self.value_operands[(block_op_start + i) as usize];
-                                if block_idx < self.blocks.len() as u32 {
-                                    let target_block = &self.blocks[block_idx as usize];
-                                    output.push_str(&format!("\nOp ^{}", target_block.name));
-                                }
-                            }
-                        } else if inst.op == Operation::Jump {
-                            // For jump instructions with variable successors, print all block operands
-                            let mut i = 0;
-                            while block_op_start + i < inst.op_end_idx {
-                                let block_idx = self.value_operands[(block_op_start + i) as usize];
-                                if block_idx < self.blocks.len() as u32 {
-                                    let target_block = &self.blocks[block_idx as usize];
-                                    output.push_str(&format!("\nOp ^{}", target_block.name));
-                                }
-                                i += 1;
-                            }
-                        }
-
-                        // Print immediates
-                        let imm_start = block_op_start
-                            + if block_op_count == !0 {
-                                0
-                            } else {
-                                block_op_count
-                            };
-                        for i in 0..info.imm_count {
-                            if (imm_start + i) < self.value_operands.len() as u32 {
-                                let imm = self.value_operands[(imm_start + i) as usize];
-                                output.push_str(&format!("\nOp ${}", imm));
-                            }
-                        }
-                    }
+                // Print instructions
+                for inst_idx in block.phi_end_idx..block.inst_end_idx {
+                    self.print_instruction(&mut output, inst_idx as usize);
                 }
             }
         }
 
-        output.push('\n');
         output
+    }
+
+    fn print_phi(&self, output: &mut String, inst_idx: usize) {
+        use std::fmt::Write;
+        let phi = &self.values[inst_idx];
+        writeln!(output, "PHI {}", phi.name).unwrap();
+
+        // Print incoming values
+        let incoming_count = phi.op_count;
+        for i in 0..incoming_count {
+            let val_idx = self.value_operands[(phi.op_begin_idx + i) as usize];
+            let block_idx = self.value_operands[(phi.op_begin_idx + incoming_count + i) as usize];
+            
+            if let (Some(val), Some(block)) = (
+                self.values.get(val_idx as usize),
+                self.blocks.get(block_idx as usize),
+            ) {
+                writeln!(output, "{} from {}", val.name, block.name).unwrap();
+            }
+        }
+    }
+
+    fn print_instruction(&self, output: &mut String, inst_idx: usize) {
+        use std::fmt::Write;
+        let inst = &self.values[inst_idx];
+        let info = inst.op.info();
+
+        // Print instruction header
+        if info.is_def {
+            writeln!(output, "Value {} ({})", inst.name, info.name).unwrap();
+        } else {
+            writeln!(output, "Value ({})", info.name).unwrap();
+        }
+
+        // Special handling for call instructions
+        if inst.op == Operation::Call {
+            // TODO: Once we track function references, print actual function name
+            writeln!(output, "Target ext_func2").unwrap(); // Placeholder
+        }
+
+        // Print value operands
+        for op_idx in 0..inst.op_count {
+            let operand_idx = self.value_operands[(inst.op_begin_idx + op_idx) as usize];
+            if let Some(operand) = self.values.get(operand_idx as usize) {
+                writeln!(output, "Op {}", operand.name).unwrap();
+            }
+        }
+
+        // Print block operands (for branches)
+        let block_op_start = inst.op_begin_idx + inst.op_count;
+        let block_op_count = if info.succ_count == !0 {
+            // Variable successors for jump
+            inst.op_end_idx - block_op_start
+        } else {
+            info.succ_count
+        };
+
+        for i in 0..block_op_count {
+            let block_idx = self.value_operands[(block_op_start + i) as usize];
+            if let Some(target_block) = self.blocks.get(block_idx as usize) {
+                writeln!(output, "Op ^{}", target_block.name).unwrap();
+            }
+        }
+
+        // Print immediates
+        let imm_start = block_op_start + if info.succ_count == !0 { 0 } else { info.succ_count };
+        for i in 0..info.imm_count {
+            if let Some(&imm) = self.value_operands.get((imm_start + i) as usize) {
+                writeln!(output, "Op ${}", imm).unwrap();
+            }
+        }
     }
 }
 

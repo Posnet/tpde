@@ -40,7 +40,17 @@
       "Bash(RUST_BACKTRACE=1 cargo test parser::tests::test_parse_simple_add -- --nocapture)",
       "Bash(RUST_BACKTRACE=1 cargo test test_array_alloca_compilation 2 >& 1)",
       "Bash(RUST_LOG=debug cargo test test_array_alloca_compilation 2 >& 1)",
-      "Bash(RUST_BACKTRACE=1 cargo test analyzer_tests::run_all_tir_files -- --nocapture 2 >& 1)"
+      "Bash(RUST_BACKTRACE=1 cargo test analyzer_tests::run_all_tir_files -- --nocapture 2 >& 1)",
+      "Bash(RUST_BACKTRACE=1 cargo test \"codegen_tests::run_all_tir_files\" -- --test-threads=1 --nocapture 2 >& 1)",
+      "Bash(RUST_LOG=debug cargo test codegen_tests::run_all_tir_files -- --test-threads=1 --nocapture 2 >& 1)",
+      "Bash(RUST_LOG=tpde=debug cargo test codegen_tests::run_all_tir_files -- --test-threads=1 --nocapture 2 >& 1)",
+      "Bash(RUST_LOG=tpde=debug cargo test \"codegen.*sub\" -- --test-threads=1 --nocapture 2 >& 1)",
+      "Bash(RUST_LOG=tpde=debug cargo test \"::sub\" -- --test-threads=1 2 >& 1)",
+      "Bash(RUST_LOG=tpde=debug cargo run --bin test_simple_output ../tpde/test/filetest/codegen/sub.tir 2 >& 1)",
+      "Bash(RUST_LOG=tpde=trace cargo test codegen_tests::run_all_tir_files -- --nocapture 2 >& 1)",
+      "Bash(RUST_LOG=tpde=trace RUST_BACKTRACE=1 cargo test \"::sub\" -- --test-threads=1 --exact 2 >& 1)",
+      "Bash(RUST_LOG=debug cargo test tir_filetest_runner::codegen_tests::run_all_tir_files --lib -- --nocapture 2 >& 1)",
+      "Bash(git reset:*)"
     ],
     "deny": []
   }

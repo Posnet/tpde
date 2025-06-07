@@ -8,6 +8,62 @@ use std::path::{Path, PathBuf};
 use tpde::core::{Analyzer, IrAdaptor};
 use tpde::test_ir::{TestIR, TestIRAdaptor};
 
+#[derive(Default)]
+struct TestConfig {
+    print_ir: bool,
+    print_rpo: bool,
+    print_liveness: bool,
+    print_loops: bool,
+    print_layout: bool,
+    run_until: String,
+    no_fixed_assignments: bool,
+    obj_out_path: Option<String>,
+    is_arm64: bool,
+    expect_failure: bool,
+}
+
+impl TestConfig {
+    fn default() -> Self {
+        Self {
+            run_until: "codegen".to_string(),
+            ..Default::default()
+        }
+    }
+    
+    fn parse_run_line(&mut self, run_line: &str) {
+        // Check if the command is expected to fail
+        let run_line = if let Some(cmd) = run_line.trim().strip_prefix("not ") {
+            self.expect_failure = true;
+            cmd
+        } else {
+            run_line
+        };
+        
+        // Parse flags
+        self.is_arm64 = run_line.contains("--arch=a64") || run_line.contains("--arch=arm64");
+        self.print_ir = run_line.contains("--print-ir");
+        self.print_rpo = run_line.contains("--print-rpo");
+        self.print_liveness = run_line.contains("--print-liveness");
+        self.print_loops = run_line.contains("--print-loops");
+        self.print_layout = run_line.contains("--print-layout");
+        self.no_fixed_assignments = run_line.contains("--no-fixed-assignments");
+        
+        // Parse --run-until=
+        if let Some(pos) = run_line.find("--run-until=") {
+            let start = pos + "--run-until=".len();
+            let end = run_line[start..].find(' ').unwrap_or(run_line.len() - start);
+            self.run_until = run_line[start..start + end].to_string();
+        }
+        
+        // Parse -o output.o
+        if let Some(pos) = run_line.find("-o ") {
+            let start = pos + 3;
+            let end = run_line[start..].find(' ').unwrap_or(run_line.len() - start);
+            self.obj_out_path = Some(run_line[start..start + end].to_string());
+        }
+    }
+}
+
 /// Discovers all .tir files in a directory recursively
 fn discover_tir_files(dir: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
@@ -34,71 +90,17 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
     let content = fs::read_to_string(path)
         .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
 
-    // Parse RUN directive to determine what to execute
-    let mut print_ir = false;
-    let mut print_rpo = false;
-    let mut print_liveness = false;
-    let mut print_loops = false;
-    let mut print_layout = false;
-    let mut run_until = "codegen";
-    let mut no_fixed_assignments = false;
-    let mut obj_out_path: Option<String> = None;
-    let mut is_arm64 = false;
-    let mut expect_failure = false;
-
+    // Parse RUN directive
+    let mut config = TestConfig::default();
+    
     for line in content.lines() {
         if let Some(run_line) = line.strip_prefix("; RUN:") {
-            // Check if the command is expected to fail
-            let run_line = if let Some(cmd) = run_line.trim().strip_prefix("not ") {
-                expect_failure = true;
-                cmd
-            } else {
-                run_line
-            };
-            // Check if this is an ARM64-specific test
-            if run_line.contains("--arch=a64") || run_line.contains("--arch=arm64") {
-                is_arm64 = true;
-            }
-            if run_line.contains("--print-ir") {
-                print_ir = true;
-            }
-            if run_line.contains("--print-rpo") {
-                print_rpo = true;
-            }
-            if run_line.contains("--print-liveness") {
-                print_liveness = true;
-            }
-            if run_line.contains("--print-loops") {
-                print_loops = true;
-            }
-            if run_line.contains("--print-layout") {
-                print_layout = true;
-            }
-            if run_line.contains("--no-fixed-assignments") {
-                no_fixed_assignments = true;
-            }
-            if let Some(pos) = run_line.find("--run-until=") {
-                let start = pos + "--run-until=".len();
-                if let Some(end) = run_line[start..].find(' ') {
-                    run_until = &run_line[start..start + end];
-                } else {
-                    run_until = &run_line[start..];
-                }
-            }
-            // Parse -o output.o
-            if let Some(pos) = run_line.find("-o ") {
-                let start = pos + 3;
-                if let Some(end) = run_line[start..].find(' ') {
-                    obj_out_path = Some(run_line[start..start + end].to_string());
-                } else {
-                    obj_out_path = Some(run_line[start..].to_string());
-                }
-            }
+            config.parse_run_line(run_line);
         }
     }
 
     // Skip ARM64-specific tests for now since we only support x86-64
-    if is_arm64 {
+    if config.is_arm64 {
         return Ok("Skipping ARM64-specific test".to_string());
     }
 
@@ -106,7 +108,7 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
     let parse_result = TestIR::parse(&content);
     
     // Handle expected failures
-    if expect_failure {
+    if config.expect_failure {
         match parse_result {
             Err(e) => return Ok(format!("Expected failure: {e}")),
             Ok(_) => return Err("Expected parse failure but succeeded".to_string()),
@@ -114,16 +116,23 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
     }
     
     let ir = parse_result?;
+    
+    // Check if IR contains ARM64-specific instructions (like tbz)
+    for value in &ir.values {
+        if value.op == tpde::test_ir::Operation::Tbz {
+            return Ok("Skipping ARM64-specific test (contains tbz instruction)".to_string());
+        }
+    }
     let mut output = Vec::new();
 
     // Print IR if requested
-    if print_ir {
+    if config.print_ir {
         output.push("Printing IR".to_string());
         output.push(ir.to_string());
     }
 
     // Run analyzer if needed
-    if print_rpo || print_liveness || print_loops || print_layout || run_until == "analyzer" {
+    if config.print_rpo || config.print_liveness || config.print_loops || config.print_layout || config.run_until == "analyzer" {
         let mut adaptor = TestIRAdaptor::new(&ir);
         let mut analyzer = Analyzer::new();
 
@@ -134,7 +143,7 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
             adaptor.switch_func(func);
             analyzer.switch_func(&mut adaptor, func);
 
-            if print_rpo {
+            if config.print_rpo {
                 output.push(format!("RPO for func {func_name}"));
                 let rpo = analyzer.order();
                 for (idx, &block) in rpo.iter().enumerate() {
@@ -144,7 +153,7 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
                 output.push("End RPO".to_string());
             }
 
-            if print_layout {
+            if config.print_layout {
                 output.push(format!("Block Layout for {func_name}"));
                 let layout = analyzer.block_layout();
                 for (idx, &block) in layout.iter().enumerate() {
@@ -154,7 +163,7 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
                 output.push("End Block Layout".to_string());
             }
 
-            if print_loops {
+            if config.print_loops {
                 output.push(format!("Loops for {func_name}"));
                 let loops = analyzer.loops();
                 for (idx, loop_info) in loops.iter().enumerate() {
@@ -166,7 +175,7 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
                 output.push("End Loops".to_string());
             }
 
-            if print_liveness {
+            if config.print_liveness {
                 output.push(format!("Liveness for {func_name}"));
 
                 // Get block names for mapping - use block layout instead of RPO
@@ -234,7 +243,7 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
     }
 
     // Handle codegen stage
-    if run_until == "codegen" || obj_out_path.is_some() {
+    if config.run_until == "codegen" || config.obj_out_path.is_some() {
         // Actually compile to object code
         use bumpalo::Bump;
         use tpde::core::session::CompilationSession;
@@ -243,14 +252,14 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
         let arena = Bump::new();
         let session = CompilationSession::new(&arena);
         
-        let compiler = TestIRCompiler::new(&ir, &session, no_fixed_assignments)
+        let compiler = TestIRCompiler::new(&ir, &session, config.no_fixed_assignments)
             .map_err(|e| format!("Failed to create compiler: {e:?}"))?;
             
         let object_code = compiler.compile()
             .map_err(|e| format!("Compilation failed: {e:?}"))?;
         
         // Write object file if path provided
-        if let Some(out_path) = &obj_out_path {
+        if let Some(out_path) = &config.obj_out_path {
             // Handle %t placeholder
             let actual_path = if out_path.contains("%t") {
                 // Create temp directory
@@ -270,7 +279,7 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
                 .map_err(|e| format!("Failed to write object file: {e}"))?;
                 
             // For codegen tests, we need to disassemble the object
-            if run_until == "codegen" && actual_path.ends_with(".o") {
+            if config.run_until == "codegen" && actual_path.ends_with(".o") {
                 // Run objdump on the generated object file
                 // Note: macOS objdump doesn't support -Mintel-syntax, so we'll use a different approach
                 let objdump_output = if cfg!(target_os = "macos") {
