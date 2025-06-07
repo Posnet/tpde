@@ -50,7 +50,14 @@
       "Bash(RUST_LOG=tpde=trace cargo test codegen_tests::run_all_tir_files -- --nocapture 2 >& 1)",
       "Bash(RUST_LOG=tpde=trace RUST_BACKTRACE=1 cargo test \"::sub\" -- --test-threads=1 --exact 2 >& 1)",
       "Bash(RUST_LOG=debug cargo test tir_filetest_runner::codegen_tests::run_all_tir_files --lib -- --nocapture 2 >& 1)",
-      "Bash(git reset:*)"
+      "Bash(git reset:*)",
+      "Bash(git checkout:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh pr checkout:*)",
+      "Bash(git merge:*)",
+      "Bash(git fetch:*)"
     ],
     "deny": []
   }

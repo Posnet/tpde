@@ -233,10 +233,7 @@ impl std::fmt::Display for LlvmCompilerError {
 
 impl std::error::Error for LlvmCompilerError {}
 
-impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena>
-where
-    'ctx: 'arena,
-{
+impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
     /// Create a new LLVM compiler.
     pub fn new(
         module: inkwell::module::Module<'ctx>,
@@ -4027,7 +4024,7 @@ where
     ) -> Result<(), LlvmCompilerError> {
         // Store each PHI node in the session
         for phi_node in &analysis.phi_nodes[0..analysis.phi_count] {
-            let mut incoming_values = Vec::new();
+            let mut incoming_values = bumpalo::collections::Vec::new_in(self.session.arena());
 
             // Collect incoming values for this PHI
             for i in 0..phi_node.incoming_count {
