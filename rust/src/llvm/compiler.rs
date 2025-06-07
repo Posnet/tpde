@@ -25,6 +25,7 @@ use crate::{
     core::{CompilerContext, ValuePartRef},
     x64::function_codegen::FunctionCodegen,
 };
+use bumpalo::collections::Vec as BumpVec;
 use bumpalo::Bump;
 use hashbrown::{DefaultHashBuilder, HashMap};
 use inkwell::basic_block::BasicBlock;
@@ -416,7 +417,7 @@ impl<'ctx, 'arena, 'session> LlvmCompiler<'ctx, 'arena, 'session> {
 
         // Process parameter types
         let param_types = function_type.get_param_types();
-        let mut args_vec = Vec::with_capacity(param_types.len());
+        let mut args_vec = BumpVec::with_capacity_in(param_types.len(), self.session.arena());
 
         for &param_type in &param_types {
             args_vec.push(self.llvm_type_to_arg_info(param_type)?);
@@ -3186,7 +3187,7 @@ impl<'ctx, 'arena, 'session> LlvmCompiler<'ctx, 'arena, 'session> {
         }
 
         // Process indices
-        let mut indices = Vec::new();
+        let mut indices = BumpVec::new_in(self.session.arena());
         for i in 1..operand_count {
             if let Some(idx_operand) = instruction.get_operand(i) {
                 if let Some(idx_val) = idx_operand.left() {
@@ -3200,7 +3201,7 @@ impl<'ctx, 'arena, 'session> LlvmCompiler<'ctx, 'arena, 'session> {
         }
 
         // Extract element sizes and constants before creating context
-        let mut index_info = Vec::new();
+        let mut index_info = BumpVec::new_in(self.session.arena());
         for (idx_num, &index_idx) in indices.iter().enumerate() {
             let element_size = self.get_gep_element_size(idx_num)?;
             let const_val = self.try_get_constant_index(index_idx);
@@ -3475,7 +3476,7 @@ impl<'ctx, 'arena, 'session> LlvmCompiler<'ctx, 'arena, 'session> {
         log::debug!("   Switch has {} cases plus default", num_cases);
 
         // First, collect all case information
-        let mut cases = Vec::new();
+        let mut cases = BumpVec::new_in(self.session.arena());
         for i in 0..num_cases {
             let case_value_idx = 2 + i * 2;
             let case_target_idx = 2 + i * 2 + 1;
@@ -3645,7 +3646,7 @@ impl<'ctx, 'arena, 'session> LlvmCompiler<'ctx, 'arena, 'session> {
         };
 
         // Process arguments and assign them according to System V ABI
-        let mut arg_assignments = Vec::new();
+        let mut arg_assignments = BumpVec::new_in(self.session.arena());
 
         for i in 0..arg_count {
             let arg_value = instruction.get_operand(i).unwrap().left().unwrap();
@@ -4281,7 +4282,7 @@ impl<'ctx, 'arena, 'session> LlvmCompiler<'ctx, 'arena, 'session> {
 
         // First, we need to collect all the moves we need to make
         // This is important because we need to handle parallel moves and potential cycles
-        let mut moves_to_make = Vec::new();
+        let mut moves_to_make = BumpVec::new_in(self.session.arena());
 
         // Get the current function to find PHI nodes in the target block
         let current_function = self.current_function.ok_or_else(|| {
@@ -4554,7 +4555,7 @@ impl<'ctx, 'arena, 'session> LlvmCompiler<'ctx, 'arena, 'session> {
             let num_incoming = phi_value.count_incoming();
             log::trace!("   PHI   PHI has {} incoming values", num_incoming);
 
-            let mut incoming_values = Vec::new();
+            let mut incoming_values = BumpVec::new_in(self.session.arena());
 
             for i in 0..num_incoming {
                 let value = phi_value.get_incoming(i).unwrap().0;
