@@ -1,19 +1,22 @@
 use tpde::test_ir::{TestIR, TestIRAdaptor};
 use tpde::core::{Analyzer, IrAdaptor};
+use std::collections::HashMap;
 
 fn main() {
     let tir_content = r#"
-nest_extend() {
+mixed_loop2() {
 entry:
-  %a =
-  jump ^loop1
-loop1:
-  jump ^loop_inner1, ^ret
-loop_inner1:
-  %b = %a
-  jump ^loop_inner1, ^loop_inner2
-loop_inner2:
-  jump ^loop_inner2, ^loop1
+  jump ^loop1_head, ^cont1
+loop1_head:
+  jump ^loop1_body, ^cont1
+cont1:
+  jump ^loop2_head
+loop1_body:
+  jump ^loop1_head
+loop2_body:
+  jump ^loop2_head
+loop2_head:
+  jump ^loop2_body, ^ret
 ret:
   terminate
 }
@@ -28,14 +31,15 @@ ret:
     adaptor.switch_func(func);
     analyzer.switch_func(&mut adaptor, func);
     
-    println!("Block Layout:");
+    println!("Block Layout for mixed_loop2");
     let layout = analyzer.block_layout();
     for (idx, &block) in layout.iter().enumerate() {
         let block_name = adaptor.block_name(block);
         println!("{}: {}", idx, block_name);
     }
+    println!("End Block Layout");
     
-    println!("\nLoops:");
+    println!("Loops for mixed_loop2");
     let loops = analyzer.loops();
     for (idx, loop_info) in loops.iter().enumerate() {
         println!(
@@ -47,21 +51,17 @@ ret:
             loop_info.end
         );
     }
+    println!("End Loops");
     
-    println!("\nLiveness for %a (local_idx 0):");
-    if let Some(liveness) = analyzer.liveness(0) {
-        println!("  first: {}, last: {}, last_full: {}", 
-                 liveness.first, liveness.last, liveness.last_full);
-        
-        let first_block = layout.get(liveness.first)
-            .map(|&b| adaptor.block_name(b))
-            .unwrap_or("?");
-        let last_block = layout.get(liveness.last)
-            .map(|&b| adaptor.block_name(b))
-            .unwrap_or("?");
-            
-        println!("  {}->{}",
-                 first_block,
-                 last_block);
+    // Debug: Check edges
+    println!("\nDebug: Block successors");
+    for (idx, &block) in layout.iter().enumerate() {
+        let block_name = adaptor.block_name(block);
+        print!("{} ({}): ", idx, block_name);
+        for succ in adaptor.block_succs(block) {
+            let succ_name = adaptor.block_name(succ);
+            print!("{} ", succ_name);
+        }
+        println!();
     }
 }

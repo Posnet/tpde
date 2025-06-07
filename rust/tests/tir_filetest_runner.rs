@@ -35,6 +35,8 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
     let mut print_ir = false;
     let mut print_rpo = false;
     let mut print_liveness = false;
+    let mut print_loops = false;
+    let mut print_layout = false;
     let mut run_until = "codegen";
     
     for line in content.lines() {
@@ -47,6 +49,12 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
             }
             if run_line.contains("--print-liveness") {
                 print_liveness = true;
+            }
+            if run_line.contains("--print-loops") {
+                print_loops = true;
+            }
+            if run_line.contains("--print-layout") {
+                print_layout = true;
             }
             if let Some(pos) = run_line.find("--run-until=") {
                 let start = pos + "--run-until=".len();
@@ -70,7 +78,7 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
     }
     
     // Run analyzer if needed
-    if print_rpo || print_liveness || run_until == "analyzer" {
+    if print_rpo || print_liveness || print_loops || print_layout || run_until == "analyzer" {
         let mut adaptor = TestIRAdaptor::new(&ir);
         let mut analyzer = Analyzer::new();
         
@@ -91,12 +99,38 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
                 output.push("End RPO".to_string());
             }
             
+            if print_layout {
+                output.push(format!("Block Layout for {}", func_name));
+                let layout = analyzer.block_layout();
+                for (idx, &block) in layout.iter().enumerate() {
+                    let block_name = adaptor.block_name(block);
+                    output.push(format!("{}: {}", idx, block_name));
+                }
+                output.push("End Block Layout".to_string());
+            }
+            
+            if print_loops {
+                output.push(format!("Loops for {}", func_name));
+                let loops = analyzer.loops();
+                for (idx, loop_info) in loops.iter().enumerate() {
+                    output.push(format!(
+                        "{}: level {}, parent {}, {}->{}",
+                        idx,
+                        loop_info.level,
+                        loop_info.parent,
+                        loop_info.begin,
+                        loop_info.end
+                    ));
+                }
+                output.push("End Loops".to_string());
+            }
+            
             if print_liveness {
                 output.push(format!("Liveness for {}", func_name));
                 
-                // Get block names for mapping
-                let blocks: Vec<_> = analyzer.order().to_vec();
-                let block_names: Vec<String> = blocks.iter()
+                // Get block names for mapping - use block layout instead of RPO
+                let layout = analyzer.block_layout();
+                let block_names: Vec<String> = layout.iter()
                     .map(|&b| adaptor.block_name(b).to_string())
                     .collect();
                 

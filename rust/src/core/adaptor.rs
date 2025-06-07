@@ -127,4 +127,12 @@ pub trait IrAdaptor {
     fn phi_incoming_block_for_slot(&self, phi: Self::ValueRef, slot: u32) -> Self::BlockRef {
         Self::INVALID_BLOCK_REF
     }
+    
+    /// Get the name of a block (for printing).
+    fn block_name(&self, block: Self::BlockRef) -> &str {
+        ""
+    }
+    
+    /// Set the block index for a block (used by analyzer).
+    fn set_block_idx(&self, block: Self::BlockRef, idx: usize);
 }

@@ -710,6 +710,10 @@ impl<'ctx> IrAdaptor for EnhancedLlvmAdaptor<'ctx> {
             false
         }
     }
+    
+    fn set_block_idx(&self, _block: Self::BlockRef, _idx: usize) {
+        // Not needed for LLVM adaptor as we don't track block indices
+    }
 }
 
 impl<'ctx> LlvmAdaptorInterface for EnhancedLlvmAdaptor<'ctx> {

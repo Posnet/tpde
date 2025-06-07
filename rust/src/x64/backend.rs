@@ -367,6 +367,10 @@ mod tests {
         fn val_ignore_liveness(&self, _val: Self::ValueRef) -> bool {
             false
         }
+        
+        fn set_block_idx(&self, _block: Self::BlockRef, _idx: usize) {
+            // Not needed for test adaptor
+        }
     }
 
     #[test]

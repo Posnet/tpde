@@ -40,6 +40,7 @@ impl IrAdaptor for DummyAdaptor {
     fn inst_results(&self, _: Self::InstRef) -> Box<dyn Iterator<Item = Self::ValueRef> + '_> { Box::new(std::iter::empty()) }
     fn val_local_idx(&self, _: Self::ValueRef) -> usize { 0 }
     fn val_ignore_liveness(&self, _: Self::ValueRef) -> bool { false }
+    fn set_block_idx(&self, _: Self::BlockRef, _: usize) {}
 }
 
 #[test]

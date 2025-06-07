@@ -264,6 +264,14 @@ impl<'ir> IrAdaptor for TestIRAdaptor<'ir> {
         assert!(slot < info.op_count);
         BlockRef(self.ir.value_operands[(info.op_begin_idx + info.op_count + slot) as usize])
     }
+    
+    fn block_name(&self, block: Self::BlockRef) -> &str {
+        &self.ir.blocks[block.0 as usize].name
+    }
+    
+    fn set_block_idx(&self, _block: Self::BlockRef, _idx: usize) {
+        // For TestIR, we don't need to store this information as we use block indices directly
+    }
 }
 
 /// PHI node information for TestIR
