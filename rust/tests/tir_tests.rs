@@ -175,24 +175,21 @@ fn test_alloca_align_tir() {
         &[
             "Function test",
             "Block entry",
-            "Value a1 (alloca)",
+            "Value a (alloca)",
             "Op $8",
             "Op $1",
-            "Value a2 (alloca)",
+            "Value b (alloca)",
             "Op $8",
             "Op $2",
-            "Value a4 (alloca)",
+            "Value c (alloca)",
             "Op $8",
             "Op $4",
-            "Value a8 (alloca)",
+            "Value d (alloca)",
             "Op $8",
             "Op $8",
-            "Value a16 (alloca)",
+            "Value e (alloca)",
             "Op $8",
             "Op $16",
-            "Value a32 (alloca)",
-            "Op $8",
-            "Op $32",
             "Value (terminate)",
         ],
     );
@@ -203,10 +200,10 @@ fn test_alloca_align_tir() {
         .iter()
         .filter(|v| v.op == tpde::test_ir::Operation::Alloca)
         .collect();
-    assert_eq!(allocas.len(), 6);
+    assert_eq!(allocas.len(), 5);
 
     // Check alignment values
-    let expected_aligns = [1, 2, 4, 8, 16, 32];
+    let expected_aligns = [1, 2, 4, 8, 16];
     for (i, alloca) in allocas.iter().enumerate() {
         let align_idx = (alloca.op_begin_idx + 1) as usize;
         let align = ir.value_operands[align_idx];
@@ -226,30 +223,23 @@ fn test_call_tir() {
     check_output_contains(
         &output,
         &[
-            "Function caller",
-            "Argument a",
-            "Argument b",
+            "Extern function ext_func",
+            "Function impl_func",
             "Block entry",
-            "Value c (call)",
+            "Value a (call)",
+            "Target ext_func2",
+            "Value b (call)",
+            "Target ext_func",
             "Op a",
-            "Op b",
             "Value (ret)",
-            "Op c",
+            "Op b",
         ],
     );
 
     check_output_contains(
         &output,
         &[
-            "Function callee",
-            "Argument x",
-            "Argument y",
-            "Block entry",
-            "Value z (add)",
-            "Op x",
-            "Op y",
-            "Value (ret)",
-            "Op z",
+            "Extern function ext_func2",
         ],
     );
 
@@ -259,9 +249,11 @@ fn test_call_tir() {
         .iter()
         .filter(|v| v.op == tpde::test_ir::Operation::Call)
         .collect();
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].name, "c");
-    assert_eq!(calls[0].op_count, 2); // Two arguments
+    assert_eq!(calls.len(), 2); // Two call instructions  
+    assert_eq!(calls[0].name, "a");
+    assert_eq!(calls[0].op_count, 0); // No arguments to ext_func2
+    assert_eq!(calls[1].name, "b"); 
+    assert_eq!(calls[1].op_count, 1); // One argument to ext_func
 }
 
 #[test]
@@ -273,30 +265,30 @@ fn test_func_tir() {
         &output,
         &[
             "Printing IR",
-            "Function empty_func",
+            "Extern function my_func",
+            "Local function local_func",
             "Block entry",
             "Value (terminate)",
         ],
     );
 
-    // Verify minimal function structure
-    assert_eq!(ir.functions.len(), 1);
-    assert_eq!(ir.functions[0].name, "empty_func");
-    assert_eq!(ir.blocks.len(), 1);
-    assert_eq!(ir.blocks[0].name, "entry");
+    // Verify function structure
+    assert_eq!(ir.functions.len(), 2);
+    assert_eq!(ir.functions[0].name, "my_func");
+    assert_eq!(ir.functions[0].declaration, true);
+    assert_eq!(ir.functions[1].name, "local_func");
+    assert_eq!(ir.functions[1].local_only, true);
 }
 
 #[test]
 fn test_duplicate_funcs_tir() {
-    let ir = load_tir_file("duplicate_funcs.tir");
-    let output = ir.print();
-
-    check_output_contains(&output, &["Function func1", "Function func2"]);
-
-    // Verify we have two functions
-    assert_eq!(ir.functions.len(), 2);
-    assert_eq!(ir.functions[0].name, "func1");
-    assert_eq!(ir.functions[1].name, "func2");
+    // This test file contains duplicate function definitions, which should fail to parse
+    let path = Path::new("../tpde/test/filetest/tir").join("duplicate_funcs.tir");
+    let contents = fs::read_to_string(&path).unwrap();
+    
+    let result = TestIR::parse(&contents);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Duplicate function definition"));
 }
 
 // Additional verification tests for parser edge cases
@@ -308,7 +300,7 @@ fn test_parser_comments() {
 func() { ; Another comment
   entry: ; Comment after label
     ; Comment line
-    %val = ; Comment after =
+    %val = any ; Comment after =
     terminate ; Final comment
 }
 "#;

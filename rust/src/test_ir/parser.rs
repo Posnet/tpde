@@ -180,26 +180,67 @@ impl<'a> Parser<'a> {
         self.skip_whitespace(true);
         let start = self.pos;
 
-        while let Some(ch) = self.current_char() {
-            if ch.is_ascii_digit() {
+        // Check for hex prefix
+        let is_hex = if self.current_char() == Some('0') {
+            self.advance();
+            if self.current_char() == Some('x') || self.current_char() == Some('X') {
                 self.advance();
+                true
             } else {
-                break;
+                // Back to the '0' we just consumed
+                false
+            }
+        } else {
+            false
+        };
+
+        // Read digits
+        if is_hex {
+            while let Some(ch) = self.current_char() {
+                if ch.is_ascii_hexdigit() {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+        } else {
+            // If we didn't consume a '0' prefix, or if we did but it wasn't hex
+            if !is_hex && start == self.pos {
+                // Read decimal digits
+                while let Some(ch) = self.current_char() {
+                    if ch.is_ascii_digit() {
+                        self.advance();
+                    } else {
+                        break;
+                    }
+                }
             }
         }
 
-        if start == self.pos {
+        if start == self.pos || (is_hex && self.pos == start + 2) {
             return Err("Expected number".to_string());
         }
 
-        self.text[start..self.pos]
-            .parse()
-            .map_err(|e| format!("Failed to parse number: {}", e))
+        let number_str = &self.text[start..self.pos];
+        if is_hex {
+            // Parse hex without the "0x" prefix
+            u32::from_str_radix(&number_str[2..], 16)
+                .map_err(|e| format!("Failed to parse hex number: {}", e))
+        } else {
+            number_str
+                .parse()
+                .map_err(|e| format!("Failed to parse number: {}", e))
+        }
     }
 
     fn parse_function(&mut self) -> Result<(), String> {
         let func_name = self.read_identifier()?;
         let func_idx = self.ir.functions.len() as u32;
+
+        // Check for duplicate function names
+        if self.funcs.contains_key(func_name) {
+            return Err(format!("Duplicate function definition: '{}'", func_name));
+        }
 
         // Reset per-function state
         self.blocks.clear();

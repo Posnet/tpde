@@ -383,6 +383,28 @@ impl RegisterFile {
         Ok(())
     }
 
+    /// Mark a specific register as allocated to a value.
+    /// This is used for pre-allocated registers like function arguments.
+    pub fn allocate_specific_reg(
+        &mut self,
+        reg: AsmReg,
+        local_idx: ValLocalIdx,
+        part: u32,
+    ) -> Result<(), RegAllocError> {
+        let linear_idx = reg.linear_index(self.regs_per_bank);
+        if linear_idx >= self.total_regs {
+            return Err(RegAllocError::InvalidRegister);
+        }
+
+        // Check if register is already allocated
+        if self.used.contains(reg) {
+            return Err(RegAllocError::NoRegistersAvailable);
+        }
+
+        // Mark as allocated
+        self.assign_register(reg, local_idx, part)
+    }
+
     /// Lock a register to prevent eviction.
     pub fn lock_register(&mut self, reg: AsmReg) -> Result<(), RegAllocError> {
         let linear_idx = reg.linear_index(self.regs_per_bank);
@@ -391,6 +413,7 @@ impl RegisterFile {
         }
 
         if !self.used.contains(reg) {
+            log::error!("Attempted to lock unallocated register {:?}, used: {:?}", reg, self.used);
             return Err(RegAllocError::RegisterNotAllocated);
         }
 

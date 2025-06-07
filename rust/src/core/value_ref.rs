@@ -218,6 +218,7 @@ pub struct ValuePartRef {
 impl ValuePartRef {
     /// Create a new ValuePartRef for the specified value part.
     pub fn new(local_idx: ValLocalIdx, part_idx: u32) -> Result<Self, ValueRefError> {
+        log::trace!("Creating ValuePartRef for local_idx={}, part_idx={}", local_idx, part_idx);
         Ok(Self {
             local_idx,
             part_idx,
@@ -232,8 +233,11 @@ impl ValuePartRef {
     /// a register containing the value. It handles allocation, reloading
     /// from stack, and locking automatically.
     pub fn load_to_reg(&mut self, ctx: &mut CompilerContext) -> Result<AsmReg, ValueRefError> {
+        log::trace!("load_to_reg for local_idx={}, part_idx={}", self.local_idx, self.part_idx);
+        
         // Check if already in a register
         if let Some(reg) = self.current_register(ctx) {
+            log::trace!("  Already in register {:?}", reg);
             // Lock the register to prevent eviction
             ctx.register_file
                 .lock_register(reg)
@@ -242,16 +246,22 @@ impl ValuePartRef {
             return Ok(reg);
         }
 
+        log::trace!("  Not in register, need to allocate");
         // Need to allocate a new register
         self.allocate_register(ctx)
     }
 
     /// Allocate a register for this part.
     fn allocate_register(&mut self, ctx: &mut CompilerContext) -> Result<AsmReg, ValueRefError> {
+        log::trace!("allocate_register for local_idx={}, part_idx={}", self.local_idx, self.part_idx);
+        
         let assignment = ctx
             .assignments
             .get_assignment(self.local_idx)
-            .ok_or(ValueRefError::ValueNotFound)?;
+            .ok_or_else(|| {
+                log::error!("Value assignment not found for local_idx={}", self.local_idx);
+                ValueRefError::ValueNotFound
+            })?;
 
         let part_data = assignment
             .part(self.part_idx)

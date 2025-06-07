@@ -21,10 +21,12 @@
 
 pub mod adaptor;
 pub mod check;
+pub mod compiler;
 pub mod parser;
 
 pub use adaptor::TestIRAdaptor;
 pub use check::{CheckDirective, TestRunner, TestSpec};
+pub use compiler::{CompilationError, TestIRCompiler};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TestIR {
@@ -211,6 +213,7 @@ impl Operation {
 
     pub fn parse(s: &str) -> Option<Self> {
         match s {
+            "any" => Some(Operation::Any),
             "add" => Some(Operation::Add),
             "sub" => Some(Operation::Sub),
             "alloca" => Some(Operation::Alloca),
