@@ -20,7 +20,9 @@
 
 use crate::core::register_file::AsmReg;
 use iced_x86::code_asm::{registers::cl, *};
-use std::collections::HashMap;
+use bumpalo::Bump;
+use hashbrown::{HashMap, HashSet};
+use hashbrown::DefaultHashBuilder;
 
 /// Error types for instruction encoding.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,28 +56,31 @@ impl std::error::Error for EncodingError {}
 ///
 /// This provides the equivalent functionality to the C++ fadec-based encoder,
 /// generating real x86-64 machine code that can be executed.
-pub struct X64Encoder {
+pub struct X64Encoder<'arena> {
+    /// Allocator backing all encoder collections.
+    alloc: &'arena Bump,
     /// Code assembler for generating instructions.
     assembler: CodeAssembler,
     /// Current instruction buffer position.
     position: u64,
     /// Labels for basic blocks to enable proper control flow.
-    block_labels: HashMap<usize, CodeLabel>,
+    block_labels: HashMap<usize, CodeLabel, DefaultHashBuilder, &'arena Bump>,
     /// Track which block labels have been placed.
-    placed_blocks: std::collections::HashSet<usize>,
+    placed_blocks: HashSet<usize, DefaultHashBuilder, &'arena Bump>,
 }
 
-impl X64Encoder {
+impl<'arena> X64Encoder<'arena> {
     /// Create a new x86-64 encoder.
-    pub fn new() -> Result<Self, EncodingError> {
+    pub fn new(alloc: &'arena Bump) -> Result<Self, EncodingError> {
         let assembler =
             CodeAssembler::new(64).map_err(|e| EncodingError::AssemblyError(e.to_string()))?;
 
         Ok(Self {
+            alloc,
             assembler,
             position: 0x1000, // Start at a reasonable base address
-            block_labels: HashMap::new(),
-            placed_blocks: std::collections::HashSet::new(),
+            block_labels: HashMap::new_in(alloc),
+            placed_blocks: HashSet::new_in(alloc),
         })
     }
 
@@ -1278,15 +1283,15 @@ pub enum JumpCondition {
 /// High-level instruction selection patterns.
 ///
 /// These implement common code generation patterns equivalent to the C++ compiler.
-pub struct InstructionSelector {
-    encoder: X64Encoder,
+pub struct InstructionSelector<'arena> {
+    encoder: X64Encoder<'arena>,
 }
 
-impl InstructionSelector {
+impl<'arena> InstructionSelector<'arena> {
     /// Create a new instruction selector.
-    pub fn new() -> Result<Self, EncodingError> {
+    pub fn new(alloc: &'arena Bump) -> Result<Self, EncodingError> {
         Ok(Self {
-            encoder: X64Encoder::new()?,
+            encoder: X64Encoder::new(alloc)?,
         })
     }
 
@@ -1396,11 +1401,13 @@ impl InstructionSelector {
 #[cfg(test)]
 mod tests {
     use super::{InstructionSelector, JumpCondition, X64Encoder};
+    use bumpalo::Bump;
     use crate::core::register_file::AsmReg;
 
     #[test]
     fn test_basic_instructions() {
-        let mut encoder = X64Encoder::new().unwrap();
+        let bump = Bump::new();
+        let mut encoder = X64Encoder::new(&bump).unwrap();
 
         // Test mov rax, rcx
         let rax = AsmReg::new(0, 0);
@@ -1427,7 +1434,8 @@ mod tests {
 
     #[test]
     fn test_instruction_selector() {
-        let mut selector = InstructionSelector::new().unwrap();
+        let bump = Bump::new();
+        let mut selector = InstructionSelector::new(&bump).unwrap();
 
         let rax = AsmReg::new(0, 0);
         let rcx = AsmReg::new(0, 1);
@@ -1448,7 +1456,8 @@ mod tests {
 
     #[test]
     fn test_prologue_epilogue() {
-        let mut encoder = X64Encoder::new().unwrap();
+        let bump = Bump::new();
+        let mut encoder = X64Encoder::new(&bump).unwrap();
 
         // Test function prologue
         encoder.emit_prologue(32).unwrap();
@@ -1464,7 +1473,8 @@ mod tests {
 
     #[test]
     fn test_factorial_pattern_encoding() {
-        let mut encoder = X64Encoder::new().unwrap();
+        let bump = Bump::new();
+        let mut encoder = X64Encoder::new(&bump).unwrap();
 
         // Test the critical instructions needed for factorial compilation
         let rax = AsmReg::new(0, 0); // RAX/EAX
@@ -1525,7 +1535,8 @@ mod tests {
 
     #[test]
     fn test_block_label_management() {
-        let mut encoder = X64Encoder::new().unwrap();
+        let bump = Bump::new();
+        let mut encoder = X64Encoder::new(&bump).unwrap();
 
         // Test proper label creation and placement
         let block1 = 10;
@@ -1568,7 +1579,8 @@ mod tests {
 
     #[test]
     fn test_32bit_vs_64bit_operations() {
-        let mut encoder = X64Encoder::new().unwrap();
+        let bump = Bump::new();
+        let mut encoder = X64Encoder::new(&bump).unwrap();
 
         let rax = AsmReg::new(0, 0);
         let rcx = AsmReg::new(0, 1);

@@ -109,7 +109,7 @@ impl<'arena> TestIRCompiler<'arena> {
         self.register_file = RegisterFile::new(16, 2, RegBitSet::all_in_bank(0, 16));
 
         // Create a new function codegen for this function
-        let mut func_codegen = FunctionCodegen::new()?;
+        let mut func_codegen = FunctionCodegen::new(self._session.arena())?;
 
         // Process function arguments
         let arg_count = (func.arg_end_idx - func.arg_begin_idx) as usize;

@@ -28,7 +28,8 @@ use crate::{
 use inkwell::basic_block::BasicBlock;
 use inkwell::values::BasicValueEnum;
 use inkwell::IntPredicate;
-use std::collections::HashMap;
+use hashbrown::{HashMap, DefaultHashBuilder};
+use bumpalo::Bump;
 
 /// Addressing modes for x86-64 memory operations.
 #[derive(Debug, Clone)]
@@ -156,10 +157,10 @@ pub struct LlvmCompiler<'ctx, 'arena> {
     register_file: RegisterFile,
 
     /// Function code generation.
-    codegen: FunctionCodegen,
+    codegen: FunctionCodegen<'arena>,
 
     /// Cache of compiled functions.
-    compiled_functions: HashMap<String, CompiledFunction<'arena>>,
+    compiled_functions: HashMap<String, CompiledFunction<'arena>, DefaultHashBuilder, &'arena Bump>,
 
     /// Current function being compiled.
     current_function: Option<inkwell::values::FunctionValue<'ctx>>,
@@ -249,7 +250,7 @@ where
         allocatable.union(&RegBitSet::all_in_bank(1, 16)); // XMM regs
         let register_file = RegisterFile::new(16, 2, allocatable);
         let codegen = map_err!(
-            FunctionCodegen::new(),
+            FunctionCodegen::new(session.arena()),
             CodeGeneration,
             "Failed to create codegen"
         )?;
@@ -260,7 +261,7 @@ where
             value_mgr,
             register_file,
             codegen,
-            compiled_functions: HashMap::new(),
+            compiled_functions: HashMap::new_in(session.arena()),
             current_function: None,
         })
     }
@@ -309,7 +310,7 @@ where
         allocatable.union(&RegBitSet::all_in_bank(1, 16)); // XMM regs
         self.register_file = RegisterFile::new(16, 2, allocatable);
         self.codegen = map_err!(
-            FunctionCodegen::new(),
+            FunctionCodegen::new(self.session.arena()),
             CodeGeneration,
             "Failed to reset codegen"
         )?;
@@ -354,7 +355,7 @@ where
         // Take ownership of codegen and finalize
         let codegen = std::mem::replace(
             &mut self.codegen,
-            FunctionCodegen::new().map_err(|e| {
+            FunctionCodegen::new(self.session.arena()).map_err(|e| {
                 LlvmCompilerError::CodeGeneration(format!(
                     "Failed to create replacement codegen: {:?}",
                     e
@@ -3421,7 +3422,7 @@ where
     }
 
     /// Get list of compiled functions.
-    pub fn compiled_functions(&self) -> &HashMap<String, CompiledFunction<'arena>> {
+    pub fn compiled_functions(&self) -> &HashMap<String, CompiledFunction<'arena>, DefaultHashBuilder, &'arena Bump> {
         &self.compiled_functions
     }
 

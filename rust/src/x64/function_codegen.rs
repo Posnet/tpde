@@ -25,15 +25,18 @@ use crate::{
         encoder::{EncodingError, X64Encoder},
     },
 };
+use bumpalo::Bump;
 
 /// Function code generator that handles calling conventions.
 ///
 /// This integrates the calling convention logic with machine code generation,
 /// providing a high-level interface for compiling functions with proper
 /// ABI compliance.
-pub struct FunctionCodegen {
+pub struct FunctionCodegen<'arena> {
+    /// Bump allocator backing instruction encoding.
+    alloc: &'arena Bump,
     /// Machine code encoder.
-    encoder: X64Encoder,
+    encoder: X64Encoder<'arena>,
     /// Calling convention assigner.
     cc_assigner: SysVAssigner,
     /// Stack frame management.
@@ -42,11 +45,12 @@ pub struct FunctionCodegen {
     makes_calls: bool,
 }
 
-impl FunctionCodegen {
+impl<'arena> FunctionCodegen<'arena> {
     /// Create a new function code generator.
-    pub fn new() -> Result<Self, FunctionCodegenError> {
+    pub fn new(alloc: &'arena Bump) -> Result<Self, FunctionCodegenError> {
         Ok(Self {
-            encoder: X64Encoder::new()?,
+            alloc,
+            encoder: X64Encoder::new(alloc)?,
             cc_assigner: SysVAssigner::new(),
             frame: FunctionFrame::new(),
             makes_calls: false,
@@ -242,7 +246,7 @@ impl FunctionCodegen {
     }
 
     /// Get access to the underlying encoder for instruction emission.
-    pub fn encoder_mut(&mut self) -> &mut X64Encoder {
+    pub fn encoder_mut(&mut self) -> &mut X64Encoder<'arena> {
         &mut self.encoder
     }
 
@@ -351,10 +355,12 @@ impl From<EncodingError> for FunctionCodegenError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bumpalo::Bump;
 
     #[test]
     fn test_simple_function_codegen() {
-        let mut codegen = FunctionCodegen::new().unwrap();
+        let bump = Bump::new();
+        let mut codegen = FunctionCodegen::new(&bump).unwrap();
 
         // Simple function: int add(int a, int b) { return a + b; }
         let args = vec![ArgInfo::int32(), ArgInfo::int32()];
@@ -386,7 +392,8 @@ mod tests {
 
     #[test]
     fn test_callee_saved_registers() {
-        let mut codegen = FunctionCodegen::new().unwrap();
+        let bump = Bump::new();
+        let mut codegen = FunctionCodegen::new(&bump).unwrap();
         codegen.set_makes_calls(true);
 
         // Add some callee-saved registers
@@ -412,7 +419,8 @@ mod tests {
 
     #[test]
     fn test_spill_slot_allocation() {
-        let mut codegen = FunctionCodegen::new().unwrap();
+        let bump = Bump::new();
+        let mut codegen = FunctionCodegen::new(&bump).unwrap();
 
         // Allocate some spill slots
         let slot1 = codegen.allocate_spill_slot(8);
@@ -429,7 +437,8 @@ mod tests {
 
     #[test]
     fn test_many_arguments() {
-        let mut codegen = FunctionCodegen::new().unwrap();
+        let bump = Bump::new();
+        let mut codegen = FunctionCodegen::new(&bump).unwrap();
 
         // Function with 8 integer arguments (6 in regs, 2 on stack)
         let args = vec![
@@ -460,7 +469,8 @@ mod tests {
 
     #[test]
     fn test_mixed_argument_types() {
-        let mut codegen = FunctionCodegen::new().unwrap();
+        let bump = Bump::new();
+        let mut codegen = FunctionCodegen::new(&bump).unwrap();
 
         // Function with mixed int/float arguments
         let args = vec![
