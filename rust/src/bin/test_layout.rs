@@ -34,7 +34,7 @@ ret:
     let layout = analyzer.block_layout();
     for (idx, &block) in layout.iter().enumerate() {
         let block_name = adaptor.block_name(block);
-        println!("{}: {}", idx, block_name);
+        println!("{idx}: {block_name}");
     }
     println!("End Block Layout");
     
@@ -56,10 +56,10 @@ ret:
     println!("\nDebug: Block successors");
     for (idx, &block) in layout.iter().enumerate() {
         let block_name = adaptor.block_name(block);
-        print!("{} ({}): ", idx, block_name);
+        print!("{idx} ({block_name}): ");
         for succ in adaptor.block_succs(block) {
             let succ_name = adaptor.block_name(succ);
-            print!("{} ", succ_name);
+            print!("{succ_name} ");
         }
         println!();
     }

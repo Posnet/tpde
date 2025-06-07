@@ -14,11 +14,11 @@ fn run_filecheck_test(tir_file: &str) {
         .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
     
     let spec = TestSpec::parse(&contents)
-        .unwrap_or_else(|e| panic!("Failed to parse test spec from {}: {}", tir_file, e));
+        .unwrap_or_else(|e| panic!("Failed to parse test spec from {tir_file}: {e}"));
     
     let runner = TestRunner::new(false);
     runner.run_test(&spec)
-        .unwrap_or_else(|e| panic!("Test {} failed: {}", tir_file, e));
+        .unwrap_or_else(|e| panic!("Test {tir_file} failed: {e}"));
 }
 
 #[test]
@@ -55,15 +55,15 @@ fn test_func_tir_filecheck() {
 #[test]
 fn test_analyzer_rpo_filecheck() {
     let path = Path::new("../tpde/test/filetest/analyzer/rpo.tir");
-    let contents = fs::read_to_string(&path)
+    let contents = fs::read_to_string(path)
         .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
     
     let spec = TestSpec::parse(&contents)
-        .unwrap_or_else(|e| panic!("Failed to parse test spec: {}", e));
+        .unwrap_or_else(|e| panic!("Failed to parse test spec: {e}"));
     
     let runner = TestRunner::new(false);
     runner.run_test(&spec)
-        .unwrap_or_else(|e| panic!("Analyzer RPO test failed: {}", e));
+        .unwrap_or_else(|e| panic!("Analyzer RPO test failed: {e}"));
 }
 
 /// Test liveness analysis with FileCheck
@@ -77,15 +77,15 @@ fn test_analyzer_liveness_filecheck() {
         return;
     }
     
-    let contents = fs::read_to_string(&path)
+    let contents = fs::read_to_string(path)
         .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
     
     let spec = TestSpec::parse(&contents)
-        .unwrap_or_else(|e| panic!("Failed to parse test spec: {}", e));
+        .unwrap_or_else(|e| panic!("Failed to parse test spec: {e}"));
     
     let runner = TestRunner::new(false);
     runner.run_test(&spec)
-        .unwrap_or_else(|e| panic!("Analyzer liveness test failed: {}", e));
+        .unwrap_or_else(|e| panic!("Analyzer liveness test failed: {e}"));
 }
 
 #[cfg(test)]

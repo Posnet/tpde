@@ -4,7 +4,7 @@ fn main() {
     println!("=== Testing C++ Style Stack Sorting ===\n");
     
     // Simulate the loop1 structure
-    let blocks = vec!["entry", "loop_head", "loop_body", "cont"];
+    let blocks = ["entry", "loop_head", "loop_body", "cont"];
     let mut successors: HashMap<&str, Vec<&str>> = HashMap::new();
     successors.insert("entry", vec!["loop_head"]);
     successors.insert("loop_head", vec!["loop_body", "cont"]);
@@ -19,13 +19,13 @@ fn main() {
     
     println!("Block order map:");
     for (block, idx) in &block_order_map {
-        println!("  {} -> {}", block, idx);
+        println!("  {block} -> {idx}");
     }
     
     // Run the C++ style algorithm
     println!("\n=== C++ Style RPO Algorithm ===");
     let rpo = compute_rpo_cpp_style("entry", &successors, &block_order_map);
-    println!("\nResult: {:?}", rpo);
+    println!("\nResult: {rpo:?}");
     println!("Expected: [\"entry\", \"loop_head\", \"loop_body\", \"cont\"]");
     
     if rpo == vec!["entry", "loop_head", "loop_body", "cont"] {
@@ -46,29 +46,29 @@ fn compute_rpo_cpp_style<'a>(
     
     println!("\nDFS Trace:");
     while let Some((block, processed)) = stack.pop() {
-        println!("Stack pop: ({}, {})", block, processed);
+        println!("Stack pop: ({block}, {processed})");
         
         if processed {
-            println!("  Adding {} to post-order", block);
+            println!("  Adding {block} to post-order");
             post.push(block);
             continue;
         }
         
         if !visited.insert(block) {
-            println!("  {} already visited, skipping", block);
+            println!("  {block} already visited, skipping");
             continue;
         }
         
-        println!("  Visiting {}", block);
+        println!("  Visiting {block}");
         stack.push((block, true));
         
         // Push successors onto stack first
         if let Some(succs) = successors.get(block) {
             let start_idx = stack.len();
-            println!("    Successors: {:?}", succs);
+            println!("    Successors: {succs:?}");
             
             for succ in succs {
-                println!("    Pushing ({}, false) to stack", succ);
+                println!("    Pushing ({succ}, false) to stack");
                 stack.push((succ, false));
             }
             
@@ -86,11 +86,11 @@ fn compute_rpo_cpp_style<'a>(
             }
         }
         
-        println!("  Current stack: {:?}", stack);
+        println!("  Current stack: {stack:?}");
     }
     
-    println!("\nPost-order: {:?}", post);
+    println!("\nPost-order: {post:?}");
     post.reverse();
-    println!("RPO: {:?}", post);
+    println!("RPO: {post:?}");
     post
 }

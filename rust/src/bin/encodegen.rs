@@ -25,12 +25,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     match encodegen::parse_and_generate(&context, &ir_text) {
         Ok(tokens) => {
             for token in tokens {
-                println!("{}\n", token);
+                println!("{token}\n");
             }
             Ok(())
         }
         Err(e) => {
-            eprintln!("Error: {}", e);
+            eprintln!("Error: {e}");
             std::process::exit(1);
         }
     }

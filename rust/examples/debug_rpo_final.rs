@@ -31,7 +31,7 @@ fn test_standard_dfs() {
     successors.insert("cont", vec![]);
     
     let rpo = compute_rpo_standard("entry", &successors);
-    println!("loop1 RPO: {:?}", rpo);
+    println!("loop1 RPO: {rpo:?}");
     println!("Expected:  [\"entry\", \"loop_head\", \"loop_body\", \"cont\"]");
 }
 
@@ -49,7 +49,7 @@ fn test_modified_approach() {
     let blocks_in_source_order = vec!["entry", "loop_head", "loop_body", "cont"];
     
     let rpo = compute_rpo_worklist("entry", &successors, &blocks_in_source_order);
-    println!("loop1 RPO: {:?}", rpo);
+    println!("loop1 RPO: {rpo:?}");
 }
 
 fn compute_rpo_standard<'a>(

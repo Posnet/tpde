@@ -105,7 +105,7 @@ fn test_simple_function_call() {
     
     // Compile the test_call function
     let result = compiler.compile_function_by_name("test_call");
-    assert!(result.is_ok(), "Failed to compile test_call: {:?}", result);
+    assert!(result.is_ok(), "Failed to compile test_call: {result:?}");
     
     // Check statistics
     let stats = session.stats();
@@ -125,7 +125,7 @@ fn test_recursive_function_call() {
     
     // Compile the factorial function
     let result = compiler.compile_function_by_name("factorial");
-    assert!(result.is_ok(), "Failed to compile factorial: {:?}", result);
+    assert!(result.is_ok(), "Failed to compile factorial: {result:?}");
     
     // Check statistics
     let stats = session.stats();
@@ -182,7 +182,7 @@ fn test_multiple_arguments() {
     
     // Compile the caller function
     let result = compiler.compile_function_by_name("caller");
-    assert!(result.is_ok(), "Failed to compile caller: {:?}", result);
+    assert!(result.is_ok(), "Failed to compile caller: {result:?}");
     
     println!("✅ Multiple arguments call test passed");
 }
@@ -223,7 +223,7 @@ fn test_void_function_call() {
     
     // Compile the caller function
     let result = compiler.compile_function_by_name("void_caller");
-    assert!(result.is_ok(), "Failed to compile void_caller: {:?}", result);
+    assert!(result.is_ok(), "Failed to compile void_caller: {result:?}");
     
     println!("✅ Void function call test passed");
 }

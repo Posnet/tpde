@@ -4,7 +4,7 @@ fn main() {
     println!("=== Testing Sorting Approach ===\n");
     
     // Simulate the loop1 structure
-    let blocks = vec!["entry", "loop_head", "loop_body", "cont"];
+    let blocks = ["entry", "loop_head", "loop_body", "cont"];
     let mut successors: HashMap<&str, Vec<&str>> = HashMap::new();
     successors.insert("entry", vec!["loop_head"]);
     successors.insert("loop_head", vec!["loop_body", "cont"]);
@@ -19,21 +19,21 @@ fn main() {
     
     println!("Block order map:");
     for (block, idx) in &block_order_map {
-        println!("  {} -> {}", block, idx);
+        println!("  {block} -> {idx}");
     }
     
     // Test the sorting on loop_head's successors
     let loop_head_succs = &successors["loop_head"];
-    println!("\nloop_head successors before sorting: {:?}", loop_head_succs);
+    println!("\nloop_head successors before sorting: {loop_head_succs:?}");
     
     let mut sorted_succs = loop_head_succs.clone();
     sorted_succs.sort_by_key(|&succ| block_order_map.get(&succ).copied().unwrap_or(u32::MAX));
-    println!("loop_head successors after sorting: {:?}", sorted_succs);
+    println!("loop_head successors after sorting: {sorted_succs:?}");
     
     // Now simulate the full RPO algorithm with sorting
     println!("\n=== Full RPO Algorithm ===");
     let rpo = compute_rpo_with_sorting("entry", &successors, &block_order_map);
-    println!("Result: {:?}", rpo);
+    println!("Result: {rpo:?}");
     println!("Expected: [\"entry\", \"loop_head\", \"loop_body\", \"cont\"]");
 }
 
@@ -49,17 +49,17 @@ fn compute_rpo_with_sorting<'a>(
     println!("\nDFS Trace:");
     while let Some((block, processed)) = stack.pop() {
         if processed {
-            println!("  Adding {} to post-order", block);
+            println!("  Adding {block} to post-order");
             post.push(block);
             continue;
         }
         
         if !visited.insert(block) {
-            println!("  {} already visited, skipping", block);
+            println!("  {block} already visited, skipping");
             continue;
         }
         
-        println!("  Visiting {}", block);
+        println!("  Visiting {block}");
         stack.push((block, true));
         
         // Get and sort successors
@@ -67,19 +67,19 @@ fn compute_rpo_with_sorting<'a>(
             let mut sorted_succs: Vec<_> = succs.clone();
             sorted_succs.sort_by_key(|&succ| block_order_map.get(&succ).copied().unwrap_or(u32::MAX));
             
-            println!("    Successors: {:?}", succs);
-            println!("    Sorted: {:?}", sorted_succs);
+            println!("    Successors: {succs:?}");
+            println!("    Sorted: {sorted_succs:?}");
             
             // Push in reverse order
             for succ in sorted_succs.into_iter().rev() {
-                println!("    Pushing {} to stack", succ);
+                println!("    Pushing {succ} to stack");
                 stack.push((succ, false));
             }
         }
     }
     
-    println!("\nPost-order: {:?}", post);
+    println!("\nPost-order: {post:?}");
     post.reverse();
-    println!("RPO: {:?}", post);
+    println!("RPO: {post:?}");
     post
 }

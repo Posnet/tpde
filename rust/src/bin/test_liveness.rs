@@ -32,7 +32,7 @@ ret:
     let layout = analyzer.block_layout();
     for (idx, &block) in layout.iter().enumerate() {
         let block_name = adaptor.block_name(block);
-        println!("{}: {}", idx, block_name);
+        println!("{idx}: {block_name}");
     }
     
     println!("\nLoops:");
@@ -60,8 +60,6 @@ ret:
             .map(|&b| adaptor.block_name(b))
             .unwrap_or("?");
             
-        println!("  {}->{}",
-                 first_block,
-                 last_block);
+        println!("  {first_block}->{last_block}");
     }
 }

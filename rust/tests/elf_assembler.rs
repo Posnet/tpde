@@ -32,7 +32,7 @@ impl IrAdaptor for DummyAdaptor {
     fn func_link_name(&self, _f: Self::FuncRef) -> &str { "" }
     fn switch_func(&mut self, _f: Self::FuncRef) -> bool { false }
     fn reset(&mut self) {}
-    fn entry_block(&self) -> Self::BlockRef { () }
+    fn entry_block(&self) -> Self::BlockRef {  }
     fn blocks(&self) -> Box<dyn Iterator<Item = Self::BlockRef> + '_> { Box::new(std::iter::empty()) }
     fn block_insts(&self, _: Self::BlockRef) -> Box<dyn Iterator<Item = Self::InstRef> + '_> { Box::new(std::iter::empty()) }
     fn block_succs(&self, _: Self::BlockRef) -> Box<dyn Iterator<Item = Self::BlockRef> + '_> { Box::new(std::iter::empty()) }

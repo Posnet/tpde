@@ -112,8 +112,8 @@ where
             Ok(())
         }
         Err(e) => {
-            println!("❌ Function call compilation failed: {:?}", e);
-            Err(format!("Function call compilation failed: {:?}", e).into())
+            println!("❌ Function call compilation failed: {e:?}");
+            Err(format!("Function call compilation failed: {e:?}").into())
         }
     }
 }

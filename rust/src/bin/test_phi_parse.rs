@@ -25,7 +25,7 @@ ret:
             println!("{}", ir.print());
         }
         Err(e) => {
-            println!("Parse error: {}", e);
+            println!("Parse error: {e}");
         }
     }
 }

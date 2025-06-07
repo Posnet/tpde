@@ -14,7 +14,7 @@ fn load_tir_file(filename: &str) -> TestIR {
         .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
     
     TestIR::parse(&contents)
-        .unwrap_or_else(|e| panic!("Failed to parse {}: {}", filename, e))
+        .unwrap_or_else(|e| panic!("Failed to parse {filename}: {e}"))
 }
 
 /// Helper to check if output contains expected patterns
@@ -22,9 +22,7 @@ fn check_output_contains(output: &str, patterns: &[&str]) {
     for pattern in patterns {
         assert!(
             output.contains(pattern),
-            "Output missing expected pattern: '{}'\nFull output:\n{}",
-            pattern,
-            output
+            "Output missing expected pattern: '{pattern}'\nFull output:\n{output}"
         );
     }
 }

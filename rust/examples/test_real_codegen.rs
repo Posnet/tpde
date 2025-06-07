@@ -94,8 +94,8 @@ where
             Ok(())
         }
         Err(e) => {
-            println!("❌ Compilation failed: {:?}", e);
-            Err(format!("Compilation failed: {:?}", e).into())
+            println!("❌ Compilation failed: {e:?}");
+            Err(format!("Compilation failed: {e:?}").into())
         }
     }
 }

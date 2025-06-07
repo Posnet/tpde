@@ -66,7 +66,7 @@ fn create_example_gep_module(context: &Context) -> inkwell::module::Module {
         builder.build_gep(
             i32_type,
             arr_param,
-            &[idx_param.into()],
+            &[idx_param],
             "array_gep",
         ).unwrap()
     };
@@ -88,7 +88,7 @@ fn create_example_gep_module(context: &Context) -> inkwell::module::Module {
         builder.build_gep(
             i32_type,
             load_arr,
-            &[load_idx.into()],
+            &[load_idx],
             "load_gep",
         ).unwrap()
     };

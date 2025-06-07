@@ -90,27 +90,27 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
             analyzer.switch_func(&mut adaptor, func);
             
             if print_rpo {
-                output.push(format!("RPO for func {}", func_name));
+                output.push(format!("RPO for func {func_name}"));
                 let rpo = analyzer.order();
                 for (idx, &block) in rpo.iter().enumerate() {
                     let block_name = adaptor.block_name(block);
-                    output.push(format!("{}: {}", idx, block_name));
+                    output.push(format!("{idx}: {block_name}"));
                 }
                 output.push("End RPO".to_string());
             }
             
             if print_layout {
-                output.push(format!("Block Layout for {}", func_name));
+                output.push(format!("Block Layout for {func_name}"));
                 let layout = analyzer.block_layout();
                 for (idx, &block) in layout.iter().enumerate() {
                     let block_name = adaptor.block_name(block);
-                    output.push(format!("{}: {}", idx, block_name));
+                    output.push(format!("{idx}: {block_name}"));
                 }
                 output.push("End Block Layout".to_string());
             }
             
             if print_loops {
-                output.push(format!("Loops for {}", func_name));
+                output.push(format!("Loops for {func_name}"));
                 let loops = analyzer.loops();
                 for (idx, loop_info) in loops.iter().enumerate() {
                     output.push(format!(
@@ -126,7 +126,7 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
             }
             
             if print_liveness {
-                output.push(format!("Liveness for {}", func_name));
+                output.push(format!("Liveness for {func_name}"));
                 
                 // Get block names for mapping - use block layout instead of RPO
                 let layout = analyzer.block_layout();
@@ -158,7 +158,7 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
                         (val_info.value_type == tpde::test_ir::ValueType::Terminator && !val_info.op.info().is_def);
                     
                     if should_ignore {
-                        output.push(format!("{}: ignored", local_idx));
+                        output.push(format!("{local_idx}: ignored"));
                     } else if let Some(liveness) = analyzer.liveness(local_idx) {
                         let first_block = block_names.get(liveness.first)
                             .map(|s| s.as_str())
@@ -179,7 +179,7 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
                         ));
                     } else {
                         // Value has no liveness info but wasn't explicitly ignored
-                        output.push(format!("{}: 0 refs, 0->0 (?->?), lf: false", local_idx));
+                        output.push(format!("{local_idx}: 0 refs, 0->0 (?->?), lf: false"));
                     }
                 }
                 
@@ -222,12 +222,12 @@ fn validate_output(output: &str, content: &str) -> Result<(), String> {
                 
                 match found {
                     Some(idx) => output_idx += idx + 1,
-                    None => return Err(format!("CHECK: pattern '{}' not found", pattern)),
+                    None => return Err(format!("CHECK: pattern '{pattern}' not found")),
                 }
             }
             "CHECK-NEXT" => {
                 if output_idx >= output_lines.len() {
-                    return Err(format!("CHECK-NEXT: no more lines, expected '{}'", pattern));
+                    return Err(format!("CHECK-NEXT: no more lines, expected '{pattern}'"));
                 }
                 
                 if !output_lines[output_idx].contains(pattern) {
@@ -245,7 +245,7 @@ fn validate_output(output: &str, content: &str) -> Result<(), String> {
                 
                 match found {
                     Some(idx) => output_idx += idx + 1,
-                    None => return Err(format!("CHECK-LABEL: pattern '{}' not found", pattern)),
+                    None => return Err(format!("CHECK-LABEL: pattern '{pattern}' not found")),
                 }
             }
             "CHECK-EMPTY" => {

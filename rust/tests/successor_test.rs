@@ -161,7 +161,7 @@ fn test_block_successor_extraction() {
         let successors = analysis.get_block_successors(i);
         if successors.len() == 3 {
             switch_idx = Some(i);
-            println!("Switch block found at index {}", i);
+            println!("Switch block found at index {i}");
             break;
         }
     }

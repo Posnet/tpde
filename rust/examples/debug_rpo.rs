@@ -8,7 +8,7 @@ fn main() {
     let blocks = vec!["entry", "loop_head", "loop_body", "cont"];
     println!("\n1. Blocks in IR order:");
     for (i, block) in blocks.iter().enumerate() {
-        println!("   {}: {}", i, block);
+        println!("   {i}: {block}");
     }
     
     // Define successors for each block
@@ -21,9 +21,9 @@ fn main() {
     println!("\n2. Successors of each block:");
     for block in &blocks {
         if let Some(succs) = successors.get(block) {
-            println!("   {} -> {:?}", block, succs);
+            println!("   {block} -> {succs:?}");
         } else {
-            println!("   {} -> []", block);
+            println!("   {block} -> []");
         }
     }
     
@@ -31,7 +31,7 @@ fn main() {
     let rpo = compute_rpo("entry", &successors);
     println!("\n3. RPO order generated:");
     for (i, block) in rpo.iter().enumerate() {
-        println!("   {}: {}", i, block);
+        println!("   {i}: {block}");
     }
     
     // Expected order
@@ -60,7 +60,7 @@ fn main() {
     let rpo_rev = compute_rpo("entry", &successors_rev);
     println!("RPO with reversed successors:");
     for (i, block) in rpo_rev.iter().enumerate() {
-        println!("   {}: {}", i, block);
+        println!("   {i}: {block}");
     }
 }
 

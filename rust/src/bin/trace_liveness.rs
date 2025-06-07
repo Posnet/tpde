@@ -34,7 +34,7 @@ ret:
     
     println!("\nDebug: value_operands array:");
     for (i, &val) in ir.value_operands.iter().enumerate() {
-        println!("  [{}] = {}", i, val);
+        println!("  [{i}] = {val}");
     }
     
     let mut adaptor = TestIRAdaptor::new(&ir);
@@ -107,10 +107,10 @@ ret:
             for slot in 0..incoming_count {
                 let val_idx = phi_info.op_begin_idx + slot;
                 let block_idx = phi_info.op_begin_idx + phi_info.op_count + slot;
-                println!("       slot {}: val_idx={}, block_idx={}", slot, val_idx, block_idx);
+                println!("       slot {slot}: val_idx={val_idx}, block_idx={block_idx}");
                 
                 if block_idx as usize >= ir.value_operands.len() {
-                    println!("       ERROR: block_idx {} is out of bounds!", block_idx);
+                    println!("       ERROR: block_idx {block_idx} is out of bounds!");
                     continue;
                 }
                 
@@ -120,8 +120,8 @@ ret:
                 let inc_val_name = adaptor.value_name(inc_val);
                 let inc_val_idx = adaptor.val_local_idx(inc_val);
                 
-                println!("       -> from {}: uses {} (local_idx={})", inc_block_name, inc_val_name, inc_val_idx);
-                println!("       -> PHI {} (local_idx={}) is marked as used in block {}", phi_name, local_idx, inc_block_name);
+                println!("       -> from {inc_block_name}: uses {inc_val_name} (local_idx={inc_val_idx})");
+                println!("       -> PHI {phi_name} (local_idx={local_idx}) is marked as used in block {inc_block_name}");
             }
         }
         

@@ -15,7 +15,7 @@ fn load_tir(filename: &str) -> TestIR {
         .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
     
     TestIR::parse(&contents)
-        .unwrap_or_else(|e| panic!("Failed to parse {}: {}", filename, e))
+        .unwrap_or_else(|e| panic!("Failed to parse {filename}: {e}"))
 }
 
 #[test]
@@ -216,6 +216,6 @@ fn test_basic_tir_parsing() {
     
     for file in &test_files {
         let ir = load_tir(file);
-        assert!(!ir.functions.is_empty(), "{} should have functions", file);
+        assert!(!ir.functions.is_empty(), "{file} should have functions");
     }
 }

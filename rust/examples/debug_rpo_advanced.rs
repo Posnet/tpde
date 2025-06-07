@@ -58,8 +58,8 @@ fn test_rpo(
     edges: Vec<(&str, Vec<&str>)>,
     expected: Vec<&str>
 ) {
-    println!("Test case: {}", name);
-    println!("Block order in IR: {:?}", blocks);
+    println!("Test case: {name}");
+    println!("Block order in IR: {blocks:?}");
     
     // Create block index map
     let mut block_indices: HashMap<&str, usize> = HashMap::new();
@@ -76,8 +76,8 @@ fn test_rpo(
     // Compute RPO with source-order awareness
     let rpo = compute_rpo_with_source_order("entry", &successors, &block_indices);
     
-    println!("Generated RPO: {:?}", rpo);
-    println!("Expected RPO:  {:?}", expected);
+    println!("Generated RPO: {rpo:?}");
+    println!("Expected RPO:  {expected:?}");
     
     if rpo == expected {
         println!("✓ PASS\n");
@@ -123,7 +123,7 @@ fn dfs_source_order<'a>(
         // the one that appears first in the source order.
         
         // Sort successors by their source order index
-        let mut sorted_succs: Vec<_> = succs.iter().copied().collect();
+        let mut sorted_succs: Vec<_> = succs.to_vec();
         sorted_succs.sort_by_key(|s| block_indices.get(s).copied().unwrap_or(usize::MAX));
         
         for succ in sorted_succs {

@@ -34,7 +34,7 @@ cont:
         println!("RPO order:");
         for (idx, &block) in analyzer.order().iter().enumerate() {
             let block_name = adaptor.block_name(block);
-            println!("{}: {}", idx, block_name);
+            println!("{idx}: {block_name}");
         }
         
         // Check if the order matches expected
@@ -48,8 +48,8 @@ cont:
             println!("✓ RPO order is correct!");
         } else {
             println!("✗ RPO order is incorrect!");
-            println!("  Expected: {:?}", expected);
-            println!("  Got:      {:?}", rpo);
+            println!("  Expected: {expected:?}");
+            println!("  Got:      {rpo:?}");
         }
     }
 }
