@@ -25,7 +25,7 @@ path = "src/bin/encodegen.rs"
 [dependencies]
 object = { version = "0.37", features = ["all"] }
 iced-x86 = { version = "1.21", features = ["code_asm"] }
-bumpalo = { version = "3.16", features = ["allocator-api2"] }
+bumpalo = { version = "3.16", features = ["allocator-api2", "collections"] }
 inkwell = { git = "https://github.com/stevefan1999-personal/inkwell.git", features = ["llvm19-1-prefer-dynamic"] }
 llvm-sys = { version = "191", features = ["prefer-dynamic"] }
 thiserror = "2.0"
