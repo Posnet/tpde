@@ -21,7 +21,7 @@ use crate::{
 use log::debug;
 
 /// TestIR compiler for x86-64.
-pub struct TestIRCompiler<'arena> {
+pub struct TestIRCompiler<'arena, 'session> {
     /// The TestIR being compiled.
     ir: &'arena TestIR,
     /// TestIR adaptor.
@@ -33,12 +33,12 @@ pub struct TestIRCompiler<'arena> {
     /// Register allocator.
     register_file: RegisterFile<'arena>,
     /// Compilation session.
-    _session: &'arena CompilationSession<'arena>,
+    _session: &'session CompilationSession<'arena>,
     /// Whether to disable fixed register assignments.
     _no_fixed_assignments: bool,
 }
 
-impl<'arena> TestIRCompiler<'arena> {
+impl<'arena, 'session> TestIRCompiler<'arena, 'session> {
     /// Convert a global value index to a local index within the current function.
     fn global_to_local_idx(&self, global_idx: usize) -> usize {
         // Get the current function
@@ -52,7 +52,7 @@ impl<'arena> TestIRCompiler<'arena> {
     /// Create a new TestIR compiler.
     pub fn new(
         ir: &'arena TestIR,
-        session: &'arena CompilationSession<'arena>,
+        session: &'session CompilationSession<'arena>,
         no_fixed_assignments: bool,
     ) -> Result<Self, CompilationError> {
         let adaptor = TestIRAdaptor::new(ir);

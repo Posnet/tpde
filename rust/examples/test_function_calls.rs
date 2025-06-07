@@ -93,8 +93,8 @@ fn create_function_call_test(context: &Context) -> inkwell::module::Module {
 }
 
 /// Test compilation of the function call test.
-fn test_function_call_compilation<'ctx, 'arena>(
-    compiler: &mut LlvmCompiler<'ctx, 'arena>,
+fn test_function_call_compilation<'ctx, 'arena, 'session>(
+    compiler: &mut LlvmCompiler<'ctx, 'arena, 'session>,
 ) -> Result<(), Box<dyn std::error::Error>>
 where
     'ctx: 'arena,

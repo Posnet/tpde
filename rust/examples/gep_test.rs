@@ -97,8 +97,8 @@ fn create_example_gep_module(context: &Context) -> inkwell::module::Module {
 }
 
 /// Test basic array indexing GEP patterns.
-fn test_basic_array_indexing<'ctx, 'arena>(
-    compiler: &mut LlvmCompiler<'ctx, 'arena>,
+fn test_basic_array_indexing<'ctx, 'arena, 'session>(
+    compiler: &mut LlvmCompiler<'ctx, 'arena, 'session>,
 ) -> Result<(), Box<dyn std::error::Error>>
 where
     'ctx: 'arena,
@@ -112,8 +112,8 @@ where
 }
 
 /// Test struct field access patterns.
-fn test_struct_field_access<'ctx, 'arena>(
-    compiler: &mut LlvmCompiler<'ctx, 'arena>,
+fn test_struct_field_access<'ctx, 'arena, 'session>(
+    compiler: &mut LlvmCompiler<'ctx, 'arena, 'session>,
 ) -> Result<(), Box<dyn std::error::Error>>
 where
     'ctx: 'arena,
@@ -127,8 +127,8 @@ where
 }
 
 /// Test multi-dimensional array patterns.
-fn test_multi_dimensional_arrays<'ctx, 'arena>(
-    _compiler: &mut LlvmCompiler<'ctx, 'arena>,
+fn test_multi_dimensional_arrays<'ctx, 'arena, 'session>(
+    _compiler: &mut LlvmCompiler<'ctx, 'arena, 'session>,
 ) -> Result<(), Box<dyn std::error::Error>>
 where
     'ctx: 'arena,
