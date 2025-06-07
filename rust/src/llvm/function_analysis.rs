@@ -17,6 +17,7 @@
 
 use crate::core::error::{CompileError, CompileResult};
 use crate::core::session::CompilationSession;
+use bumpalo::collections::Vec as BumpVec;
 use inkwell::basic_block::BasicBlock;
 use inkwell::values::{FunctionValue, InstructionOpcode, InstructionValue};
 
@@ -98,13 +99,13 @@ pub struct FunctionAnalyzer<'ctx, 'arena> {
     blocks: Vec<BasicBlock<'ctx>>,
 
     // Working data - will be moved to results
-    block_layout: Vec<usize>,
-    block_phi_info: Vec<(usize, usize)>,
-    phi_nodes: Vec<PhiNode>,
-    phi_incoming: Vec<PhiIncoming>,
-    block_successors: Vec<BlockSuccessors>,
-    successor_indices: Vec<usize>,
-    block_predecessor_count: Vec<usize>,
+    block_layout: BumpVec<'arena, usize>,
+    block_phi_info: BumpVec<'arena, (usize, usize)>,
+    phi_nodes: BumpVec<'arena, PhiNode>,
+    phi_incoming: BumpVec<'arena, PhiIncoming>,
+    block_successors: BumpVec<'arena, BlockSuccessors>,
+    successor_indices: BumpVec<'arena, usize>,
+    block_predecessor_count: BumpVec<'arena, usize>,
 
     // Counters
     phi_count: usize,
@@ -135,20 +136,32 @@ impl<'ctx, 'arena> FunctionAnalyzer<'ctx, 'arena> {
         Ok(Self {
             session,
             blocks,
-            block_layout: vec![0; num_blocks],
-            block_phi_info: vec![(0, 0); num_blocks],
-            phi_nodes: Vec::with_capacity(Self::MAX_PHI_NODES),
-            phi_incoming: Vec::with_capacity(Self::MAX_PHI_INCOMING),
-            block_successors: vec![
-                BlockSuccessors {
-                    start_idx: 0,
-                    count: 0,
-                    is_conditional: false
-                };
-                num_blocks
-            ],
-            successor_indices: Vec::with_capacity(num_blocks * 2), // Most blocks have <= 2 successors
-            block_predecessor_count: vec![0; num_blocks],
+            block_layout: {
+                let mut v = BumpVec::with_capacity_in(num_blocks, session.arena());
+                v.resize(num_blocks, 0);
+                v
+            },
+            block_phi_info: {
+                let mut v = BumpVec::with_capacity_in(num_blocks, session.arena());
+                v.resize(num_blocks, (0, 0));
+                v
+            },
+            phi_nodes: BumpVec::with_capacity_in(Self::MAX_PHI_NODES, session.arena()),
+            phi_incoming: BumpVec::with_capacity_in(Self::MAX_PHI_INCOMING, session.arena()),
+            block_successors: {
+                let mut v = BumpVec::with_capacity_in(num_blocks, session.arena());
+                v.resize(
+                    num_blocks,
+                    BlockSuccessors { start_idx: 0, count: 0, is_conditional: false },
+                );
+                v
+            },
+            successor_indices: BumpVec::with_capacity_in(num_blocks * 2, session.arena()),
+            block_predecessor_count: {
+                let mut v = BumpVec::with_capacity_in(num_blocks, session.arena());
+                v.resize(num_blocks, 0);
+                v
+            },
             phi_count: 0,
             phi_incoming_count: 0,
             instruction_count: 0,
@@ -167,23 +180,15 @@ impl<'ctx, 'arena> FunctionAnalyzer<'ctx, 'arena> {
         // Third pass: compute block layout
         self.compute_block_layout()?;
 
-        // Allocate results in arena
+        // Convert bump-allocated working data into slices
         let num_blocks = self.blocks.len();
-        let block_layout = self.session.alloc_slice(&self.block_layout[..num_blocks]);
-        let block_phi_info = self.session.alloc_slice(&self.block_phi_info[..num_blocks]);
-        let phi_nodes = self.session.alloc_slice(&self.phi_nodes[..self.phi_count]);
-        let phi_incoming = self
-            .session
-            .alloc_slice(&self.phi_incoming[..self.phi_incoming_count]);
-        let block_successors = self
-            .session
-            .alloc_slice(&self.block_successors[..num_blocks]);
-        let successor_indices = self
-            .session
-            .alloc_slice(&self.successor_indices[..self.successor_count]);
-        let block_predecessor_count = self
-            .session
-            .alloc_slice(&self.block_predecessor_count[..num_blocks]);
+        let block_layout = self.block_layout.into_bump_slice();
+        let block_phi_info = self.block_phi_info.into_bump_slice();
+        let phi_nodes = self.phi_nodes.into_bump_slice();
+        let phi_incoming = self.phi_incoming.into_bump_slice();
+        let block_successors = self.block_successors.into_bump_slice();
+        let successor_indices = self.successor_indices.into_bump_slice();
+        let block_predecessor_count = self.block_predecessor_count.into_bump_slice();
 
         Ok(FunctionAnalysis {
             num_blocks,
