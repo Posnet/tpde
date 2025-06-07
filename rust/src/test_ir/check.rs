@@ -183,7 +183,7 @@ impl TestRunner {
                                 .unwrap_or("?");
 
                             output.push(format!(
-                                "{}: {} refs, {}->{} ({}->{}) , lf: {}",
+                                "{}: {} refs, {}->{} ({}->{}), lf: {}",
                                 value_idx,
                                 liveness.ref_count,
                                 liveness.first,
@@ -213,7 +213,7 @@ impl TestRunner {
                                     .unwrap_or("?");
 
                                 output.push(format!(
-                                    "{}: {} refs, {}->{}({}->{}) , lf: {}",
+                                    "{}: {} refs, {}->{} ({}->{}), lf: {}",
                                     value_idx,
                                     liveness.ref_count,
                                     liveness.first,
@@ -241,7 +241,7 @@ impl TestRunner {
                                     .unwrap_or("?");
 
                                 output.push(format!(
-                                    "{}: {} refs, {}->{}({}->{}) , lf: {}",
+                                    "{}: {} refs, {}->{} ({}->{}), lf: {}",
                                     value_idx,
                                     liveness.ref_count,
                                     liveness.first,

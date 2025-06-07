@@ -357,6 +357,17 @@ impl TestIR {
                                     output.push_str(&format!("\nOp ^{}", target_block.name));
                                 }
                             }
+                        } else if inst.op == Operation::Jump {
+                            // For jump instructions with variable successors, print all block operands
+                            let mut i = 0;
+                            while block_op_start + i < inst.op_end_idx {
+                                let block_idx = self.value_operands[(block_op_start + i) as usize];
+                                if block_idx < self.blocks.len() as u32 {
+                                    let target_block = &self.blocks[block_idx as usize];
+                                    output.push_str(&format!("\nOp ^{}", target_block.name));
+                                }
+                                i += 1;
+                            }
                         }
 
                         // Print immediates
