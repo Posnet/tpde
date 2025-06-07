@@ -156,7 +156,7 @@ pub struct LlvmCompiler<'ctx, 'arena> {
     register_file: RegisterFile,
 
     /// Function code generation.
-    codegen: FunctionCodegen,
+    codegen: FunctionCodegen<'arena>,
 
     /// Cache of compiled functions.
     compiled_functions: HashMap<String, CompiledFunction<'arena>>,
@@ -246,7 +246,7 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
         allocatable.union(&RegBitSet::all_in_bank(1, 16)); // XMM regs
         let register_file = RegisterFile::new(16, 2, allocatable);
         let codegen = map_err!(
-            FunctionCodegen::new(),
+            FunctionCodegen::new(session.arena()),
             CodeGeneration,
             "Failed to create codegen"
         )?;
@@ -306,7 +306,7 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
         allocatable.union(&RegBitSet::all_in_bank(1, 16)); // XMM regs
         self.register_file = RegisterFile::new(16, 2, allocatable);
         self.codegen = map_err!(
-            FunctionCodegen::new(),
+            FunctionCodegen::new(self.session.arena()),
             CodeGeneration,
             "Failed to reset codegen"
         )?;
@@ -351,7 +351,7 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
         // Take ownership of codegen and finalize
         let codegen = std::mem::replace(
             &mut self.codegen,
-            FunctionCodegen::new().map_err(|e| {
+            FunctionCodegen::new(self.session.arena()).map_err(|e| {
                 LlvmCompilerError::CodeGeneration(format!(
                     "Failed to create replacement codegen: {:?}",
                     e

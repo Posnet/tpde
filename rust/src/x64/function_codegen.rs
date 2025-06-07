@@ -25,30 +25,31 @@ use crate::{
         encoder::{EncodingError, X64Encoder},
     },
 };
+use bumpalo::Bump;
 
 /// Function code generator that handles calling conventions.
 ///
 /// This integrates the calling convention logic with machine code generation,
 /// providing a high-level interface for compiling functions with proper
 /// ABI compliance.
-pub struct FunctionCodegen {
+pub struct FunctionCodegen<'a> {
     /// Machine code encoder.
     encoder: X64Encoder,
     /// Calling convention assigner.
     cc_assigner: SysVAssigner,
     /// Stack frame management.
-    frame: FunctionFrame,
+    frame: FunctionFrame<'a>,
     /// Whether function makes calls (affects register allocation).
     makes_calls: bool,
 }
 
-impl FunctionCodegen {
+impl<'a> FunctionCodegen<'a> {
     /// Create a new function code generator.
-    pub fn new() -> Result<Self, FunctionCodegenError> {
+    pub fn new(arena: &'a Bump) -> Result<Self, FunctionCodegenError> {
         Ok(Self {
             encoder: X64Encoder::new()?,
             cc_assigner: SysVAssigner::new(),
-            frame: FunctionFrame::new(),
+            frame: FunctionFrame::new(arena),
             makes_calls: false,
         })
     }
@@ -67,16 +68,17 @@ impl FunctionCodegen {
         use bumpalo::collections::Vec as BumpVec;
 
         self.cc_assigner.reset();
+        self.frame.arg_assignments.clear();
         let mut assignments = BumpVec::with_capacity_in(args.len(), session.arena());
 
         for arg in args {
             let mut assignment = CCAssignment::new(arg.bank, arg.size, arg.align);
             self.cc_assigner.assign_arg(&mut assignment);
+            self.frame.arg_assignments.push(assignment.clone());
             assignments.push(assignment);
         }
 
         let slice = assignments.into_bump_slice();
-        self.frame.arg_assignments = slice.to_vec();
         Ok(slice)
     }
 
@@ -87,9 +89,10 @@ impl FunctionCodegen {
         rets: &[ArgInfo],
     ) -> Result<&'arena [CCAssignment], FunctionCodegenError> {
         use bumpalo::collections::Vec as BumpVec;
+        
+        self.frame.ret_assignments.clear();
 
         if rets.is_empty() {
-            self.frame.ret_assignments.clear();
             return Ok(&[]);
         }
 
@@ -110,11 +113,11 @@ impl FunctionCodegen {
         for ret in rets {
             let mut assignment = CCAssignment::new(ret.bank, ret.size, ret.align);
             self.cc_assigner.assign_ret(&mut assignment);
+            self.frame.ret_assignments.push(assignment.clone());
             assignments.push(assignment);
         }
 
         let slice = assignments.into_bump_slice();
-        self.frame.ret_assignments = slice.to_vec();
         Ok(slice)
     }
 
@@ -277,7 +280,7 @@ impl FunctionCodegen {
     }
 
     /// Get the current stack frame info.
-    pub fn get_frame(&self) -> &FunctionFrame {
+    pub fn get_frame(&self) -> &FunctionFrame<'a> {
         &self.frame
     }
 
@@ -383,7 +386,7 @@ mod tests {
     fn test_simple_function_codegen() {
         let arena = Bump::new();
         let session = CompilationSession::new(&arena);
-        let mut codegen = FunctionCodegen::new().unwrap();
+        let mut codegen = FunctionCodegen::new(&arena).unwrap();
 
         // Simple function: int add(int a, int b) { return a + b; }
         let args = vec![ArgInfo::int32(), ArgInfo::int32()];
@@ -415,7 +418,8 @@ mod tests {
 
     #[test]
     fn test_callee_saved_registers() {
-        let mut codegen = FunctionCodegen::new().unwrap();
+        let arena = Bump::new();
+        let mut codegen = FunctionCodegen::new(&arena).unwrap();
         codegen.set_makes_calls(true);
 
         // Add some callee-saved registers
@@ -441,7 +445,8 @@ mod tests {
 
     #[test]
     fn test_spill_slot_allocation() {
-        let mut codegen = FunctionCodegen::new().unwrap();
+        let arena = Bump::new();
+        let mut codegen = FunctionCodegen::new(&arena).unwrap();
 
         // Allocate some spill slots
         let slot1 = codegen.allocate_spill_slot(8);
@@ -458,7 +463,8 @@ mod tests {
 
     #[test]
     fn test_many_arguments() {
-        let mut codegen = FunctionCodegen::new().unwrap();
+        let arena = Bump::new();
+        let mut codegen = FunctionCodegen::new(&arena).unwrap();
 
         // Function with 8 integer arguments (6 in regs, 2 on stack)
         let args = vec![
@@ -491,7 +497,8 @@ mod tests {
 
     #[test]
     fn test_mixed_argument_types() {
-        let mut codegen = FunctionCodegen::new().unwrap();
+        let arena = Bump::new();
+        let mut codegen = FunctionCodegen::new(&arena).unwrap();
 
         // Function with mixed int/float arguments
         let args = vec![
