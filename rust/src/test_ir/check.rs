@@ -5,7 +5,7 @@
 //! but implemented in a Rust-native way.
 
 use super::{TestIR, TestIRAdaptor};
-use crate::core::{Analyzer, IrAdaptor, session::CompilationSession};
+use crate::core::{session::CompilationSession, Analyzer, IrAdaptor};
 use bumpalo::Bump;
 use std::collections::VecDeque;
 

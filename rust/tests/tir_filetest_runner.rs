@@ -3,10 +3,10 @@
 //! This module discovers and runs all .tir files from the C++ test directories,
 //! executing them with the same capabilities as the C++ tpde_test harness.
 
+use bumpalo::Bump;
 use std::fs;
 use std::path::{Path, PathBuf};
-use bumpalo::Bump;
-use tpde::core::{Analyzer, IrAdaptor, session::CompilationSession};
+use tpde::core::{session::CompilationSession, Analyzer, IrAdaptor};
 use tpde::test_ir::{TestIR, TestIRAdaptor};
 
 #[derive(Default)]
@@ -146,7 +146,7 @@ fn run_tir_file(path: &Path) -> Result<String, String> {
         // Create arena and session for analyzer
         let arena = Bump::new();
         let session = CompilationSession::new(&arena);
-        
+
         let mut adaptor = TestIRAdaptor::new(&ir);
         let mut analyzer = Analyzer::new(&session);
 

@@ -11,7 +11,7 @@
 
 use super::adaptor::IrAdaptor;
 use super::session::CompilationSession;
-use bumpalo::collections::{Vec as BVec, CollectIn};
+use bumpalo::collections::{CollectIn, Vec as BVec};
 use core::marker::PhantomData;
 use hashbrown::{HashMap, HashSet};
 use log::trace;
@@ -82,7 +82,6 @@ impl<'session, 'arena: 'session, A: IrAdaptor> Analyzer<'session, 'arena, A> {
 }
 
 impl<'session, 'arena: 'session, A: IrAdaptor> Analyzer<'session, 'arena, A> {
-
     /// Sequence of blocks in reverse post order.
     pub fn order(&self) -> &[A::BlockRef] {
         &self.order
@@ -357,7 +356,11 @@ impl<'session, 'arena: 'session, A: IrAdaptor> Analyzer<'session, 'arena, A> {
     }
 
     /// Identify loops using the algorithm from Wei et al.
-    fn identify_loops(&self, adaptor: &A, block_rpo: &[A::BlockRef]) -> (BVec<'arena, u32>, HashSet<usize>) {
+    fn identify_loops(
+        &self,
+        adaptor: &A,
+        block_rpo: &[A::BlockRef],
+    ) -> (BVec<'arena, u32>, HashSet<usize>) {
         let mut loop_parent = BVec::with_capacity_in(block_rpo.len(), self.session.arena());
         loop_parent.resize(block_rpo.len(), 0);
         let mut loop_heads = HashSet::new();
@@ -531,8 +534,8 @@ impl<'session, 'arena: 'session, A: IrAdaptor> Analyzer<'session, 'arena, A> {
             block_rpo.len(),
             BlockLoopInfo {
                 loop_idx: !0,
-                rpo_idx: 0
-            }
+                rpo_idx: 0,
+            },
         );
         for (i, block_info) in loop_blocks.iter_mut().enumerate() {
             block_info.rpo_idx = i as u32;

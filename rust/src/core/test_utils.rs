@@ -35,7 +35,7 @@ pub mod test {
         }
 
         /// Create a compilation session using this context's arena.
-        /// 
+        ///
         /// The returned session borrows from the TestContext, so the
         /// TestContext must outlive the session.
         pub fn create_session(&self) -> CompilationSession<'_> {

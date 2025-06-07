@@ -4628,7 +4628,7 @@ mod tests {
     #[test]
     fn test_llvm_compiler_creation() {
         use crate::core::test_utils::test::TestContext;
-        
+
         let ctx = TestContext::new();
         ctx.with_session(|session| {
             let context = Context::create();
@@ -4640,7 +4640,7 @@ mod tests {
     #[test]
     fn test_function_compilation() {
         use crate::core::test_utils::test::TestContext;
-        
+
         let ctx = TestContext::new();
         ctx.with_session(|session| {
             let context = Context::create();

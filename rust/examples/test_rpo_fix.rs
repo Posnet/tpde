@@ -1,5 +1,5 @@
 use bumpalo::Bump;
-use tpde::core::{Analyzer, IrAdaptor, session::CompilationSession};
+use tpde::core::{session::CompilationSession, Analyzer, IrAdaptor};
 use tpde::test_ir::{TestIR, TestIRAdaptor};
 
 fn main() {
@@ -23,7 +23,7 @@ cont:
     // Create arena and session for analyzer
     let arena = Bump::new();
     let session = CompilationSession::new(&arena);
-    
+
     // Create adaptor and analyzer
     let mut adaptor = TestIRAdaptor::new(&ir);
     let mut analyzer = Analyzer::new(&session);

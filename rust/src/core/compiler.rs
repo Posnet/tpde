@@ -45,7 +45,9 @@
 //! to zero the allocator may reuse the registers or spill to the stack if necessary.
 //! Additional helpers like `ScratchReg` will be ported from the C++ code later.
 
-use super::{adaptor::IrAdaptor, analyzer::Analyzer, assembler::Assembler, session::CompilationSession};
+use super::{
+    adaptor::IrAdaptor, analyzer::Analyzer, assembler::Assembler, session::CompilationSession,
+};
 
 /// Hooks implemented by architecture specific compiler code.
 ///
@@ -59,7 +61,11 @@ pub trait Backend<A: IrAdaptor, ASM: Assembler<A>> {
     fn gen_epilogue<'arena>(&mut self, base: &mut CompilerBase<'arena, A, ASM, Self>)
     where
         Self: Sized;
-    fn compile_inst<'arena>(&mut self, base: &mut CompilerBase<'arena, A, ASM, Self>, inst: A::InstRef) -> bool
+    fn compile_inst<'arena>(
+        &mut self,
+        base: &mut CompilerBase<'arena, A, ASM, Self>,
+        inst: A::InstRef,
+    ) -> bool
     where
         Self: Sized;
 }
@@ -88,7 +94,12 @@ where
     C: Backend<A, ASM>,
 {
     /// Create a new compiler base from an adaptor, assembler and backend.
-    pub fn new(adaptor: A, assembler: ASM, backend: C, session: &'arena CompilationSession<'arena>) -> Self {
+    pub fn new(
+        adaptor: A,
+        assembler: ASM,
+        backend: C,
+        session: &'arena CompilationSession<'arena>,
+    ) -> Self {
         Self {
             adaptor,
             analyzer: Analyzer::new(session),

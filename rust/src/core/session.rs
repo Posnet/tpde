@@ -31,19 +31,19 @@ use thiserror::Error;
 pub enum SessionError {
     #[error("Memory limit exceeded: used {used} bytes, limit {limit} bytes")]
     MemoryLimitExceeded { used: usize, limit: usize },
-    
+
     #[error("Arena allocation failed")]
     AllocationFailed,
-    
+
     #[error("Invalid session state: {0}")]
     InvalidState(String),
-    
+
     #[error("Function not found: {0}")]
     FunctionNotFound(String),
-    
+
     #[error("Block not found: {0}")]
     BlockNotFound(usize),
-    
+
     #[error("Value not found: {0}")]
     ValueNotFound(usize),
 }
@@ -407,7 +407,6 @@ impl<'arena> fmt::Display for SessionStats<'arena> {
         Ok(())
     }
 }
-
 
 #[cfg(test)]
 mod tests {

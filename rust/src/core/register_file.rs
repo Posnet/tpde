@@ -529,9 +529,7 @@ mod tests {
     use crate::core::test_utils::test::TestContext;
     use crate::core::CompilationSession;
 
-    fn create_test_regfile<'arena, 's>(
-        session: &'s CompilationSession<'arena>,
-    ) -> RegisterFile<'arena> {
+    fn create_test_regfile<'arena>(session: &CompilationSession<'arena>) -> RegisterFile<'arena> {
         // Create register file with 8 GP regs (bank 0) and 8 FP regs (bank 1)
         let mut allocatable = RegBitSet::new();
         allocatable.union(&RegBitSet::all_in_bank(0, 8)); // GP regs 0-7

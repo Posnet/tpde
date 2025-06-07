@@ -3,9 +3,10 @@
 //! These tests verify that the compiler components work correctly
 //! with TestIR input, similar to the C++ tpde_test executable.
 
+use bumpalo::Bump;
 use std::fs;
 use std::path::Path;
-use tpde::core::{Analyzer, IrAdaptor};
+use tpde::core::{session::CompilationSession, Analyzer, IrAdaptor};
 use tpde::test_ir::{TestIR, TestIRAdaptor};
 
 /// Helper to load and parse a TIR file
@@ -21,8 +22,12 @@ fn load_tir(filename: &str) -> TestIR {
 fn test_analyzer_rpo() {
     let ir = load_tir("br.tir");
 
+    // Create arena and session for analyzer
+    let arena = Bump::new();
+    let session = CompilationSession::new(&arena);
+
     let mut adaptor = TestIRAdaptor::new(&ir);
-    let mut analyzer = Analyzer::new();
+    let mut analyzer = Analyzer::new(&session);
 
     // Test br1 function
     let funcs: Vec<_> = adaptor.funcs().collect();
@@ -49,8 +54,13 @@ fn test_analyzer_rpo() {
 #[test]
 fn test_analyzer_liveness() {
     let ir = load_tir("simple.tir");
+
+    // Create arena and session for analyzer
+    let arena = Bump::new();
+    let session = CompilationSession::new(&arena);
+
     let mut adaptor = TestIRAdaptor::new(&ir);
-    let mut analyzer = Analyzer::new();
+    let mut analyzer = Analyzer::new(&session);
 
     // Test myfunc
     let funcs: Vec<_> = adaptor.funcs().collect();
@@ -76,11 +86,11 @@ fn test_analyzer_liveness() {
 #[test]
 fn test_analyzer_block_layout() {
     let ir = load_tir("br.tir");
-    
+
     // Create arena and session for analyzer
     let arena = Bump::new();
     let session = CompilationSession::new(&arena);
-    
+
     let mut adaptor = TestIRAdaptor::new(&ir);
     let mut analyzer = Analyzer::new(&session);
 
