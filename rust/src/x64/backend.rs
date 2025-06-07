@@ -16,14 +16,14 @@
 //! from SSA IR through register allocation to machine code generation.
 
 use super::encoder::{EncodingError, InstructionSelector};
-use bumpalo::Bump;
 use crate::core::{
     assembler::ElfAssembler,
     register_file::{RegAllocError, RegBitSet, RegisterFile},
-    value_assignment::ValueAssignmentManager,
     session::CompilationSession,
+    value_assignment::ValueAssignmentManager,
     Backend, CompilerBase, CompilerContext, IrAdaptor, ValuePartRef, ValueRefError,
 };
+use bumpalo::Bump;
 
 /// Error types for the x86-64 backend.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -392,9 +392,9 @@ mod tests {
 
     #[test]
     fn test_x64_backend_creation() {
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
-        let backend = X64Backend::new(&session);
+        let arena = Box::leak(Box::new(Bump::new()));
+        let session = Box::leak(Box::new(CompilationSession::new(arena)));
+        let backend = X64Backend::new(session);
         assert!(backend.is_ok());
     }
 

@@ -15,8 +15,8 @@
 //! tracks register usage, and manages eviction/spilling. This is the core of TPDE's
 //! register allocation strategy, using a clock-based algorithm with on-demand spilling.
 
-use super::value_assignment::ValLocalIdx;
 use super::session::CompilationSession;
+use super::value_assignment::ValLocalIdx;
 use bumpalo::collections::Vec as BumpVec;
 
 /// Type alias for register spill callback function.
@@ -509,7 +509,11 @@ impl<'arena> RegisterFile<'arena> {
     /// Find a register currently assigned to the given value/part.
     pub fn find_register_for_value(&self, local_idx: ValLocalIdx, part: u32) -> Option<AsmReg> {
         for (i, assignment) in self.assignments.iter().enumerate() {
-            if let Some(Assignment { local_idx: idx, part: p }) = *assignment {
+            if let Some(Assignment {
+                local_idx: idx,
+                part: p,
+            }) = *assignment
+            {
                 if idx == local_idx && p == part {
                     return Some(AsmReg::from_linear_index(i, self.regs_per_bank));
                 }
@@ -522,10 +526,12 @@ impl<'arena> RegisterFile<'arena> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bumpalo::Bump;
     use crate::core::CompilationSession;
+    use bumpalo::Bump;
 
-    fn create_test_regfile<'arena>(session: &'arena CompilationSession<'arena>) -> RegisterFile<'arena> {
+    fn create_test_regfile<'arena>(
+        session: &'arena CompilationSession<'arena>,
+    ) -> RegisterFile<'arena> {
         // Create register file with 8 GP regs (bank 0) and 8 FP regs (bank 1)
         let mut allocatable = RegBitSet::new();
         allocatable.union(&RegBitSet::all_in_bank(0, 8)); // GP regs 0-7
@@ -548,9 +554,9 @@ mod tests {
 
     #[test]
     fn test_register_allocation() {
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
-        let mut regfile = create_test_regfile(&session);
+        let arena = Box::leak(Box::new(Bump::new()));
+        let session = Box::leak(Box::new(CompilationSession::new(arena)));
+        let mut regfile = create_test_regfile(session);
 
         // Allocate first register in GP bank
         let reg1 = regfile.allocate_reg(0, 100, 0, None).unwrap();
@@ -569,9 +575,9 @@ mod tests {
 
     #[test]
     fn test_register_locking() {
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
-        let mut regfile = create_test_regfile(&session);
+        let arena = Box::leak(Box::new(Bump::new()));
+        let session = Box::leak(Box::new(CompilationSession::new(arena)));
+        let mut regfile = create_test_regfile(session);
         let reg = regfile.allocate_reg(0, 100, 0, None).unwrap();
 
         assert!(!regfile.is_locked(reg));
@@ -584,9 +590,9 @@ mod tests {
 
     #[test]
     fn test_register_eviction() {
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
-        let mut regfile = create_test_regfile(&session);
+        let arena = Box::leak(Box::new(Bump::new()));
+        let session = Box::leak(Box::new(CompilationSession::new(arena)));
+        let mut regfile = create_test_regfile(session);
 
         // Fill all GP registers
         let mut regs = Vec::new();
@@ -614,9 +620,9 @@ mod tests {
 
     #[test]
     fn test_find_register_for_value() {
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
-        let mut regfile = create_test_regfile(&session);
+        let arena = Box::leak(Box::new(Bump::new()));
+        let session = Box::leak(Box::new(CompilationSession::new(arena)));
+        let mut regfile = create_test_regfile(session);
         let reg = regfile.allocate_reg(0, 100, 1, None).unwrap();
 
         assert_eq!(regfile.find_register_for_value(100, 1), Some(reg));
@@ -626,9 +632,9 @@ mod tests {
 
     #[test]
     fn test_bank_usage_stats() {
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
-        let mut regfile = create_test_regfile(&session);
+        let arena = Box::leak(Box::new(Bump::new()));
+        let session = Box::leak(Box::new(CompilationSession::new(arena)));
+        let mut regfile = create_test_regfile(session);
 
         let reg1 = regfile.allocate_reg(0, 100, 0, None).unwrap();
         let _reg2 = regfile.allocate_reg(0, 101, 0, None).unwrap();

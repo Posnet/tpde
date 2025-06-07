@@ -152,7 +152,11 @@ impl<'ctx, 'arena> FunctionAnalyzer<'ctx, 'arena> {
                 let mut v = BumpVec::with_capacity_in(num_blocks, session.arena());
                 v.resize(
                     num_blocks,
-                    BlockSuccessors { start_idx: 0, count: 0, is_conditional: false },
+                    BlockSuccessors {
+                        start_idx: 0,
+                        count: 0,
+                        is_conditional: false,
+                    },
                 );
                 v
             },

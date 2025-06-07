@@ -17,8 +17,8 @@
 //! and lifetime of these storage locations. This is the foundation of TPDE's
 //! register allocation system.
 
+use bumpalo::{collections::Vec as BumpVec, Bump};
 use std::collections::HashMap;
-use bumpalo::{Bump, collections::Vec as BumpVec};
 
 /// Index type for local values within a function.
 pub type ValLocalIdx = usize;
@@ -262,8 +262,11 @@ impl<'arena> AssignmentAllocator<'arena> {
         } else {
             // Allocate new assignment
             let idx = self.assignments.len();
-            self.assignments
-                .push(ValueAssignment::new_in(self.arena, part_count, max_part_size));
+            self.assignments.push(ValueAssignment::new_in(
+                self.arena,
+                part_count,
+                max_part_size,
+            ));
             idx
         }
     }
@@ -345,7 +348,10 @@ impl<'arena> ValueAssignmentManager<'arena> {
     }
 
     /// Get a mutable reference to the assignment for a local value.
-    pub fn get_assignment_mut(&mut self, local_idx: ValLocalIdx) -> Option<&mut ValueAssignment<'arena>> {
+    pub fn get_assignment_mut(
+        &mut self,
+        local_idx: ValLocalIdx,
+    ) -> Option<&mut ValueAssignment<'arena>> {
         self.assignments
             .get(&local_idx)
             .and_then(|&idx| self.allocator.get_mut(idx))

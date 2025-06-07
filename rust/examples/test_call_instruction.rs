@@ -12,9 +12,9 @@
 // enhanced encoder has all the necessary instructions to support the LlvmCompiler's
 // compile_call_instruction method.
 
+use bumpalo::Bump;
 use tpde::core::AsmReg;
 use tpde::x64::{Encoder as X64Encoder, EncodingError};
-use bumpalo::Bump;
 
 /// Test function call instruction generation.
 ///

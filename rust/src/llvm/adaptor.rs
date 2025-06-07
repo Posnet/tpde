@@ -885,8 +885,8 @@ impl<'ctx, 'arena> LlvmAdaptorInterface for EnhancedLlvmAdaptor<'ctx, 'arena> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bumpalo::Bump;
     use crate::core::CompilationSession;
+    use bumpalo::Bump;
     use inkwell::context::Context;
     use inkwell::IntPredicate;
 
@@ -941,9 +941,9 @@ mod tests {
     fn test_enhanced_adaptor_creation() {
         let context = Context::create();
         let module = create_factorial_function(&context);
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
-        let adaptor = EnhancedLlvmAdaptor::new(&module, &session);
+        let arena = Box::leak(Box::new(Bump::new()));
+        let session = Box::leak(Box::new(CompilationSession::new(arena)));
+        let adaptor = EnhancedLlvmAdaptor::new(&module, session);
 
         assert_eq!(adaptor.func_count(), 1);
         let funcs: Vec<_> = adaptor.funcs().collect();
@@ -954,9 +954,9 @@ mod tests {
     fn test_factorial_function_analysis() {
         let context = Context::create();
         let module = create_factorial_function(&context);
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
-        let mut adaptor = EnhancedLlvmAdaptor::new(&module, &session);
+        let arena = Box::leak(Box::new(Bump::new()));
+        let session = Box::leak(Box::new(CompilationSession::new(arena)));
+        let mut adaptor = EnhancedLlvmAdaptor::new(&module, session);
 
         // Switch to factorial function
         let funcs: Vec<_> = adaptor.funcs().collect();
@@ -996,9 +996,9 @@ mod tests {
     fn test_instruction_classification() {
         let context = Context::create();
         let module = create_factorial_function(&context);
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
-        let mut adaptor = EnhancedLlvmAdaptor::new(&module, &session);
+        let arena = Box::leak(Box::new(Bump::new()));
+        let session = Box::leak(Box::new(CompilationSession::new(arena)));
+        let mut adaptor = EnhancedLlvmAdaptor::new(&module, session);
 
         let funcs: Vec<_> = adaptor.funcs().collect();
         adaptor.switch_func(funcs[0]);
@@ -1036,9 +1036,9 @@ mod tests {
     fn test_value_indexing() {
         let context = Context::create();
         let module = create_factorial_function(&context);
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
-        let mut adaptor = EnhancedLlvmAdaptor::new(&module, &session);
+        let arena = Box::leak(Box::new(Bump::new()));
+        let session = Box::leak(Box::new(CompilationSession::new(arena)));
+        let mut adaptor = EnhancedLlvmAdaptor::new(&module, session);
 
         let funcs: Vec<_> = adaptor.funcs().collect();
         adaptor.switch_func(funcs[0]);
@@ -1072,9 +1072,9 @@ mod tests {
     fn test_enhanced_block_successor_extraction() {
         let context = Context::create();
         let module = create_factorial_function(&context);
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
-        let mut adaptor = EnhancedLlvmAdaptor::new(&module, &session);
+        let arena = Box::leak(Box::new(Bump::new()));
+        let session = Box::leak(Box::new(CompilationSession::new(arena)));
+        let mut adaptor = EnhancedLlvmAdaptor::new(&module, session);
 
         let funcs: Vec<_> = adaptor.funcs().collect();
         adaptor.switch_func(funcs[0]);
@@ -1110,9 +1110,9 @@ mod tests {
     fn test_terminator_instruction_analysis() {
         let context = Context::create();
         let module = create_factorial_function(&context);
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
-        let mut adaptor = EnhancedLlvmAdaptor::new(&module, &session);
+        let arena = Box::leak(Box::new(Bump::new()));
+        let session = Box::leak(Box::new(CompilationSession::new(arena)));
+        let mut adaptor = EnhancedLlvmAdaptor::new(&module, session);
 
         let funcs: Vec<_> = adaptor.funcs().collect();
         adaptor.switch_func(funcs[0]);

@@ -158,11 +158,7 @@ impl<'arena> ValueRef {
     }
 
     /// Check if this value is currently assigned to a register.
-    pub fn is_in_register(
-        &self,
-        part_idx: u32,
-        ctx: &CompilerContext<'_, 'arena>,
-    ) -> bool {
+    pub fn is_in_register(&self, part_idx: u32, ctx: &CompilerContext<'_, 'arena>) -> bool {
         if let Some(assignment) = ctx.assignments.get_assignment(self.local_idx) {
             if let Some(part_data) = assignment.part(part_idx) {
                 return part_data.register_valid();
@@ -352,10 +348,7 @@ impl<'arena> ValuePartRef {
     }
 
     /// Get the current register for this part (if any).
-    pub fn current_register(
-        &self,
-        ctx: &CompilerContext<'_, 'arena>,
-    ) -> Option<AsmReg> {
+    pub fn current_register(&self, ctx: &CompilerContext<'_, 'arena>) -> Option<AsmReg> {
         ctx.assignments
             .get_assignment(self.local_idx)
             .and_then(|assignment| assignment.part(self.part_idx))
@@ -436,10 +429,7 @@ impl<'arena> ValuePartRef {
     }
 
     /// Spill this part to memory if it's in a register.
-    pub fn spill(
-        &mut self,
-        ctx: &mut CompilerContext<'_, 'arena>,
-    ) -> Result<(), ValueRefError> {
+    pub fn spill(&mut self, ctx: &mut CompilerContext<'_, 'arena>) -> Result<(), ValueRefError> {
         if let Some(_reg) = self.current_register(ctx) {
             // In a real implementation, this would generate spill code
             // For now, we just mark the register as invalid
@@ -512,8 +502,8 @@ impl<'arena> ValueRefBuilder {
 mod tests {
     use super::*;
 
-    use bumpalo::Bump;
     use crate::core::CompilationSession;
+    use bumpalo::Bump;
 
     fn create_test_setup<'arena>(
         session: &'arena CompilationSession<'arena>,
@@ -529,9 +519,9 @@ mod tests {
 
     #[test]
     fn test_value_ref_creation() {
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
-        let (mut assignments, mut register_file) = create_test_setup(&session);
+        let arena = Box::leak(Box::new(Bump::new()));
+        let session = Box::leak(Box::new(CompilationSession::new(arena)));
+        let (mut assignments, mut register_file) = create_test_setup(session);
         let mut ctx = CompilerContext::new(&mut assignments, &mut register_file);
 
         // Create an assignment
@@ -548,9 +538,9 @@ mod tests {
 
     #[test]
     fn test_value_part_ref_allocation() {
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
-        let (mut assignments, mut register_file) = create_test_setup(&session);
+        let arena = Box::leak(Box::new(Bump::new()));
+        let session = Box::leak(Box::new(CompilationSession::new(arena)));
+        let (mut assignments, mut register_file) = create_test_setup(session);
         let mut ctx = CompilerContext::new(&mut assignments, &mut register_file);
 
         // Create an assignment
@@ -572,9 +562,9 @@ mod tests {
 
     #[test]
     fn test_modification_tracking() {
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
-        let (mut assignments, mut register_file) = create_test_setup(&session);
+        let arena = Box::leak(Box::new(Bump::new()));
+        let session = Box::leak(Box::new(CompilationSession::new(arena)));
+        let (mut assignments, mut register_file) = create_test_setup(session);
         let mut ctx = CompilerContext::new(&mut assignments, &mut register_file);
 
         ctx.assignments.create_assignment(42, 1, 8);

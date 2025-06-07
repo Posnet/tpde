@@ -46,12 +46,12 @@ pub trait Assembler<A: IrAdaptor> {
         F: FnMut(&str) -> *const u8;
 }
 
+use bumpalo::{collections::Vec as BumpVec, Bump};
+use hashbrown::{DefaultHashBuilder, HashMap};
 use object::write::{
     Object, SectionId, StandardSection, Symbol, SymbolId, SymbolKind, SymbolScope, SymbolSection,
 };
 use object::{Architecture, BinaryFormat, Endianness};
-use bumpalo::{Bump, collections::Vec as BumpVec};
-use hashbrown::{HashMap, DefaultHashBuilder};
 
 /// Label identifier used by [`ElfAssembler`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

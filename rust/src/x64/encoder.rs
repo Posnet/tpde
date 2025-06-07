@@ -19,10 +19,10 @@
 //! to emit actual executable machine code for basic arithmetic and control flow.
 
 use crate::core::register_file::AsmReg;
-use iced_x86::code_asm::{registers::cl, *};
 use bumpalo::Bump;
-use hashbrown::{HashMap, HashSet};
 use hashbrown::DefaultHashBuilder;
+use hashbrown::{HashMap, HashSet};
+use iced_x86::code_asm::{registers::cl, *};
 
 /// Error types for instruction encoding.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1477,8 +1477,8 @@ impl<'arena> InstructionSelector<'arena> {
 #[cfg(test)]
 mod tests {
     use super::{InstructionSelector, JumpCondition, X64Encoder};
-    use bumpalo::Bump;
     use crate::core::register_file::AsmReg;
+    use bumpalo::Bump;
 
     #[test]
     fn test_basic_instructions() {

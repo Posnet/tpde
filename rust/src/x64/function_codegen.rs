@@ -63,7 +63,7 @@ impl<'arena> FunctionCodegen<'arena> {
     }
 
     /// Process function arguments according to calling convention.
-    pub fn process_arguments<'arena>(
+    pub fn process_arguments(
         &mut self,
         session: &'arena crate::core::session::CompilationSession<'arena>,
         args: &[ArgInfo],
@@ -77,7 +77,7 @@ impl<'arena> FunctionCodegen<'arena> {
         for arg in args {
             let mut assignment = CCAssignment::new(arg.bank, arg.size, arg.align);
             self.cc_assigner.assign_arg(&mut assignment);
-            self.frame.arg_assignments.push(assignment.clone());
+            self.frame.arg_assignments.push(assignment);
             assignments.push(assignment);
         }
 
@@ -86,13 +86,13 @@ impl<'arena> FunctionCodegen<'arena> {
     }
 
     /// Process return values according to calling convention.
-    pub fn process_return_values<'arena>(
+    pub fn process_return_values(
         &mut self,
         session: &'arena crate::core::session::CompilationSession<'arena>,
         rets: &[ArgInfo],
     ) -> Result<&'arena [CCAssignment], FunctionCodegenError> {
         use bumpalo::collections::Vec as BumpVec;
-        
+
         self.frame.ret_assignments.clear();
 
         if rets.is_empty() {
@@ -108,7 +108,8 @@ impl<'arena> FunctionCodegen<'arena> {
             }
             let arr_ref = session.alloc(tmp);
             let slice = &arr_ref[..rets.len()];
-            self.frame.ret_assignments = slice.to_vec();
+            self.frame.ret_assignments.clear();
+            self.frame.ret_assignments.extend_from_slice(slice);
             return Ok(slice);
         }
 
@@ -116,7 +117,7 @@ impl<'arena> FunctionCodegen<'arena> {
         for ret in rets {
             let mut assignment = CCAssignment::new(ret.bank, ret.size, ret.align);
             self.cc_assigner.assign_ret(&mut assignment);
-            self.frame.ret_assignments.push(assignment.clone());
+            self.frame.ret_assignments.push(assignment);
             assignments.push(assignment);
         }
 
@@ -387,16 +388,16 @@ mod tests {
 
     #[test]
     fn test_simple_function_codegen() {
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
-        let mut codegen = FunctionCodegen::new(&arena).unwrap();
+        let arena = Box::leak(Box::new(Bump::new()));
+        let session = Box::leak(Box::new(CompilationSession::new(arena)));
+        let mut codegen = FunctionCodegen::new(arena).unwrap();
 
         // Simple function: int add(int a, int b) { return a + b; }
         let args = vec![ArgInfo::int32(), ArgInfo::int32()];
         let rets = vec![ArgInfo::int32()];
 
-        let arg_assignments = codegen.process_arguments(&session, &args).unwrap();
-        let ret_assignments = codegen.process_return_values(&session, &rets).unwrap();
+        let arg_assignments = codegen.process_arguments(session, &args).unwrap();
+        let ret_assignments = codegen.process_return_values(session, &rets).unwrap();
 
         // Verify arguments are assigned to RDI, RSI
         assert!(arg_assignments[0].reg.is_some());
@@ -421,8 +422,8 @@ mod tests {
 
     #[test]
     fn test_callee_saved_registers() {
-        let arena = Bump::new();
-        let mut codegen = FunctionCodegen::new(&arena).unwrap();
+        let arena = Box::leak(Box::new(Bump::new()));
+        let mut codegen = FunctionCodegen::new(arena).unwrap();
         codegen.set_makes_calls(true);
 
         // Add some callee-saved registers
@@ -448,8 +449,8 @@ mod tests {
 
     #[test]
     fn test_spill_slot_allocation() {
-        let arena = Bump::new();
-        let mut codegen = FunctionCodegen::new(&arena).unwrap();
+        let arena = Box::leak(Box::new(Bump::new()));
+        let mut codegen = FunctionCodegen::new(arena).unwrap();
 
         // Allocate some spill slots
         let slot1 = codegen.allocate_spill_slot(8);
@@ -466,9 +467,9 @@ mod tests {
 
     #[test]
     fn test_many_arguments() {
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
-        let mut codegen = FunctionCodegen::new(&arena).unwrap();
+        let arena = Box::leak(Box::new(Bump::new()));
+        let session = Box::leak(Box::new(CompilationSession::new(arena)));
+        let mut codegen = FunctionCodegen::new(arena).unwrap();
 
         // Function with 8 integer arguments (6 in regs, 2 on stack)
         let args = vec![
@@ -481,7 +482,7 @@ mod tests {
             ArgInfo::int64(),
             ArgInfo::int64(),
         ];
-        let assignments = codegen.process_arguments(&session, &args).unwrap();
+        let assignments = codegen.process_arguments(session, &args).unwrap();
 
         // First 6 should be in registers
         for assignment in assignments.iter().take(6) {
@@ -498,9 +499,9 @@ mod tests {
 
     #[test]
     fn test_mixed_argument_types() {
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
-        let mut codegen = FunctionCodegen::new(&arena).unwrap();
+        let arena = Box::leak(Box::new(Bump::new()));
+        let session = Box::leak(Box::new(CompilationSession::new(arena)));
+        let mut codegen = FunctionCodegen::new(arena).unwrap();
 
         // Function with mixed int/float arguments
         let args = vec![
@@ -509,7 +510,7 @@ mod tests {
             ArgInfo::int32(),   // RSI
             ArgInfo::float32(), // XMM1
         ];
-        let assignments = codegen.process_arguments(&session, &args).unwrap();
+        let assignments = codegen.process_arguments(session, &args).unwrap();
 
         // Verify register assignments
         assert_eq!(assignments[0].reg.unwrap(), AsmReg::new(0, 7)); // RDI

@@ -16,8 +16,8 @@
 //! using arena allocation. All compilation objects are tied to the session
 //! lifetime, eliminating complex lifetime propagation.
 
-use bumpalo::Bump;
 use bumpalo::collections::{String as BString, Vec as BVec};
+use bumpalo::Bump;
 use hashbrown::{DefaultHashBuilder, HashMap};
 use std::cell::RefCell;
 use std::fmt;
@@ -72,7 +72,8 @@ pub struct CompilationSession<'arena> {
     phi_nodes: RefCell<HashMap<usize, PhiNodeInfo<'arena>, DefaultHashBuilder, &'arena Bump>>,
 
     /// String interning for efficient storage.
-    interned_strings: RefCell<HashMap<BString<'arena>, &'arena str, DefaultHashBuilder, &'arena Bump>>,
+    interned_strings:
+        RefCell<HashMap<BString<'arena>, &'arena str, DefaultHashBuilder, &'arena Bump>>,
 
     /// Current function being compiled.
     current_function: RefCell<Option<BString<'arena>>>,

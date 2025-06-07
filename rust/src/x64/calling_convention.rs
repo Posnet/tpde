@@ -41,7 +41,7 @@ pub enum ArgAttribute {
 }
 
 /// Argument assignment result from calling convention analysis.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct CCAssignment {
     /// Register bank this argument belongs to.
     pub bank: RegBank,

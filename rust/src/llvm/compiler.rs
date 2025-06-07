@@ -25,11 +25,11 @@ use crate::{
     core::{CompilerContext, ValuePartRef},
     x64::function_codegen::FunctionCodegen,
 };
+use bumpalo::Bump;
+use hashbrown::{DefaultHashBuilder, HashMap};
 use inkwell::basic_block::BasicBlock;
 use inkwell::values::BasicValueEnum;
 use inkwell::IntPredicate;
-use bumpalo::Bump;
-use hashbrown::{HashMap, DefaultHashBuilder};
 
 /// Addressing modes for x86-64 memory operations.
 #[derive(Debug, Clone)]
@@ -160,7 +160,8 @@ pub struct LlvmCompiler<'ctx, 'arena> {
     codegen: FunctionCodegen<'arena>,
 
     /// Cache of compiled functions allocated in the session arena.
-    compiled_functions: HashMap<&'arena str, CompiledFunction<'arena>, DefaultHashBuilder, &'arena Bump>,
+    compiled_functions:
+        HashMap<&'arena str, CompiledFunction<'arena>, DefaultHashBuilder, &'arena Bump>,
 
     /// Current function being compiled.
     current_function: Option<inkwell::values::FunctionValue<'ctx>>,
@@ -430,14 +431,17 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
         self.codegen
             .process_arguments(self.session, &args_vec)
             .map_err(|e| {
-            LlvmCompilerError::CodeGeneration(format!("Argument processing failed: {:?}", e))
-        })?;
+                LlvmCompilerError::CodeGeneration(format!("Argument processing failed: {:?}", e))
+            })?;
 
         self.codegen
             .process_return_values(self.session, &ret_info)
             .map_err(|e| {
-            LlvmCompilerError::CodeGeneration(format!("Return value processing failed: {:?}", e))
-        })?;
+                LlvmCompilerError::CodeGeneration(format!(
+                    "Return value processing failed: {:?}",
+                    e
+                ))
+            })?;
 
         Ok(())
     }
@@ -3679,7 +3683,6 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
             let mut assignment = CCAssignment::with_attribute(bank, size, align, final_attr);
             cc_assigner.assign_arg(&mut assignment);
 
-
             log::debug!(
                 "   Arg {}: v{} -> {:?} (attr: {:?})",
                 i,
@@ -3839,14 +3842,12 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
             if used_xmm > 0 {
                 let encoder = self.codegen.encoder_mut();
                 let al = AsmReg::new(0, 0); // AL register
-                encoder
-                    .mov_reg_imm(al, used_xmm as i64)
-                    .map_err(|e| {
-                        LlvmCompilerError::CodeGeneration(format!(
-                            "Failed to set AL for varargs: {:?}",
-                            e
-                        ))
-                    })?;
+                encoder.mov_reg_imm(al, used_xmm as i64).map_err(|e| {
+                    LlvmCompilerError::CodeGeneration(format!(
+                        "Failed to set AL for varargs: {:?}",
+                        e
+                    ))
+                })?;
                 log::trace!("   Set AL={} for varargs XMM count", used_xmm);
             }
         }
@@ -4607,21 +4608,18 @@ mod tests {
     fn test_llvm_compiler_creation() {
         let context = Context::create();
         let module = create_simple_module(&context);
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
-
-        let compiler = LlvmCompiler::new(module, &session);
-        assert!(compiler.is_ok());
+        let arena = Box::leak(Box::new(Bump::new()));
+        let session = Box::leak(Box::new(CompilationSession::new(arena)));
+        let _compiler = LlvmCompiler::new(module, session);
     }
 
     #[test]
     fn test_function_compilation() {
         let context = Context::create();
         let module = create_simple_module(&context);
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
-        let mut compiler = LlvmCompiler::new(module, &session).unwrap();
-
+        let arena = Box::leak(Box::new(Bump::new()));
+        let session = Box::leak(Box::new(CompilationSession::new(arena)));
+        let mut compiler = LlvmCompiler::new(module, session).unwrap();
         compiler.compile_function_by_name("add").unwrap();
 
         let compiled = compiler.compiled_functions().get("add").unwrap();
@@ -4633,10 +4631,9 @@ mod tests {
     fn test_llvm_compiler_session_statistics() {
         let context = Context::create();
         let module = create_simple_module(&context);
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
-        let mut compiler = LlvmCompiler::new(module, &session).unwrap();
-
+        let arena = Box::leak(Box::new(Bump::new()));
+        let session = Box::leak(Box::new(CompilationSession::new(arena)));
+        let mut compiler = LlvmCompiler::new(module, session).unwrap();
         compiler.compile_function_by_name("add").unwrap();
 
         let stats = compiler.session().stats();
@@ -4676,9 +4673,9 @@ mod tests {
     fn test_gep_instruction_compilation() {
         let context = Context::create();
         let module = create_gep_test_module(&context);
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
-        let mut compiler = LlvmCompiler::new(module, &session).unwrap();
+        let arena = Box::leak(Box::new(Bump::new()));
+        let session = Box::leak(Box::new(CompilationSession::new(arena)));
+        let mut compiler = LlvmCompiler::new(module, session).unwrap();
 
         compiler
             .compile_function_by_name("array_access")
@@ -4724,9 +4721,9 @@ mod tests {
     fn test_icmp_real_predicate_extraction() {
         let context = Context::create();
         let module = create_icmp_test_module(&context);
-        let arena = Bump::new();
-        let session = CompilationSession::new(&arena);
-        let mut compiler = LlvmCompiler::new(module, &session).unwrap();
+        let arena = Box::leak(Box::new(Bump::new()));
+        let session = Box::leak(Box::new(CompilationSession::new(arena)));
+        let mut compiler = LlvmCompiler::new(module, session).unwrap();
 
         compiler
             .compile_function_by_name("compare")
