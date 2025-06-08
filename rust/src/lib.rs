@@ -99,6 +99,13 @@ pub mod x64;
 // Utility modules
 pub mod encodegen;
 
+// Code generation modules
+pub mod codegen;
+
+// Template definitions (only included with feature flag)
+#[cfg(feature = "template-extraction")]
+pub mod templates;
+
 // Test infrastructure
 pub mod test_ir;
 

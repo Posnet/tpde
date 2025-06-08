@@ -33,3 +33,11 @@ thiserror = "2.0"
 log = "0.4"
 env_logger = "0.11"
 clap = { version = "4.5", features = ["derive"] }
+tpde-macros = { path = "tpde-macros" }
+
+[workspace]
+members = ["tpde-macros"]
+
+[features]
+default = []
+template-extraction = []
