@@ -704,11 +704,22 @@ impl<'ctx, 'arena> LlvmCompiler<'ctx, 'arena> {
 5. **TEST** with add_f32 template extraction to LLVM IR
 
 ### Phase 2: Build System (Days 4-7)
-**MANDATORY TASKS:**
+**CRITICAL DISCOVERY**: MachineFunction and MachineInstr APIs are internal LLVM C++ APIs that are NOT exposed through the LLVM C API. This means:
+- llvm-sys (Rust bindings to LLVM's C API) cannot access MachineFunction/MachineInstr
+- inkwell (built on llvm-sys) also cannot access these APIs
+- The C++ version works because it directly includes LLVM C++ headers
+
+**REVISED APPROACH OPTIONS:**
+1. Create a C++ wrapper exposing MachineFunction/MachineInstr through a C API
+2. Parse assembly output (less ideal but practical)
+3. Use known patterns from C++ implementation
+4. Investigate LLVM's MIR text format
+
+**MANDATORY TASKS (REVISED):**
 1. **REPLACE** existing build.rs with template extraction version
 2. **IMPLEMENT** compile_templates_to_ir() for ALL microarchitecture levels
-3. **USE** inkwell to parse generated LLVM IR
-4. **EXTRACT** instruction patterns using LLVM's codegen
+3. **USE** inkwell to generate optimized assembly
+4. **PARSE** assembly output OR implement C++ wrapper for MachineInstr access
 5. **GENERATE** first encoder function for add_f32
 6. **VALIDATE** generated code matches manual implementation
 

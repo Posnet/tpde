@@ -33,7 +33,19 @@ pub fn template_function(attrs: TokenStream, input: TokenStream) -> TokenStream 
         #input_fn
         
         // Metadata for build script
-        #[cfg(feature = "template-extraction")]
+        #[cfg(all(feature = "template-extraction", target_os = "macos"))]
+        #[link_section = "__DATA,__tpde_meta"]
+        #[used]
+        static #metadata_ident: &str = concat!(
+            "TPDE_TEMPLATE:",
+            #fn_name_str,
+            ":",
+            #target,
+            ";"
+        );
+        
+        // Metadata for build script (Linux/ELF)
+        #[cfg(all(feature = "template-extraction", not(target_os = "macos")))]
         #[link_section = ".tpde_template_metadata"]
         #[used]
         static #metadata_ident: &str = concat!(

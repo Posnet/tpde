@@ -35,6 +35,10 @@ env_logger = "0.11"
 clap = { version = "4.5", features = ["derive"] }
 tpde-macros = { path = "tpde-macros" }
 
+[build-dependencies]
+inkwell = { git = "https://github.com/stevefan1999-personal/inkwell.git", features = ["llvm19-1-prefer-dynamic"] }
+llvm-sys = { version = "191", features = ["prefer-dynamic"] }
+
 [workspace]
 members = ["tpde-macros"]
 
